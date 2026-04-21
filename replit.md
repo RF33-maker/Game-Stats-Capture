@@ -16,6 +16,23 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Project: Swish Stats
+
+Basketball stat-capture platform inspired by FIBA Livestats. Backend lives in `artifacts/api-server` and exposes REST endpoints generated from `lib/api-spec/openapi.yaml`.
+
+### Backend domain
+- **Tables**: `leagues`, `games`, `teams` (with `is_home` flag), `players`, `stat_events`, `play_by_play`. Schemas live in `lib/db/src/schema/*.ts`.
+- **Routes**: `routes/games.ts`, `teams.ts`, `players.ts`, `stats.ts`, `playByPlay.ts`, `aggregates.ts` (box-score + possessions), `seed.ts` (`POST /seed` creates a sample game with two teams and rosters).
+- **Possession state machine**: `artifacts/api-server/src/lib/possession.ts`. Recording a stat event automatically flips possession on made FG / TOV / STL / DREB / final FT, leaves it on OREB / missed FG / missed final FT (waits for rebound), and closes the open possession on `period_end`.
+- **Database driver**: `lib/db/src/index.ts` prefers `SUPABASE_DATABASE_URL` and auto-enables SSL for Supabase hosts.
+
+### Required secret
+- `SUPABASE_DATABASE_URL` — must be a Postgres connection string (NOT the HTTPS Project URL). Use Supabase → Connect → Connection string → **Transaction pooler**:
+  ```
+  postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+  ```
+  After updating the secret, run `pnpm --filter @workspace/db run push` to create the tables, then `POST /seed` for sample data.
+
 ## Key Commands
 
 - `pnpm run typecheck` — full typecheck across all packages
