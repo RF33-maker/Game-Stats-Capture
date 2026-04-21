@@ -31,6 +31,8 @@ export const STAT_EVENT_TYPES = [
   "pf",
   "tf",
   "flagrant",
+  "plus",
+  "minus",
   "sub_in",
   "sub_out",
   "timeout",

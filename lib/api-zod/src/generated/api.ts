@@ -191,6 +191,27 @@ export const DeleteTeamParams = zod.object({
 });
 
 /**
+ * @summary List all players across both teams of a game
+ */
+export const ListGamePlayersParams = zod.object({
+  gameId: zod.coerce.number(),
+});
+
+export const ListGamePlayersResponseItem = zod.object({
+  id: zod.number(),
+  teamId: zod.number(),
+  jerseyNumber: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  position: zod.string().nullish(),
+  headshotUrl: zod.string().nullish(),
+  isActive: zod.boolean(),
+  isStarter: zod.boolean(),
+  createdAt: zod.coerce.date(),
+});
+export const ListGamePlayersResponse = zod.array(ListGamePlayersResponseItem);
+
+/**
  * @summary List players on a team
  */
 export const ListPlayersParams = zod.object({
@@ -296,6 +317,8 @@ export const ListStatEventsResponseItem = zod.object({
     "pf",
     "tf",
     "flagrant",
+    "plus",
+    "minus",
     "sub_in",
     "sub_out",
     "timeout",
@@ -341,6 +364,8 @@ export const RecordStatEventBody = zod.object({
     "pf",
     "tf",
     "flagrant",
+    "plus",
+    "minus",
     "sub_in",
     "sub_out",
     "timeout",
@@ -383,6 +408,63 @@ export const ListPlayByPlayResponseItem = zod.object({
   createdAt: zod.coerce.date(),
 });
 export const ListPlayByPlayResponse = zod.array(ListPlayByPlayResponseItem);
+
+/**
+ * @summary Insert a manual play-by-play entry (text-only, no stat event)
+ */
+export const CreatePlayByPlayParams = zod.object({
+  gameId: zod.coerce.number(),
+});
+
+export const CreatePlayByPlayBody = zod.object({
+  teamId: zod.number().nullish(),
+  playerId: zod.number().nullish(),
+  period: zod.number(),
+  clockSeconds: zod.number(),
+  eventText: zod.string(),
+  homeScore: zod.number(),
+  awayScore: zod.number(),
+  possessionTeamId: zod.number().nullish(),
+  possessionEnded: zod.string().optional(),
+});
+
+/**
+ * @summary Edit a play-by-play entry's text or score line
+ */
+export const UpdatePlayByPlayParams = zod.object({
+  pbpId: zod.coerce.number(),
+});
+
+export const UpdatePlayByPlayBody = zod.object({
+  eventText: zod.string().optional(),
+  homeScore: zod.number().optional(),
+  awayScore: zod.number().optional(),
+  possessionTeamId: zod.number().nullish(),
+  possessionEnded: zod.string().optional(),
+});
+
+export const UpdatePlayByPlayResponse = zod.object({
+  id: zod.number(),
+  gameId: zod.number(),
+  statEventId: zod.number().nullish(),
+  teamId: zod.number().nullish(),
+  playerId: zod.number().nullish(),
+  period: zod.number(),
+  clockSeconds: zod.number(),
+  possessionTeamId: zod.number().nullish(),
+  possessionEnded: zod.string(),
+  homeScore: zod.number(),
+  awayScore: zod.number(),
+  eventText: zod.string(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a play-by-play entry
+ */
+export const DeletePlayByPlayParams = zod.object({
+  pbpId: zod.coerce.number(),
+});
 
 /**
  * @summary Computed box score for a game

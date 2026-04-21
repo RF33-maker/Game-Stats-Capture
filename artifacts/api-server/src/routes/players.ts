@@ -1,18 +1,43 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, playersTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
+import { db, playersTable, teamsTable } from "@workspace/db";
 import {
   CreatePlayerBody,
   UpdatePlayerBody,
   ListPlayersParams,
+  ListGamePlayersParams,
   CreatePlayerParams,
   UpdatePlayerParams,
   DeletePlayerParams,
   ListPlayersResponse,
+  ListGamePlayersResponse,
   UpdatePlayerResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
+
+router.get("/games/:gameId/players", async (req, res): Promise<void> => {
+  const params = ListGamePlayersParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const teams = await db
+    .select({ id: teamsTable.id })
+    .from(teamsTable)
+    .where(eq(teamsTable.gameId, params.data.gameId));
+  const teamIds = teams.map((t) => t.id);
+  if (teamIds.length === 0) {
+    res.json([]);
+    return;
+  }
+  const rows = await db
+    .select()
+    .from(playersTable)
+    .where(inArray(playersTable.teamId, teamIds))
+    .orderBy(playersTable.teamId, playersTable.jerseyNumber);
+  res.json(ListGamePlayersResponse.parse(rows));
+});
 
 router.get("/teams/:teamId/players", async (req, res): Promise<void> => {
   const params = ListPlayersParams.safeParse(req.params);

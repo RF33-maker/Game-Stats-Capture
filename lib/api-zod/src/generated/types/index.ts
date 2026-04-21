@@ -9,6 +9,7 @@
 export * from "./boxScore";
 export * from "./captureMode";
 export * from "./createGameBody";
+export * from "./createPlayByPlayBody";
 export * from "./createPlayerBody";
 export * from "./createTeamBody";
 export * from "./errorResponse";
@@ -28,5 +29,6 @@ export * from "./team";
 export * from "./teamBoxScore";
 export * from "./updateClockBody";
 export * from "./updateGameBody";
+export * from "./updatePlayByPlayBody";
 export * from "./updatePlayerBody";
 export * from "./updateTeamBody";

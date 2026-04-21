@@ -237,10 +237,9 @@ router.get("/games/:gameId/box-score", async (req, res): Promise<void> => {
     .from(playByPlayTable)
     .where(eq(playByPlayTable.gameId, gameId))
     .orderBy(playByPlayTable.id);
+  // Count play-by-play entries grouped by possession_team_id (per task spec).
   const possessionsForTeam = (teamId: number) =>
-    pbpRows.filter(
-      (r) => r.possessionEnded === "true" && r.possessionTeamId === teamId,
-    ).length;
+    pbpRows.filter((r) => r.possessionTeamId === teamId).length;
 
   // Total team scores from latest pbp row, falling back to summed events.
   const lastPbp = pbpRows[pbpRows.length - 1];
@@ -303,11 +302,12 @@ router.get("/games/:gameId/possessions", async (req, res): Promise<void> => {
     .from(playByPlayTable)
     .where(eq(playByPlayTable.gameId, gameId));
 
+  // Count play-by-play entries grouped by possession_team_id (per task spec).
   const homePossessions = pbpRows.filter(
-    (r) => r.possessionEnded === "true" && r.possessionTeamId === home.id,
+    (r) => r.possessionTeamId === home.id,
   ).length;
   const awayPossessions = pbpRows.filter(
-    (r) => r.possessionEnded === "true" && r.possessionTeamId === away.id,
+    (r) => r.possessionTeamId === away.id,
   ).length;
 
   res.json(

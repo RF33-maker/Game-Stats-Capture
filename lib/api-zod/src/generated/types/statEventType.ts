@@ -26,6 +26,8 @@ export const StatEventType = {
   pf: "pf",
   tf: "tf",
   flagrant: "flagrant",
+  plus: "plus",
+  minus: "minus",
   sub_in: "sub_in",
   sub_out: "sub_out",
   timeout: "timeout",

@@ -174,6 +174,8 @@ export const StatEventType = {
   pf: "pf",
   tf: "tf",
   flagrant: "flagrant",
+  plus: "plus",
+  minus: "minus",
   sub_in: "sub_in",
   sub_out: "sub_out",
   timeout: "timeout",
@@ -235,6 +237,30 @@ export interface PlayByPlayEntry {
   awayScore: number;
   eventText: string;
   createdAt: string;
+}
+
+export interface CreatePlayByPlayBody {
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  playerId?: number | null;
+  period: number;
+  clockSeconds: number;
+  eventText: string;
+  homeScore: number;
+  awayScore: number;
+  /** @nullable */
+  possessionTeamId?: number | null;
+  possessionEnded?: string;
+}
+
+export interface UpdatePlayByPlayBody {
+  eventText?: string;
+  homeScore?: number;
+  awayScore?: number;
+  /** @nullable */
+  possessionTeamId?: number | null;
+  possessionEnded?: string;
 }
 
 export interface StatEventResult {

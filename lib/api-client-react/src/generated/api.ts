@@ -19,6 +19,7 @@ import type {
 import type {
   BoxScore,
   CreateGameBody,
+  CreatePlayByPlayBody,
   CreatePlayerBody,
   CreateTeamBody,
   Game,
@@ -33,6 +34,7 @@ import type {
   Team,
   UpdateClockBody,
   UpdateGameBody,
+  UpdatePlayByPlayBody,
   UpdatePlayerBody,
   UpdateTeamBody,
 } from "./api.schemas";
@@ -864,6 +866,93 @@ export const useDeleteTeam = <
 };
 
 /**
+ * @summary List all players across both teams of a game
+ */
+export const getListGamePlayersUrl = (gameId: number) => {
+  return `/api/games/${gameId}/players`;
+};
+
+export const listGamePlayers = async (
+  gameId: number,
+  options?: RequestInit,
+): Promise<Player[]> => {
+  return customFetch<Player[]>(getListGamePlayersUrl(gameId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGamePlayersQueryKey = (gameId: number) => {
+  return [`/api/games/${gameId}/players`] as const;
+};
+
+export const getListGamePlayersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGamePlayers>>,
+  TError = ErrorType<unknown>,
+>(
+  gameId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGamePlayers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListGamePlayersQueryKey(gameId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listGamePlayers>>> = ({
+    signal,
+  }) => listGamePlayers(gameId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!gameId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGamePlayers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGamePlayersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGamePlayers>>
+>;
+export type ListGamePlayersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all players across both teams of a game
+ */
+
+export function useListGamePlayers<
+  TData = Awaited<ReturnType<typeof listGamePlayers>>,
+  TError = ErrorType<unknown>,
+>(
+  gameId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGamePlayers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGamePlayersQueryOptions(gameId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary List players on a team
  */
 export const getListPlayersUrl = (teamId: number) => {
@@ -1552,6 +1641,264 @@ export function useListPlayByPlay<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Insert a manual play-by-play entry (text-only, no stat event)
+ */
+export const getCreatePlayByPlayUrl = (gameId: number) => {
+  return `/api/games/${gameId}/play-by-play`;
+};
+
+export const createPlayByPlay = async (
+  gameId: number,
+  createPlayByPlayBody: CreatePlayByPlayBody,
+  options?: RequestInit,
+): Promise<PlayByPlayEntry> => {
+  return customFetch<PlayByPlayEntry>(getCreatePlayByPlayUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPlayByPlayBody),
+  });
+};
+
+export const getCreatePlayByPlayMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPlayByPlay>>,
+    TError,
+    { gameId: number; data: BodyType<CreatePlayByPlayBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPlayByPlay>>,
+  TError,
+  { gameId: number; data: BodyType<CreatePlayByPlayBody> },
+  TContext
+> => {
+  const mutationKey = ["createPlayByPlay"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPlayByPlay>>,
+    { gameId: number; data: BodyType<CreatePlayByPlayBody> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return createPlayByPlay(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePlayByPlayMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPlayByPlay>>
+>;
+export type CreatePlayByPlayMutationBody = BodyType<CreatePlayByPlayBody>;
+export type CreatePlayByPlayMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Insert a manual play-by-play entry (text-only, no stat event)
+ */
+export const useCreatePlayByPlay = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPlayByPlay>>,
+    TError,
+    { gameId: number; data: BodyType<CreatePlayByPlayBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPlayByPlay>>,
+  TError,
+  { gameId: number; data: BodyType<CreatePlayByPlayBody> },
+  TContext
+> => {
+  return useMutation(getCreatePlayByPlayMutationOptions(options));
+};
+
+/**
+ * @summary Edit a play-by-play entry's text or score line
+ */
+export const getUpdatePlayByPlayUrl = (pbpId: number) => {
+  return `/api/play-by-play/${pbpId}`;
+};
+
+export const updatePlayByPlay = async (
+  pbpId: number,
+  updatePlayByPlayBody: UpdatePlayByPlayBody,
+  options?: RequestInit,
+): Promise<PlayByPlayEntry> => {
+  return customFetch<PlayByPlayEntry>(getUpdatePlayByPlayUrl(pbpId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updatePlayByPlayBody),
+  });
+};
+
+export const getUpdatePlayByPlayMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePlayByPlay>>,
+    TError,
+    { pbpId: number; data: BodyType<UpdatePlayByPlayBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePlayByPlay>>,
+  TError,
+  { pbpId: number; data: BodyType<UpdatePlayByPlayBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePlayByPlay"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePlayByPlay>>,
+    { pbpId: number; data: BodyType<UpdatePlayByPlayBody> }
+  > = (props) => {
+    const { pbpId, data } = props ?? {};
+
+    return updatePlayByPlay(pbpId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePlayByPlayMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePlayByPlay>>
+>;
+export type UpdatePlayByPlayMutationBody = BodyType<UpdatePlayByPlayBody>;
+export type UpdatePlayByPlayMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Edit a play-by-play entry's text or score line
+ */
+export const useUpdatePlayByPlay = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePlayByPlay>>,
+    TError,
+    { pbpId: number; data: BodyType<UpdatePlayByPlayBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePlayByPlay>>,
+  TError,
+  { pbpId: number; data: BodyType<UpdatePlayByPlayBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePlayByPlayMutationOptions(options));
+};
+
+/**
+ * @summary Delete a play-by-play entry
+ */
+export const getDeletePlayByPlayUrl = (pbpId: number) => {
+  return `/api/play-by-play/${pbpId}`;
+};
+
+export const deletePlayByPlay = async (
+  pbpId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeletePlayByPlayUrl(pbpId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePlayByPlayMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePlayByPlay>>,
+    TError,
+    { pbpId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePlayByPlay>>,
+  TError,
+  { pbpId: number },
+  TContext
+> => {
+  const mutationKey = ["deletePlayByPlay"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePlayByPlay>>,
+    { pbpId: number }
+  > = (props) => {
+    const { pbpId } = props ?? {};
+
+    return deletePlayByPlay(pbpId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePlayByPlayMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePlayByPlay>>
+>;
+
+export type DeletePlayByPlayMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Delete a play-by-play entry
+ */
+export const useDeletePlayByPlay = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePlayByPlay>>,
+    TError,
+    { pbpId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePlayByPlay>>,
+  TError,
+  { pbpId: number },
+  TContext
+> => {
+  return useMutation(getDeletePlayByPlayMutationOptions(options));
+};
 
 /**
  * @summary Computed box score for a game

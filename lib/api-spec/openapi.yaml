@@ -189,6 +189,23 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /games/{gameId}/players:
+    get:
+      operationId: listGamePlayers
+      tags: [players]
+      summary: List all players across both teams of a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Players
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Player"
+
   /teams/{teamId}/players:
     get:
       operationId: listPlayers
@@ -324,6 +341,59 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PlayByPlayEntry"
+    post:
+      operationId: createPlayByPlay
+      tags: [pbp]
+      summary: Insert a manual play-by-play entry (text-only, no stat event)
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlayByPlayBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayByPlayEntry"
+
+  /play-by-play/{pbpId}:
+    patch:
+      operationId: updatePlayByPlay
+      tags: [pbp]
+      summary: Edit a play-by-play entry's text or score line
+      parameters:
+        - $ref: "#/components/parameters/PbpId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlayByPlayBody"
+      responses:
+        "200":
+          description: Updated entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayByPlayEntry"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deletePlayByPlay
+      tags: [pbp]
+      summary: Delete a play-by-play entry
+      parameters:
+        - $ref: "#/components/parameters/PbpId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /games/{gameId}/box-score:
     get:
@@ -411,6 +481,12 @@ components:
         type: integer
     StatEventId:
       name: statEventId
+      in: path
+      required: true
+      schema:
+        type: integer
+    PbpId:
+      name: pbpId
       in: path
       required: true
       schema:
@@ -700,6 +776,8 @@ components:
         - "pf"
         - "tf"
         - "flagrant"
+        - "plus"
+        - "minus"
         - "sub_in"
         - "sub_out"
         - "timeout"
@@ -805,6 +883,43 @@ components:
         - eventText
         - possessionEnded
         - createdAt
+
+    CreatePlayByPlayBody:
+      type: object
+      properties:
+        teamId:
+          type: ["integer", "null"]
+        playerId:
+          type: ["integer", "null"]
+        period:
+          type: integer
+        clockSeconds:
+          type: integer
+        eventText:
+          type: string
+        homeScore:
+          type: integer
+        awayScore:
+          type: integer
+        possessionTeamId:
+          type: ["integer", "null"]
+        possessionEnded:
+          type: string
+      required: [period, clockSeconds, eventText, homeScore, awayScore]
+
+    UpdatePlayByPlayBody:
+      type: object
+      properties:
+        eventText:
+          type: string
+        homeScore:
+          type: integer
+        awayScore:
+          type: integer
+        possessionTeamId:
+          type: ["integer", "null"]
+        possessionEnded:
+          type: string
 
     StatEventResult:
       type: object
