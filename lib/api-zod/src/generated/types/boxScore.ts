@@ -5,7 +5,10 @@
  * Swish Stats — basketball stat capture API
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamBoxScore } from "./teamBoxScore";
 
-export interface HealthStatus {
-  status: string;
+export interface BoxScore {
+  gameId: number;
+  home: TeamBoxScore;
+  away: TeamBoxScore;
 }
