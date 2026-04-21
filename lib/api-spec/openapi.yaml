@@ -3,20 +3,33 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Swish Stats — basketball stat capture API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: games
+    description: Game management
+  - name: teams
+    description: Team management
+  - name: players
+    description: Player management
+  - name: stats
+    description: Stat capture
+  - name: pbp
+    description: Play-by-play
+  - name: aggregates
+    description: Computed aggregates (box score, possessions)
+  - name: seed
+    description: Dev seed helpers
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +37,923 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /games:
+    get:
+      operationId: listGames
+      tags: [games]
+      summary: List all games
+      responses:
+        "200":
+          description: List of games
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Game"
+    post:
+      operationId: createGame
+      tags: [games]
+      summary: Create a new game
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGameBody"
+      responses:
+        "201":
+          description: Game created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+
+  /games/{gameId}:
+    get:
+      operationId: getGame
+      tags: [games]
+      summary: Get a single game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateGame
+      tags: [games]
+      summary: Update a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGameBody"
+      responses:
+        "200":
+          description: Updated game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteGame
+      tags: [games]
+      summary: Delete a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /games/{gameId}/teams:
+    get:
+      operationId: listTeams
+      tags: [teams]
+      summary: List teams in a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+    post:
+      operationId: createTeam
+      tags: [teams]
+      summary: Create a team for a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamBody"
+      responses:
+        "201":
+          description: Team created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+
+  /teams/{teamId}:
+    patch:
+      operationId: updateTeam
+      tags: [teams]
+      summary: Update a team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamBody"
+      responses:
+        "200":
+          description: Updated team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTeam
+      tags: [teams]
+      summary: Delete a team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /teams/{teamId}/players:
+    get:
+      operationId: listPlayers
+      tags: [players]
+      summary: List players on a team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Players
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Player"
+    post:
+      operationId: createPlayer
+      tags: [players]
+      summary: Create a player on a team
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlayerBody"
+      responses:
+        "201":
+          description: Player created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+
+  /players/{playerId}:
+    patch:
+      operationId: updatePlayer
+      tags: [players]
+      summary: Update a player
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlayerBody"
+      responses:
+        "200":
+          description: Updated player
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Player"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deletePlayer
+      tags: [players]
+      summary: Delete a player
+      parameters:
+        - $ref: "#/components/parameters/PlayerId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /games/{gameId}/stats:
+    get:
+      operationId: listStatEvents
+      tags: [stats]
+      summary: List all stat events for a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Stat events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StatEvent"
+    post:
+      operationId: recordStatEvent
+      tags: [stats]
+      summary: Record a stat event (also updates play-by-play and possession)
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordStatEventBody"
+      responses:
+        "201":
+          description: Stat event recorded with derived play-by-play row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatEventResult"
+
+  /stats/{statEventId}:
+    delete:
+      operationId: deleteStatEvent
+      tags: [stats]
+      summary: Undo a stat event (also removes its play-by-play row)
+      parameters:
+        - $ref: "#/components/parameters/StatEventId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /games/{gameId}/play-by-play:
+    get:
+      operationId: listPlayByPlay
+      tags: [pbp]
+      summary: Full play-by-play feed for a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Play-by-play entries (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlayByPlayEntry"
+
+  /games/{gameId}/box-score:
+    get:
+      operationId: getBoxScore
+      tags: [aggregates]
+      summary: Computed box score for a game
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Box score
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoxScore"
+
+  /games/{gameId}/possessions:
+    get:
+      operationId: getPossessions
+      tags: [aggregates]
+      summary: Possession counts per team
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      responses:
+        "200":
+          description: Possession counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PossessionSummary"
+
+  /games/{gameId}/clock:
+    patch:
+      operationId: updateClock
+      tags: [games]
+      summary: Update the live clock and current period
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClockBody"
+      responses:
+        "200":
+          description: Updated game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+
+  /seed:
+    post:
+      operationId: seedSampleGame
+      tags: [seed]
+      summary: Insert a sample game with two teams and rosters
+      responses:
+        "201":
+          description: Seeded game
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Game"
+
 components:
+  parameters:
+    GameId:
+      name: gameId
+      in: path
+      required: true
+      schema:
+        type: integer
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema:
+        type: integer
+    PlayerId:
+      name: playerId
+      in: path
+      required: true
+      schema:
+        type: integer
+    StatEventId:
+      name: statEventId
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    GameStatus:
+      type: string
+      enum: [setup, active, final]
+
+    CaptureMode:
+      type: string
+      enum: [simple, complex]
+
+    Game:
+      type: object
+      properties:
+        id:
+          type: integer
+        leagueId:
+          type: ["integer", "null"]
+        competition:
+          type: ["string", "null"]
+        date:
+          type: string
+          format: date-time
+        venue:
+          type: ["string", "null"]
+        status:
+          $ref: "#/components/schemas/GameStatus"
+        captureMode:
+          $ref: "#/components/schemas/CaptureMode"
+        periodCount:
+          type: integer
+        periodDurationMins:
+          type: integer
+        overtimeCount:
+          type: integer
+        currentPeriod:
+          type: integer
+        clockSeconds:
+          type: integer
+        possessionTeamId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - date
+        - status
+        - captureMode
+        - periodCount
+        - periodDurationMins
+        - overtimeCount
+        - currentPeriod
+        - clockSeconds
+        - createdAt
+        - updatedAt
+
+    CreateGameBody:
+      type: object
+      properties:
+        competition:
+          type: ["string", "null"]
+        date:
+          type: string
+          format: date-time
+        venue:
+          type: ["string", "null"]
+        captureMode:
+          $ref: "#/components/schemas/CaptureMode"
+        periodCount:
+          type: integer
+        periodDurationMins:
+          type: integer
+
+    UpdateGameBody:
+      type: object
+      properties:
+        competition:
+          type: ["string", "null"]
+        date:
+          type: string
+          format: date-time
+        venue:
+          type: ["string", "null"]
+        status:
+          $ref: "#/components/schemas/GameStatus"
+        captureMode:
+          $ref: "#/components/schemas/CaptureMode"
+        periodCount:
+          type: integer
+        periodDurationMins:
+          type: integer
+        overtimeCount:
+          type: integer
+        currentPeriod:
+          type: integer
+        clockSeconds:
+          type: integer
+        possessionTeamId:
+          type: ["integer", "null"]
+
+    UpdateClockBody:
+      type: object
+      properties:
+        clockSeconds:
+          type: integer
+        currentPeriod:
+          type: integer
+
+    Team:
+      type: object
+      properties:
+        id:
+          type: integer
+        gameId:
+          type: integer
+        name:
+          type: string
+        abbreviation:
+          type: string
+        colorPrimary:
+          type: string
+        colorSecondary:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        isHome:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - gameId
+        - name
+        - abbreviation
+        - colorPrimary
+        - colorSecondary
+        - isHome
+        - createdAt
+
+    CreateTeamBody:
+      type: object
+      properties:
+        name:
+          type: string
+        abbreviation:
+          type: string
+        colorPrimary:
+          type: string
+        colorSecondary:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        isHome:
+          type: boolean
+      required: [name, abbreviation, isHome]
+
+    UpdateTeamBody:
+      type: object
+      properties:
+        name:
+          type: string
+        abbreviation:
+          type: string
+        colorPrimary:
+          type: string
+        colorSecondary:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        isHome:
+          type: boolean
+
+    Player:
+      type: object
+      properties:
+        id:
+          type: integer
+        teamId:
+          type: integer
+        jerseyNumber:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        position:
+          type: ["string", "null"]
+        headshotUrl:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        isStarter:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - teamId
+        - jerseyNumber
+        - firstName
+        - lastName
+        - isActive
+        - isStarter
+        - createdAt
+
+    CreatePlayerBody:
+      type: object
+      properties:
+        jerseyNumber:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        position:
+          type: ["string", "null"]
+        headshotUrl:
+          type: ["string", "null"]
+        isStarter:
+          type: boolean
+      required: [jerseyNumber, firstName, lastName]
+
+    UpdatePlayerBody:
+      type: object
+      properties:
+        jerseyNumber:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        position:
+          type: ["string", "null"]
+        headshotUrl:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        isStarter:
+          type: boolean
+
+    StatEventType:
+      type: string
+      enum:
+        - "2ptm"
+        - "2pta"
+        - "2ptb"
+        - "3ptm"
+        - "3pta"
+        - "3ptb"
+        - "ftm"
+        - "fta"
+        - "oreb"
+        - "dreb"
+        - "ast"
+        - "stl"
+        - "tov"
+        - "blk"
+        - "pf"
+        - "tf"
+        - "flagrant"
+        - "sub_in"
+        - "sub_out"
+        - "timeout"
+        - "period_start"
+        - "period_end"
+        - "jump_ball"
+
+    StatEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        gameId:
+          type: integer
+        teamId:
+          type: ["integer", "null"]
+        playerId:
+          type: ["integer", "null"]
+        period:
+          type: integer
+        clockSeconds:
+          type: integer
+        eventType:
+          $ref: "#/components/schemas/StatEventType"
+        value:
+          type: integer
+        ftSequenceIndex:
+          type: ["integer", "null"]
+        ftSequenceTotal:
+          type: ["integer", "null"]
+        possessionTeamId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - gameId
+        - period
+        - clockSeconds
+        - eventType
+        - value
+        - createdAt
+
+    RecordStatEventBody:
+      type: object
+      properties:
+        teamId:
+          type: ["integer", "null"]
+        playerId:
+          type: ["integer", "null"]
+        period:
+          type: integer
+        clockSeconds:
+          type: integer
+        eventType:
+          $ref: "#/components/schemas/StatEventType"
+        value:
+          type: integer
+        ftSequenceIndex:
+          type: ["integer", "null"]
+        ftSequenceTotal:
+          type: ["integer", "null"]
+      required: [period, clockSeconds, eventType]
+
+    PlayByPlayEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        gameId:
+          type: integer
+        statEventId:
+          type: ["integer", "null"]
+        teamId:
+          type: ["integer", "null"]
+        playerId:
+          type: ["integer", "null"]
+        period:
+          type: integer
+        clockSeconds:
+          type: integer
+        possessionTeamId:
+          type: ["integer", "null"]
+        possessionEnded:
+          type: string
+        homeScore:
+          type: integer
+        awayScore:
+          type: integer
+        eventText:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - gameId
+        - period
+        - clockSeconds
+        - homeScore
+        - awayScore
+        - eventText
+        - possessionEnded
+        - createdAt
+
+    StatEventResult:
+      type: object
+      properties:
+        statEvent:
+          $ref: "#/components/schemas/StatEvent"
+        playByPlay:
+          $ref: "#/components/schemas/PlayByPlayEntry"
+        game:
+          $ref: "#/components/schemas/Game"
+      required: [statEvent, playByPlay, game]
+
+    PlayerStatLine:
+      type: object
+      properties:
+        playerId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        jerseyNumber:
+          type: string
+        teamId:
+          type: integer
+        points:
+          type: integer
+        fgMade:
+          type: integer
+        fgAttempted:
+          type: integer
+        twoPtMade:
+          type: integer
+        twoPtAttempted:
+          type: integer
+        threePtMade:
+          type: integer
+        threePtAttempted:
+          type: integer
+        ftMade:
+          type: integer
+        ftAttempted:
+          type: integer
+        offensiveRebounds:
+          type: integer
+        defensiveRebounds:
+          type: integer
+        totalRebounds:
+          type: integer
+        assists:
+          type: integer
+        steals:
+          type: integer
+        turnovers:
+          type: integer
+        blocks:
+          type: integer
+        personalFouls:
+          type: integer
+        technicalFouls:
+          type: integer
+        flagrantFouls:
+          type: integer
+      required:
+        - playerId
+        - firstName
+        - lastName
+        - jerseyNumber
+        - teamId
+        - points
+        - fgMade
+        - fgAttempted
+        - twoPtMade
+        - twoPtAttempted
+        - threePtMade
+        - threePtAttempted
+        - ftMade
+        - ftAttempted
+        - offensiveRebounds
+        - defensiveRebounds
+        - totalRebounds
+        - assists
+        - steals
+        - turnovers
+        - blocks
+        - personalFouls
+        - technicalFouls
+        - flagrantFouls
+
+    TeamBoxScore:
+      type: object
+      properties:
+        teamId:
+          type: integer
+        name:
+          type: string
+        abbreviation:
+          type: string
+        isHome:
+          type: boolean
+        totalPoints:
+          type: integer
+        possessions:
+          type: integer
+        players:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayerStatLine"
+        teamTotals:
+          $ref: "#/components/schemas/PlayerStatLine"
+      required:
+        - teamId
+        - name
+        - abbreviation
+        - isHome
+        - totalPoints
+        - possessions
+        - players
+        - teamTotals
+
+    BoxScore:
+      type: object
+      properties:
+        gameId:
+          type: integer
+        home:
+          $ref: "#/components/schemas/TeamBoxScore"
+        away:
+          $ref: "#/components/schemas/TeamBoxScore"
+      required: [gameId, home, away]
+
+    PossessionSummary:
+      type: object
+      properties:
+        gameId:
+          type: integer
+        currentPossessionTeamId:
+          type: ["integer", "null"]
+        homeTeamId:
+          type: integer
+        awayTeamId:
+          type: integer
+        homePossessions:
+          type: integer
+        awayPossessions:
+          type: integer
+      required:
+        - gameId
+        - homeTeamId
+        - awayTeamId
+        - homePossessions
+        - awayPossessions
