@@ -1,12 +1,16 @@
 import { defineConfig } from "drizzle-kit";
 import path from "path";
 
-const connectionString =
-  process.env.SUPABASE_DATABASE_URL ?? process.env.DATABASE_URL;
+const connectionString = process.env.SUPABASE_DATABASE_URL;
 
 if (!connectionString) {
   throw new Error(
-    "SUPABASE_DATABASE_URL (or DATABASE_URL) must be set, ensure the database is provisioned",
+    "SUPABASE_DATABASE_URL must be set to the Supabase Postgres connection string.",
+  );
+}
+if (!/^postgres(ql)?:\/\//i.test(connectionString)) {
+  throw new Error(
+    "SUPABASE_DATABASE_URL must start with postgresql:// — use Supabase 'Connection string → Transaction pooler'.",
   );
 }
 

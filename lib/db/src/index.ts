@@ -4,12 +4,16 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-const connectionString =
-  process.env.SUPABASE_DATABASE_URL ?? process.env.DATABASE_URL;
+const connectionString = process.env.SUPABASE_DATABASE_URL;
 
 if (!connectionString) {
   throw new Error(
-    "SUPABASE_DATABASE_URL (or DATABASE_URL) must be set. Did you forget to provision a database?",
+    "SUPABASE_DATABASE_URL must be set to a Postgres connection string (e.g. the Supabase Transaction Pooler URI starting with postgresql://).",
+  );
+}
+if (!/^postgres(ql)?:\/\//i.test(connectionString)) {
+  throw new Error(
+    "SUPABASE_DATABASE_URL must start with postgresql:// — got an unexpected value (looks like the HTTPS Project URL?). Use the Supabase 'Connection string → Transaction pooler' value.",
   );
 }
 
