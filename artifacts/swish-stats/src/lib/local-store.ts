@@ -264,6 +264,15 @@ export const store = {
       this.save(events);
       return event;
     },
+    update(id: number, patch: Partial<LSStatEvent>): LSStatEvent | null {
+      const events = this.list();
+      const idx = events.findIndex(e => e.id === id);
+      if (idx === -1) return null;
+      const next = { ...events[idx], ...patch };
+      events[idx] = next;
+      this.save(events);
+      return next;
+    },
     delete(id: number): boolean {
       const events = this.list();
       const idx = events.findIndex(e => e.id === id);

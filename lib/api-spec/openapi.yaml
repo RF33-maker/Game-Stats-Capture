@@ -313,6 +313,27 @@ paths:
                 $ref: "#/components/schemas/StatEventResult"
 
   /stats/{statEventId}:
+    patch:
+      operationId: updateStatEvent
+      tags: [stats]
+      summary: Edit a recorded stat event (corrects player, team, or event type) and rebuilds play-by-play
+      parameters:
+        - $ref: "#/components/parameters/StatEventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStatEventBody"
+      responses:
+        "200":
+          description: Updated stat event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatEvent"
+        "404":
+          $ref: "#/components/responses/NotFound"
     delete:
       operationId: deleteStatEvent
       tags: [stats]
@@ -842,6 +863,23 @@ components:
         ftSequenceTotal:
           type: ["integer", "null"]
       required: [period, clockSeconds, eventType]
+
+    UpdateStatEventBody:
+      type: object
+      description: Partial update — any field omitted is left unchanged.
+      properties:
+        teamId:
+          type: ["integer", "null"]
+        playerId:
+          type: ["integer", "null"]
+        eventType:
+          $ref: "#/components/schemas/StatEventType"
+        period:
+          type: integer
+        clockSeconds:
+          type: integer
+        value:
+          type: integer
 
     PlayByPlayEntry:
       type: object

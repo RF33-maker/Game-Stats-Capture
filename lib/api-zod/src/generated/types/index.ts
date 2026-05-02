@@ -31,4 +31,5 @@ export * from "./updateClockBody";
 export * from "./updateGameBody";
 export * from "./updatePlayByPlayBody";
 export * from "./updatePlayerBody";
+export * from "./updateStatEventBody";
 export * from "./updateTeamBody";

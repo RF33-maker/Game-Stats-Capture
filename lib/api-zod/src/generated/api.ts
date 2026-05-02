@@ -379,6 +379,93 @@ export const RecordStatEventBody = zod.object({
 });
 
 /**
+ * @summary Edit a recorded stat event (corrects player, team, or event type) and rebuilds play-by-play
+ */
+export const UpdateStatEventParams = zod.object({
+  statEventId: zod.coerce.number(),
+});
+
+export const UpdateStatEventBody = zod
+  .object({
+    teamId: zod.number().nullish(),
+    playerId: zod.number().nullish(),
+    eventType: zod
+      .enum([
+        "2ptm",
+        "2pta",
+        "2ptb",
+        "3ptm",
+        "3pta",
+        "3ptb",
+        "ftm",
+        "fta",
+        "oreb",
+        "dreb",
+        "ast",
+        "stl",
+        "tov",
+        "blk",
+        "pf",
+        "tf",
+        "flagrant",
+        "plus",
+        "minus",
+        "sub_in",
+        "sub_out",
+        "timeout",
+        "period_start",
+        "period_end",
+        "jump_ball",
+      ])
+      .optional(),
+    period: zod.number().optional(),
+    clockSeconds: zod.number().optional(),
+    value: zod.number().optional(),
+  })
+  .describe("Partial update — any field omitted is left unchanged.");
+
+export const UpdateStatEventResponse = zod.object({
+  id: zod.number(),
+  gameId: zod.number(),
+  teamId: zod.number().nullish(),
+  playerId: zod.number().nullish(),
+  period: zod.number(),
+  clockSeconds: zod.number(),
+  eventType: zod.enum([
+    "2ptm",
+    "2pta",
+    "2ptb",
+    "3ptm",
+    "3pta",
+    "3ptb",
+    "ftm",
+    "fta",
+    "oreb",
+    "dreb",
+    "ast",
+    "stl",
+    "tov",
+    "blk",
+    "pf",
+    "tf",
+    "flagrant",
+    "plus",
+    "minus",
+    "sub_in",
+    "sub_out",
+    "timeout",
+    "period_start",
+    "period_end",
+    "jump_ball",
+  ]),
+  value: zod.number(),
+  ftSequenceIndex: zod.number().nullish(),
+  ftSequenceTotal: zod.number().nullish(),
+  possessionTeamId: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
  * @summary Undo a stat event (also removes its play-by-play row)
  */
 export const DeleteStatEventParams = zod.object({

@@ -16,6 +16,8 @@ import {
   ListStatEventsParams,
   ListStatEventsResponse,
   DeleteStatEventParams,
+  UpdateStatEventBody,
+  UpdateStatEventParams,
 } from "@workspace/api-zod";
 import {
   computePossessionEffect,
@@ -190,6 +192,111 @@ router.post("/games/:gameId/stats", async (req, res): Promise<void> => {
     });
 
     res.status(201).json(result);
+  } catch (err) {
+    if (err instanceof HttpError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+router.patch("/stats/:statEventId", async (req, res): Promise<void> => {
+  const params = UpdateStatEventParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = UpdateStatEventBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const statEventId = params.data.statEventId;
+
+  try {
+    const updated = await db.transaction(async (tx) => {
+      const [target] = await tx
+        .select()
+        .from(statEventsTable)
+        .where(eq(statEventsTable.id, statEventId));
+      if (!target) {
+        throw new HttpError(404, "Stat event not found");
+      }
+      const gameId = target.gameId;
+
+      const teams = await tx
+        .select()
+        .from(teamsTable)
+        .where(eq(teamsTable.gameId, gameId));
+
+      // Validate teamId if provided (must belong to this game).
+      if (parsed.data.teamId !== undefined && parsed.data.teamId !== null) {
+        const t = teams.find((x) => x.id === parsed.data.teamId);
+        if (!t) {
+          throw new HttpError(400, "teamId does not belong to this game");
+        }
+      }
+
+      // Compute the effective post-patch state and validate it as a whole,
+      // so that changing only teamId still re-checks the existing playerId.
+      const effectiveTeamId =
+        parsed.data.teamId !== undefined ? parsed.data.teamId : target.teamId;
+      const effectivePlayerId =
+        parsed.data.playerId !== undefined
+          ? parsed.data.playerId
+          : target.playerId;
+
+      if (effectivePlayerId != null) {
+        const [p] = await tx
+          .select()
+          .from(playersTable)
+          .where(eq(playersTable.id, effectivePlayerId));
+        if (!p) {
+          throw new HttpError(404, "Player not found");
+        }
+        const playerTeam = teams.find((x) => x.id === p.teamId);
+        if (!playerTeam) {
+          throw new HttpError(400, "Player does not belong to this game");
+        }
+        if (effectiveTeamId == null) {
+          throw new HttpError(
+            400,
+            "Cannot clear teamId while a player is still assigned",
+          );
+        }
+        if (p.teamId !== effectiveTeamId) {
+          throw new HttpError(
+            400,
+            "Player does not belong to the given team",
+          );
+        }
+      }
+
+      const updates: Partial<typeof statEventsTable.$inferInsert> = {};
+      if (parsed.data.teamId !== undefined) updates.teamId = parsed.data.teamId;
+      if (parsed.data.playerId !== undefined)
+        updates.playerId = parsed.data.playerId;
+      if (parsed.data.eventType !== undefined)
+        updates.eventType = parsed.data.eventType as StatEventType;
+      if (parsed.data.period !== undefined) updates.period = parsed.data.period;
+      if (parsed.data.clockSeconds !== undefined)
+        updates.clockSeconds = parsed.data.clockSeconds;
+      if (parsed.data.value !== undefined) updates.value = parsed.data.value;
+
+      const [next] = await tx
+        .update(statEventsTable)
+        .set(updates)
+        .where(eq(statEventsTable.id, statEventId))
+        .returning();
+
+      // Rebuild pbp + scores + possession for the whole game.
+      await rebuildPlayByPlay(tx, gameId);
+
+      return next;
+    });
+
+    res.json(updated);
   } catch (err) {
     if (err instanceof HttpError) {
       res.status(err.status).json({ error: err.message });

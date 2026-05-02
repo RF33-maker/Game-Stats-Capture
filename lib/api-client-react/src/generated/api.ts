@@ -36,6 +36,7 @@ import type {
   UpdateGameBody,
   UpdatePlayByPlayBody,
   UpdatePlayerBody,
+  UpdateStatEventBody,
   UpdateTeamBody,
 } from "./api.schemas";
 
@@ -1469,6 +1470,93 @@ export const useRecordStatEvent = <
   TContext
 > => {
   return useMutation(getRecordStatEventMutationOptions(options));
+};
+
+/**
+ * @summary Edit a recorded stat event (corrects player, team, or event type) and rebuilds play-by-play
+ */
+export const getUpdateStatEventUrl = (statEventId: number) => {
+  return `/api/stats/${statEventId}`;
+};
+
+export const updateStatEvent = async (
+  statEventId: number,
+  updateStatEventBody: UpdateStatEventBody,
+  options?: RequestInit,
+): Promise<StatEvent> => {
+  return customFetch<StatEvent>(getUpdateStatEventUrl(statEventId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateStatEventBody),
+  });
+};
+
+export const getUpdateStatEventMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateStatEvent>>,
+    TError,
+    { statEventId: number; data: BodyType<UpdateStatEventBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateStatEvent>>,
+  TError,
+  { statEventId: number; data: BodyType<UpdateStatEventBody> },
+  TContext
+> => {
+  const mutationKey = ["updateStatEvent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateStatEvent>>,
+    { statEventId: number; data: BodyType<UpdateStatEventBody> }
+  > = (props) => {
+    const { statEventId, data } = props ?? {};
+
+    return updateStatEvent(statEventId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateStatEventMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateStatEvent>>
+>;
+export type UpdateStatEventMutationBody = BodyType<UpdateStatEventBody>;
+export type UpdateStatEventMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Edit a recorded stat event (corrects player, team, or event type) and rebuilds play-by-play
+ */
+export const useUpdateStatEvent = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateStatEvent>>,
+    TError,
+    { statEventId: number; data: BodyType<UpdateStatEventBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateStatEvent>>,
+  TError,
+  { statEventId: number; data: BodyType<UpdateStatEventBody> },
+  TContext
+> => {
+  return useMutation(getUpdateStatEventMutationOptions(options));
 };
 
 /**

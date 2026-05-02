@@ -9,6 +9,7 @@ import {
   useGetPossessions,
   useRecordStatEvent,
   useDeleteStatEvent,
+  useUpdateStatEvent,
   useUpdateClock,
   useUpdateGame,
   useListStatEvents,
@@ -19,15 +20,15 @@ import {
   getGetBoxScoreQueryKey,
   getGetPossessionsQueryKey,
   getListStatEventsQueryKey,
-  Player,
-  Team,
+  PlayByPlayEntry,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ChevronLeft, ChevronRight, Activity, ArrowLeft, ArrowRight, BarChart2 } from "lucide-react";
+import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function GameCapture() {
   const [, params] = useRoute("/game/:gameId");
@@ -39,6 +40,8 @@ export default function GameCapture() {
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
   const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
+  const [editPbp, setEditPbp] = useState<PlayByPlayEntry | null>(null);
+  const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null });
 
   // Data fetching
   const { data: game, isLoading: gameLoading } = useGetGame(gameId, { query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) } });
@@ -52,6 +55,7 @@ export default function GameCapture() {
   // Mutations
   const recordStat = useRecordStatEvent();
   const deleteStat = useDeleteStatEvent();
+  const updateStat = useUpdateStatEvent();
   const updateClock = useUpdateClock();
   const updateGame = useUpdateGame();
 
@@ -247,6 +251,66 @@ export default function GameCapture() {
       setIsRunning(true);
     } catch {
       toast.error("Failed to start period");
+    }
+  };
+
+  const openEditPbp = (entry: PlayByPlayEntry) => {
+    if (entry.statEventId == null) {
+      toast.error("This entry can't be edited");
+      return;
+    }
+    const ev = statEvents?.find(e => e.id === entry.statEventId);
+    if (!ev) {
+      toast.error("Original event not found");
+      return;
+    }
+    setEditPbp(entry);
+    setEditForm({
+      eventType: ev.eventType as StatEventType,
+      teamId: ev.teamId ?? null,
+      playerId: ev.playerId ?? null,
+    });
+  };
+
+  const closeEditPbp = () => {
+    setEditPbp(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editPbp || editPbp.statEventId == null) return;
+    // Auto-normalize: structural events should not carry a team/player.
+    const structural = new Set<StatEventType>([
+      'period_start' as StatEventType,
+      'period_end' as StatEventType,
+      'jump_ball' as StatEventType,
+    ]);
+    const isStructural = structural.has(editForm.eventType);
+    try {
+      await updateStat.mutateAsync({
+        statEventId: editPbp.statEventId,
+        data: {
+          eventType: editForm.eventType,
+          teamId: isStructural ? null : editForm.teamId,
+          playerId: isStructural ? null : editForm.playerId,
+        },
+      });
+      invalidateData();
+      toast.success("Play updated");
+      closeEditPbp();
+    } catch {
+      toast.error("Failed to update play");
+    }
+  };
+
+  const handleDeletePbp = async () => {
+    if (!editPbp || editPbp.statEventId == null) return;
+    try {
+      await deleteStat.mutateAsync({ statEventId: editPbp.statEventId });
+      invalidateData();
+      toast.success("Play deleted");
+      closeEditPbp();
+    } catch {
+      toast.error("Failed to delete play");
     }
   };
 
@@ -466,8 +530,15 @@ export default function GameCapture() {
           <div className="flex-1 overflow-auto p-2 space-y-1">
             {pbp?.map(entry => {
               const t = entry.teamId ? teams.find(x => x.id === entry.teamId) : null;
+              const editable = entry.statEventId != null;
               return (
-                <div key={entry.id} className="text-sm p-3 bg-zinc-950/50 rounded flex items-start gap-3 border border-white/5">
+                <button
+                  key={entry.id}
+                  type="button"
+                  disabled={!editable}
+                  onClick={() => openEditPbp(entry)}
+                  className={`w-full text-left text-sm p-3 bg-zinc-950/50 rounded flex items-start gap-3 border border-white/5 group ${editable ? 'hover:bg-zinc-800/60 hover:border-amber-500/40 cursor-pointer' : 'opacity-70 cursor-default'}`}
+                >
                   <div className="text-xs font-mono text-zinc-500 shrink-0 w-12 text-right pt-0.5">
                     {formatClock(entry.clockSeconds)}
                   </div>
@@ -482,7 +553,10 @@ export default function GameCapture() {
                       {entry.eventText}
                     </div>
                   </div>
-                </div>
+                  {editable && (
+                    <Pencil className="w-3.5 h-3.5 text-zinc-600 group-hover:text-amber-400 shrink-0 mt-0.5" />
+                  )}
+                </button>
               );
             })}
           </div>
@@ -497,6 +571,139 @@ export default function GameCapture() {
           </div>
         </div>
       </div>
+
+      <Dialog open={!!editPbp} onOpenChange={(open) => !open && closeEditPbp()}>
+        <DialogContent className="bg-zinc-900 text-white border-zinc-800 sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
+              Edit play
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Correct the event type, team, or player for this play.
+            </DialogDescription>
+          </DialogHeader>
+          {editPbp && (() => {
+            const allEventTypes: StatEventType[] = (game.captureMode === 'complex' ? complexStats : simpleStats).map(s => s.type as StatEventType);
+            const eventTypeOptions: { value: StatEventType; label: string }[] = [
+              ...allEventTypes.map(t => ({ value: t, label: (statButtons.find(b => b.type === t)?.label ?? t) })),
+              { value: 'flagrant' as StatEventType, label: 'FLAGRANT' },
+              { value: 'sub_in' as StatEventType, label: 'SUB IN' },
+              { value: 'sub_out' as StatEventType, label: 'SUB OUT' },
+              { value: 'timeout' as StatEventType, label: 'TIMEOUT' },
+              { value: 'jump_ball' as StatEventType, label: 'JUMP BALL' },
+              { value: 'period_start' as StatEventType, label: 'PERIOD START' },
+              { value: 'period_end' as StatEventType, label: 'PERIOD END' },
+            ].filter((opt, i, arr) => arr.findIndex(o => o.value === opt.value) === i);
+
+            const currentTeam = editForm.teamId ? teams.find(t => t.id === editForm.teamId) : null;
+            const eligiblePlayers = editForm.teamId
+              ? players.filter(p => p.teamId === editForm.teamId)
+              : [];
+            return (
+              <div className="space-y-4 mt-2">
+                <div className="text-xs text-zinc-500 font-mono">
+                  Q{editPbp.period} • {formatClock(editPbp.clockSeconds)}
+                </div>
+                <div className="text-sm text-zinc-300 bg-zinc-950 rounded p-3 border border-zinc-800">
+                  Currently: {editPbp.eventText}
+                </div>
+
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Event type</div>
+                  <Select
+                    value={editForm.eventType}
+                    onValueChange={(v) => setEditForm({ ...editForm, eventType: v as StatEventType })}
+                  >
+                    <SelectTrigger className="bg-zinc-950 border-zinc-700 text-white h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-700 text-white">
+                      {eventTypeOptions.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value} className="focus:bg-zinc-800 focus:text-white">
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Team</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: null, label: 'NONE', color: '#71717a' },
+                      { id: awayTeam.id, label: awayTeam.abbreviation, color: awayTeam.colorPrimary },
+                      { id: homeTeam.id, label: homeTeam.abbreviation, color: homeTeam.colorPrimary },
+                    ].map(opt => {
+                      const selected = editForm.teamId === opt.id;
+                      return (
+                        <button
+                          key={String(opt.id)}
+                          type="button"
+                          onClick={() => setEditForm({ ...editForm, teamId: opt.id, playerId: opt.id === editForm.teamId ? editForm.playerId : null })}
+                          className={`h-10 rounded font-black text-sm tracking-tighter border-2 transition ${selected ? 'border-white bg-zinc-800' : 'border-zinc-700 bg-zinc-950 hover:bg-zinc-800'}`}
+                          style={{ color: opt.color }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
+                    Player {currentTeam ? `(${currentTeam.abbreviation})` : ''}
+                  </div>
+                  <Select
+                    value={editForm.playerId == null ? 'none' : String(editForm.playerId)}
+                    onValueChange={(v) => setEditForm({ ...editForm, playerId: v === 'none' ? null : Number(v) })}
+                    disabled={editForm.teamId == null}
+                  >
+                    <SelectTrigger className="bg-zinc-950 border-zinc-700 text-white h-10 disabled:opacity-50">
+                      <SelectValue placeholder={editForm.teamId == null ? 'Select a team first' : 'No player'} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-700 text-white">
+                      <SelectItem value="none" className="focus:bg-zinc-800 focus:text-white">No player</SelectItem>
+                      {eligiblePlayers.map(p => (
+                        <SelectItem key={p.id} value={String(p.id)} className="focus:bg-zinc-800 focus:text-white">
+                          #{p.jerseyNumber} {p.firstName} {p.lastName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter className="gap-2 sm:gap-2 mt-4">
+            <Button
+              variant="outline"
+              className="bg-red-950/40 border-red-900 hover:bg-red-900 hover:text-white text-red-300"
+              onClick={handleDeletePbp}
+              disabled={updateStat.isPending || deleteStat.isPending}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Delete
+            </Button>
+            <div className="flex-1" />
+            <Button
+              variant="outline"
+              className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
+              onClick={closeEditPbp}
+              disabled={updateStat.isPending || deleteStat.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              onClick={handleSaveEdit}
+              disabled={updateStat.isPending || deleteStat.isPending}
+            >
+              {updateStat.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={ftDialog.open} onOpenChange={(open) => !open && setFtDialog({ open: false })}>
         <DialogContent className="bg-zinc-900 text-white border-zinc-800 sm:max-w-[400px]">

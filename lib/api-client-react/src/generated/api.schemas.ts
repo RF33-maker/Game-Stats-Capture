@@ -219,6 +219,20 @@ export interface RecordStatEventBody {
   ftSequenceTotal?: number | null;
 }
 
+/**
+ * Partial update — any field omitted is left unchanged.
+ */
+export interface UpdateStatEventBody {
+  /** @nullable */
+  teamId?: number | null;
+  /** @nullable */
+  playerId?: number | null;
+  eventType?: StatEventType;
+  period?: number;
+  clockSeconds?: number;
+  value?: number;
+}
+
 export interface PlayByPlayEntry {
   id: number;
   gameId: number;

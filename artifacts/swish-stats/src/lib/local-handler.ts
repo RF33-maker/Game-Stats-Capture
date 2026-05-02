@@ -684,6 +684,64 @@ export async function handleLocalRequest(
     return ok({ statEvent, playByPlay: pbp, game: updatedGame }, 201);
   }
 
+  // Update stat event (correct an existing PBP entry)
+  match = pathname.match(/^\/api\/stats\/(\d+)$/);
+  if ((m === "PATCH" || m === "PUT") && match) {
+    const statEventId = Number(match[1]);
+    const target = store.statEvents.get(statEventId);
+    if (!target) return notFound("Stat event not found");
+
+    const data = (body ?? {}) as Partial<{
+      teamId: number | null;
+      playerId: number | null;
+      eventType: string;
+      period: number;
+      clockSeconds: number;
+      value: number;
+    }>;
+
+    const teams = store.teams.forGame(target.gameId);
+
+    if (data.teamId !== undefined && data.teamId !== null) {
+      if (!teams.some(t => t.id === data.teamId)) {
+        return badRequest("teamId does not belong to this game");
+      }
+    }
+
+    // Validate the effective post-patch state, so that changing teamId alone
+    // still re-checks the existing playerId.
+    const effectiveTeamId = data.teamId !== undefined ? data.teamId : target.teamId;
+    const effectivePlayerId = data.playerId !== undefined ? data.playerId : target.playerId;
+
+    if (effectivePlayerId != null) {
+      const p = store.players.get(effectivePlayerId);
+      if (!p) return notFound("Player not found");
+      if (!teams.some(t => t.id === p.teamId)) {
+        return badRequest("Player does not belong to this game");
+      }
+      if (effectiveTeamId == null) {
+        return badRequest("Cannot clear teamId while a player is still assigned");
+      }
+      if (p.teamId !== effectiveTeamId) {
+        return badRequest("Player does not belong to the given team");
+      }
+    }
+
+    const patch: Partial<LSStatEvent> = {};
+    if (data.teamId !== undefined) patch.teamId = data.teamId;
+    if (data.playerId !== undefined) patch.playerId = data.playerId;
+    if (data.eventType !== undefined) patch.eventType = data.eventType;
+    if (data.period !== undefined) patch.period = data.period;
+    if (data.clockSeconds !== undefined) patch.clockSeconds = data.clockSeconds;
+    if (data.value !== undefined) patch.value = data.value;
+
+    const updated = store.statEvents.update(statEventId, patch);
+    if (!updated) return notFound("Stat event not found");
+
+    rebuildPlayByPlay(target.gameId);
+    return ok(updated);
+  }
+
   // Delete stat event
   match = pathname.match(/^\/api\/stats\/(\d+)$/);
   if (m === "DELETE" && match) {
