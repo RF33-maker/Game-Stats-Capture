@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useRoute, Link } from "wouter";
+import { useRoute, Link, useLocation } from "wouter";
 import { 
   useGetGame, 
   useListTeams, 
@@ -20,10 +20,11 @@ import {
   getGetBoxScoreQueryKey,
   getGetPossessionsQueryKey,
   getListStatEventsQueryKey,
+  getListGamesQueryKey,
   PlayByPlayEntry,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2 } from "lucide-react";
+import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -34,6 +35,7 @@ export default function GameCapture() {
   const [, params] = useRoute("/game/:gameId");
   const gameId = Number(params?.gameId);
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
@@ -42,6 +44,7 @@ export default function GameCapture() {
   const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
   const [editPbp, setEditPbp] = useState<PlayByPlayEntry | null>(null);
   const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null });
+  const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false);
 
   // Data fetching
   const { data: game, isLoading: gameLoading } = useGetGame(gameId, { query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) } });
@@ -109,6 +112,32 @@ export default function GameCapture() {
   }
 
   if (!game || !homeTeam || !awayTeam || !players) return null;
+
+  if (game.status === 'final') {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-zinc-950 text-white">
+        <div className="text-center space-y-6 p-8 max-w-sm">
+          <div className="text-6xl">🏀</div>
+          <div>
+            <h1 className="text-2xl font-black uppercase tracking-tighter mb-2">Game Finalized</h1>
+            <p className="text-zinc-400 text-sm">This game has already been finalized and is locked for editing.</p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <Link href={`/game/${gameId}/box`}>
+              <Button className="w-full bg-blue-600 hover:bg-blue-700 font-bold">
+                <BarChart2 className="w-4 h-4 mr-2" /> View Box Score
+              </Button>
+            </Link>
+            <Link href="/">
+              <Button variant="outline" className="w-full border-zinc-700 bg-zinc-900 hover:bg-zinc-800">
+                <Home className="w-4 h-4 mr-2" /> Back to Home
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Compute on-court 5 based on starters + substitutions
   const getOnCourtPlayers = (teamId: number) => {
@@ -314,6 +343,20 @@ export default function GameCapture() {
     }
   };
 
+  const handleFinalizeGame = async () => {
+    setFinalizeDialogOpen(false);
+    setIsRunning(false);
+    try {
+      await updateGame.mutateAsync({ gameId, data: { status: 'final' } });
+      queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
+      queryClient.invalidateQueries({ queryKey: getListGamesQueryKey() });
+      toast.success("Game finalized!");
+      setLocation(`/game/${gameId}/box`);
+    } catch {
+      toast.error("Failed to finalize game. Please try again.");
+    }
+  };
+
   const formatClock = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -362,6 +405,16 @@ export default function GameCapture() {
       {/* Top Header Scoreboard */}
       <header className="h-16 border-b border-white/10 bg-zinc-900 flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center w-1/3 gap-4">
+          <Link href="/">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 text-zinc-400 hover:text-white hover:bg-zinc-800 shrink-0"
+              title="Back to home (does not finalize)"
+            >
+              <Home className="w-5 h-5" />
+            </Button>
+          </Link>
           <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: awayTeam.colorPrimary }}>
             {awayTeam.abbreviation}
           </div>
@@ -564,9 +617,16 @@ export default function GameCapture() {
           <div className="p-4 bg-zinc-950 border-t border-white/10">
             <Button 
               className="w-full font-bold bg-blue-600 hover:bg-blue-700" 
-              onClick={() => updateGame.mutate({ gameId, data: { status: 'final' } })}
+              onClick={() => setFinalizeDialogOpen(true)}
+              disabled={updateGame.isPending}
             >
-              FINALIZE GAME
+              {updateGame.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> FINALIZING...
+                </>
+              ) : (
+                'FINALIZE GAME'
+              )}
             </Button>
           </div>
         </div>
@@ -700,6 +760,42 @@ export default function GameCapture() {
               disabled={updateStat.isPending || deleteStat.isPending}
             >
               {updateStat.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={finalizeDialogOpen} onOpenChange={(open) => !updateGame.isPending && setFinalizeDialogOpen(open)}>
+        <DialogContent className="bg-zinc-900 text-white border-zinc-800 sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
+              Finalize this game?
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              This locks the game and stops all stat capture. You won't be able to record or edit any more plays. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2 mt-4">
+            <Button
+              variant="outline"
+              className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700"
+              onClick={() => setFinalizeDialogOpen(false)}
+              disabled={updateGame.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 font-bold"
+              onClick={handleFinalizeGame}
+              disabled={updateGame.isPending}
+            >
+              {updateGame.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Finalizing...
+                </>
+              ) : (
+                'Yes, finalize game'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

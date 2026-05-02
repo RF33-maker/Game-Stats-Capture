@@ -109,7 +109,11 @@ export default function Home() {
                     <div className="text-sm">
                       {game.captureMode} • {game.periodCount}x{game.periodDurationMins}
                     </div>
-                    <Link href={game.status === 'setup' ? `/setup/${game.id}/info` : `/game/${game.id}`}>
+                    <Link href={
+                      game.status === 'setup' ? `/setup/${game.id}/info`
+                      : game.status === 'final' ? `/game/${game.id}/box`
+                      : `/game/${game.id}`
+                    }>
                       <Button size="sm" variant={game.status === 'final' ? 'secondary' : 'default'}>
                         {game.status === 'setup' ? 'Setup' : game.status === 'final' ? 'Box Score' : 'Capture'}
                         <Play className="w-4 h-4 ml-2" />
