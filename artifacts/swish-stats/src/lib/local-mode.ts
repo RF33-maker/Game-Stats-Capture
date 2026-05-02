@@ -1,5 +1,6 @@
 import { handleLocalRequest } from "./local-handler";
 import { store } from "./local-store";
+import { enqueueIfMutation, initLocalSync } from "./local-sync";
 
 export const LOCAL_MODE_ENABLED = import.meta.env.VITE_LOCAL_MODE !== "false";
 
@@ -51,6 +52,16 @@ export function installLocalFetchInterceptor() {
 
     const result = await handleLocalRequest(method, path, body);
 
+    // Mirror successful mutations into the offline sync queue so they can be
+    // flushed to the real server once a connection is available.
+    enqueueIfMutation({
+      method,
+      path,
+      body,
+      responseStatus: result.status,
+      responseBody: result.body,
+    });
+
     const responseBody = result.body == null ? null : JSON.stringify(result.body);
     const headers: HeadersInit = { "Content-Type": "application/json" };
 
@@ -59,4 +70,7 @@ export function installLocalFetchInterceptor() {
       headers,
     });
   };
+
+  // Set up online/offline detection and queue draining.
+  initLocalSync();
 }

@@ -92,16 +92,35 @@ export type LSPlayByPlay = {
   createdAt: string;
 };
 
+export type SyncEntityKind = "game" | "team" | "player" | "statEvent";
+
+export type SyncQueueItem = {
+  id: number;
+  method: "POST" | "PUT" | "PATCH" | "DELETE";
+  path: string;
+  body: unknown;
+  entity: SyncEntityKind | null;
+  localId: number | null;
+  status: "pending" | "syncing" | "synced" | "failed";
+  attempts: number;
+  lastError: string | null;
+  createdAt: string;
+  syncedAt: string | null;
+};
+
+export type IdMap = Record<string, number>;
+
 type Counters = {
   game: number;
   team: number;
   player: number;
   statEvent: number;
   pbp: number;
+  syncQueue: number;
 };
 
 function getCounters(): Counters {
-  return load<Counters>("counters", { game: 0, team: 0, player: 0, statEvent: 0, pbp: 0 });
+  return load<Counters>("counters", { game: 0, team: 0, player: 0, statEvent: 0, pbp: 0, syncQueue: 0 });
 }
 
 function saveCounters(c: Counters) {
@@ -134,6 +153,64 @@ export const store = {
   reset() {
     const allKeys = Object.keys(localStorage).filter(k => k.startsWith(NS));
     allKeys.forEach(k => localStorage.removeItem(k));
+  },
+
+  syncQueue: {
+    list(): SyncQueueItem[] { return load<SyncQueueItem[]>("syncQueue", []); },
+    save(items: SyncQueueItem[]) { save("syncQueue", items); },
+    pendingCount(): number {
+      return this.list().filter(i => i.status === "pending" || i.status === "failed").length;
+    },
+    nextPending(): SyncQueueItem | null {
+      // Drain in insertion order to preserve causality (e.g. create game before its teams)
+      const items = this.list();
+      const sorted = items.slice().sort((a, b) => a.id - b.id);
+      return sorted.find(i => i.status === "pending" || i.status === "failed") ?? null;
+    },
+    enqueue(input: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "attempts" | "lastError" | "syncedAt">): SyncQueueItem {
+      const id = nextId("syncQueue");
+      const item: SyncQueueItem = {
+        ...input,
+        id,
+        status: "pending",
+        attempts: 0,
+        lastError: null,
+        createdAt: new Date().toISOString(),
+        syncedAt: null,
+      };
+      const items = this.list();
+      items.push(item);
+      this.save(items);
+      return item;
+    },
+    update(id: number, data: Partial<SyncQueueItem>) {
+      const items = this.list();
+      const idx = items.findIndex(i => i.id === id);
+      if (idx === -1) return null;
+      items[idx] = { ...items[idx], ...data, id };
+      this.save(items);
+      return items[idx];
+    },
+    clearSynced() {
+      const items = this.list().filter(i => i.status !== "synced");
+      this.save(items);
+    },
+  },
+
+  idMap: {
+    get(kind: SyncEntityKind): IdMap {
+      return load<IdMap>(`idMap:${kind}`, {});
+    },
+    set(kind: SyncEntityKind, localId: number, remoteId: number) {
+      const map = this.get(kind);
+      map[String(localId)] = remoteId;
+      save(`idMap:${kind}`, map);
+    },
+    translate(kind: SyncEntityKind, localId: number): number | null {
+      const map = this.get(kind);
+      const remote = map[String(localId)];
+      return typeof remote === "number" ? remote : null;
+    },
   },
 
   games: {
