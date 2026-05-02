@@ -68,6 +68,7 @@ export default function GameCapture() {
   // Timer
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncRef = useRef<number>(Date.now());
+  const transitioningRef = useRef<boolean>(false);
   
   useEffect(() => {
     if (isRunning) {
@@ -75,7 +76,7 @@ export default function GameCapture() {
         setLocalClock(prev => Math.max(0, prev - 1));
         
         // Sync every 5 seconds
-        if (Date.now() - lastSyncRef.current > 5000) {
+        if (Date.now() - lastSyncRef.current > 5000 && !transitioningRef.current) {
           updateClock.mutate({ 
             gameId, 
             data: { clockSeconds: localClock, currentPeriod: game?.currentPeriod } 
@@ -85,8 +86,9 @@ export default function GameCapture() {
       }, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
-      // Final sync on pause
-      if (game && localClock !== game.clockSeconds) {
+      // Final sync on pause — but skip if we're in the middle of a period transition
+      // because handleEndPeriod will issue its own authoritative clock+period write.
+      if (game && localClock !== game.clockSeconds && !transitioningRef.current) {
         updateClock.mutate({ 
           gameId, 
           data: { clockSeconds: localClock, currentPeriod: game.currentPeriod } 
@@ -177,6 +179,74 @@ export default function GameCapture() {
       invalidateData();
     } catch {
       toast.error("Failed to undo");
+    }
+  };
+
+  const handleEndPeriod = async () => {
+    if (!game) return;
+    // Mark that we're transitioning BEFORE pausing the clock so the timer
+    // useEffect's pause-sync branch skips its competing write.
+    transitioningRef.current = true;
+    setIsRunning(false);
+    try {
+      await recordStat.mutateAsync({
+        gameId,
+        data: {
+          teamId: null,
+          playerId: null,
+          period: game.currentPeriod,
+          clockSeconds: 0,
+          eventType: 'period_end' as StatEventType,
+          value: 0,
+        },
+      });
+
+      const isLastRegPeriod = game.currentPeriod >= game.periodCount;
+      const nextPeriod = game.currentPeriod + 1;
+      const nextDurationSec = (isLastRegPeriod ? 5 : game.periodDurationMins) * 60;
+
+      await updateClock.mutateAsync({
+        gameId,
+        data: {
+          currentPeriod: nextPeriod,
+          clockSeconds: nextDurationSec,
+        },
+      });
+
+      setLocalClock(nextDurationSec);
+      setSelectedPlayerId(null);
+      setSelectedTeamId(null);
+      invalidateData();
+
+      const label = isLastRegPeriod
+        ? `OT${nextPeriod - game.periodCount}`
+        : `Q${nextPeriod}`;
+      toast.success(`Period ended — advanced to ${label}`);
+    } catch {
+      toast.error("Failed to end period");
+    } finally {
+      transitioningRef.current = false;
+    }
+  };
+
+  const handleStartPeriod = async () => {
+    if (!game) return;
+    try {
+      await recordStat.mutateAsync({
+        gameId,
+        data: {
+          teamId: null,
+          playerId: null,
+          period: game.currentPeriod,
+          clockSeconds: localClock,
+          eventType: 'period_start' as StatEventType,
+          value: 0,
+        },
+      });
+      invalidateData();
+      setIsRunning(true);
+    } catch {
+      toast.error("Failed to start period");
     }
   };
 
@@ -361,14 +431,14 @@ export default function GameCapture() {
               <Button 
                 variant="outline" 
                 className="flex-1 bg-zinc-800 hover:bg-zinc-700 border-zinc-700 font-bold"
-                onClick={() => handleStat('period_end' as StatEventType)}
+                onClick={handleEndPeriod}
               >
                 END PERIOD
               </Button>
               <Button 
                 variant="outline" 
                 className="flex-1 bg-zinc-800 hover:bg-zinc-700 border-zinc-700 font-bold"
-                onClick={() => handleStat('period_start' as StatEventType)}
+                onClick={handleStartPeriod}
               >
                 START PERIOD
               </Button>
