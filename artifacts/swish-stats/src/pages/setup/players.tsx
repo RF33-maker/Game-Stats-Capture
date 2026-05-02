@@ -1,4 +1,4 @@
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useListTeams, useListGamePlayers, useCreatePlayer, useUpdatePlayer, useDeletePlayer, getListGamePlayersQueryKey, getListTeamsQueryKey, Player, Team } from "@workspace/api-client-react";
 import { useForm } from "react-hook-form";
@@ -142,6 +142,9 @@ export default function SetupPlayers() {
   const [, params] = useRoute("/setup/:gameId/players");
   const gameId = Number(params?.gameId);
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const leagueQuery = new URLSearchParams(search).get("league");
+  const qs = leagueQuery ? `?league=${leagueQuery}` : "";
 
   const { data: teams, isLoading: teamsLoading } = useListTeams(gameId, {
     query: { enabled: !!gameId, queryKey: getListTeamsQueryKey(gameId) }
@@ -153,7 +156,7 @@ export default function SetupPlayers() {
 
   if (teamsLoading || playersLoading) {
     return (
-      <SetupLayout gameId={String(gameId)} title="Rosters" step={3}>
+      <SetupLayout gameId={String(gameId)} title="Rosters" step={3} leagueId={leagueQuery}>
         <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       </SetupLayout>
     );
@@ -180,11 +183,11 @@ export default function SetupPlayers() {
       return;
     }
 
-    setLocation(`/setup/${gameId}/extras`);
+    setLocation(`/setup/${gameId}/extras${qs}`);
   };
 
   return (
-    <SetupLayout gameId={String(gameId)} title="Rosters" step={3}>
+    <SetupLayout gameId={String(gameId)} title="Rosters" step={3} leagueId={leagueQuery}>
       <div className="max-w-[1200px] mx-auto w-full" style={{ width: '100%', minWidth: '800px' }}>
         <div className="grid md:grid-cols-2 gap-8 mb-8">
           {homeTeam && <TeamRoster team={homeTeam} players={players?.filter(p => p.teamId === homeTeam.id) || []} gameId={gameId} />}

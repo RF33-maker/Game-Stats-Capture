@@ -795,5 +795,70 @@ export async function handleLocalRequest(
     });
   }
 
+  // Auth bypass — return a synthetic local user.
+  if (m === "GET" && pathname === "/api/auth/user") {
+    return ok({
+      user: {
+        id: "local",
+        email: "local@swish-stats.local",
+        firstName: "Local",
+        lastName: "Mode",
+        profileImageUrl: null,
+      },
+    });
+  }
+
+  // Leagues bypass — pretend the local mode user has a single league.
+  if (m === "GET" && pathname === "/api/leagues") {
+    return ok([
+      {
+        id: 1,
+        name: "Local Games",
+        season: "Local Mode",
+        logoUrl: null,
+        ownerUserId: "local",
+        viewerRole: "admin",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+  }
+  if (m === "GET" && /^\/api\/leagues\/\d+$/.test(pathname)) {
+    return ok({
+      id: Number(pathname.split("/")[3]),
+      name: "Local Games",
+      season: "Local Mode",
+      logoUrl: null,
+      ownerUserId: "local",
+      viewerRole: "admin",
+      createdAt: new Date().toISOString(),
+    });
+  }
+  if (m === "GET" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
+    // Return ALL local games for the synthetic league.
+    return ok(store.games.list());
+  }
+  if (m === "GET" && /^\/api\/leagues\/\d+\/members$/.test(pathname)) {
+    return ok([
+      {
+        leagueId: Number(pathname.split("/")[3]),
+        userId: "local",
+        role: "admin",
+        email: "local@swish-stats.local",
+        firstName: "Local",
+        lastName: "Mode",
+        profileImageUrl: null,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+  }
+  // Create a game inside a league — fall through to normal create flow.
+  if (m === "POST" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
+    const created = store.games.create({
+      leagueId: Number(pathname.split("/")[3]),
+      ...(body as Record<string, unknown>),
+    });
+    return ok(created, 201);
+  }
+
   return { status: 404, body: { error: `Local mode: no handler for ${m} ${pathname}` } };
 }

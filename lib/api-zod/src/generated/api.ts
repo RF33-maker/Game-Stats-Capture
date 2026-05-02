@@ -8,6 +8,267 @@
 import * as zod from "zod";
 
 /**
+ * @summary Get the currently authenticated user
+ */
+export const GetCurrentAuthUserHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+export const GetCurrentAuthUserResponse = zod.object({
+  user: zod.union([
+    zod.object({
+      id: zod.string(),
+      email: zod.string().email().nullable(),
+      firstName: zod.string().nullable(),
+      lastName: zod.string().nullable(),
+      profileImageUrl: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * @summary Start the browser OIDC login flow
+ */
+export const BeginBrowserLoginQueryParams = zod.object({
+  returnTo: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Relative path to redirect to after login (must start with `\/`). Defaults to `\/`.",
+    ),
+});
+
+/**
+ * @summary Complete the browser OIDC login flow
+ */
+export const HandleBrowserLoginCallbackQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+  iss: zod.coerce.string().url().optional(),
+});
+
+/**
+ * @summary Clear the session and begin OIDC logout
+ */
+export const LogoutBrowserSessionHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+/**
+ * @summary Exchange a mobile OIDC code for a session token
+ */
+
+export const ExchangeMobileAuthorizationCodeBody = zod.object({
+  code: zod.string().min(1),
+  code_verifier: zod.string().min(1),
+  redirect_uri: zod.string().url().min(1),
+  state: zod.string().min(1),
+  nonce: zod.string().min(1).optional(),
+});
+
+export const ExchangeMobileAuthorizationCodeResponse = zod.object({
+  token: zod.string(),
+});
+
+/**
+ * @summary Delete a mobile session token
+ */
+export const LogoutMobileSessionHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+export const LogoutMobileSessionResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary List all leagues the current user can access
+ */
+export const ListLeaguesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  season: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  viewerRole: zod.enum(["viewer", "scorer", "admin"]),
+  createdAt: zod.coerce.date(),
+});
+export const ListLeaguesResponse = zod.array(ListLeaguesResponseItem);
+
+/**
+ * @summary Create a new league (current user becomes admin)
+ */
+export const CreateLeagueBody = zod.object({
+  name: zod.string(),
+  season: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+});
+
+/**
+ * @summary Get a single league
+ */
+export const GetLeagueParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const GetLeagueResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  season: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  viewerRole: zod.enum(["viewer", "scorer", "admin"]),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a league (admin only)
+ */
+export const UpdateLeagueParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const UpdateLeagueBody = zod.object({
+  name: zod.string().optional(),
+  season: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+});
+
+export const UpdateLeagueResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  season: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+  ownerUserId: zod.string().nullish(),
+  viewerRole: zod.enum(["viewer", "scorer", "admin"]),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a league (admin only)
+ */
+export const DeleteLeagueParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+/**
+ * @summary List games belonging to a league
+ */
+export const ListLeagueGamesParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const ListLeagueGamesResponseItem = zod.object({
+  id: zod.number(),
+  leagueId: zod.number().nullish(),
+  competition: zod.string().nullish(),
+  date: zod.coerce.date(),
+  venue: zod.string().nullish(),
+  status: zod.enum(["setup", "active", "final"]),
+  captureMode: zod.enum(["simple", "complex"]),
+  periodCount: zod.number(),
+  periodDurationMins: zod.number(),
+  overtimeCount: zod.number(),
+  currentPeriod: zod.number(),
+  clockSeconds: zod.number(),
+  possessionTeamId: zod.number().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListLeagueGamesResponse = zod.array(ListLeagueGamesResponseItem);
+
+/**
+ * @summary Create a new game inside a league (admin only)
+ */
+export const CreateLeagueGameParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const CreateLeagueGameBody = zod.object({
+  leagueId: zod.number().nullish(),
+  competition: zod.string().nullish(),
+  date: zod.coerce.date().optional(),
+  venue: zod.string().nullish(),
+  captureMode: zod.enum(["simple", "complex"]).optional(),
+  periodCount: zod.number().optional(),
+  periodDurationMins: zod.number().optional(),
+});
+
+/**
+ * @summary List memberships for a league
+ */
+export const ListLeagueMembersParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const ListLeagueMembersResponseItem = zod.object({
+  leagueId: zod.number(),
+  userId: zod.string(),
+  role: zod.enum(["viewer", "scorer", "admin"]),
+  email: zod.string().nullish(),
+  firstName: zod.string().nullish(),
+  lastName: zod.string().nullish(),
+  profileImageUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListLeagueMembersResponse = zod.array(
+  ListLeagueMembersResponseItem,
+);
+
+/**
+ * @summary Add a member to a league (admin only)
+ */
+export const AddLeagueMemberParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const AddLeagueMemberBody = zod.object({
+  email: zod.string().email(),
+  role: zod.enum(["viewer", "scorer", "admin"]),
+});
+
+/**
+ * @summary Change a member's role (admin only)
+ */
+export const UpdateLeagueMemberParams = zod.object({
+  leagueId: zod.coerce.number(),
+  userId: zod.coerce.string(),
+});
+
+export const UpdateLeagueMemberBody = zod.object({
+  role: zod.enum(["viewer", "scorer", "admin"]),
+});
+
+export const UpdateLeagueMemberResponse = zod.object({
+  leagueId: zod.number(),
+  userId: zod.string(),
+  role: zod.enum(["viewer", "scorer", "admin"]),
+  email: zod.string().nullish(),
+  firstName: zod.string().nullish(),
+  lastName: zod.string().nullish(),
+  profileImageUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Remove a member from a league (admin only)
+ */
+export const RemoveLeagueMemberParams = zod.object({
+  leagueId: zod.coerce.number(),
+  userId: zod.coerce.string(),
+});
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -40,6 +301,7 @@ export const ListGamesResponse = zod.array(ListGamesResponseItem);
  * @summary Create a new game
  */
 export const CreateGameBody = zod.object({
+  leagueId: zod.number().nullish(),
   competition: zod.string().nullish(),
   date: zod.coerce.date().optional(),
   venue: zod.string().nullish(),

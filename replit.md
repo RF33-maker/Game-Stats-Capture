@@ -21,17 +21,24 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 Basketball stat-capture platform inspired by FIBA Livestats. Backend lives in `artifacts/api-server` and exposes REST endpoints generated from `lib/api-spec/openapi.yaml`.
 
 ### Backend domain
-- **Tables**: `leagues`, `games`, `teams` (with `is_home` flag), `players`, `stat_events`, `play_by_play`. Schemas live in `lib/db/src/schema/*.ts`.
-- **Routes**: `routes/games.ts`, `teams.ts`, `players.ts`, `stats.ts`, `playByPlay.ts`, `aggregates.ts` (box-score + possessions), `seed.ts` (`POST /seed` creates a sample game with two teams and rosters).
+- **Tables**: `users`, `sessions`, `leagues`, `league_memberships`, `games` (with nullable `league_id`), `teams` (with `is_home` flag), `players`, `stat_events`, `play_by_play`. Schemas live in `lib/db/src/schema/*.ts`.
+- **Routes**: `routes/auth.ts` (Replit Auth login/callback/logout/user), `leagues.ts` (CRUD + `/leagues/:id/games` + `/leagues/:id/members`), plus the existing `games.ts`, `teams.ts`, `players.ts`, `stats.ts`, `playByPlay.ts`, `aggregates.ts`, `seed.ts`.
 - **Possession state machine**: `artifacts/api-server/src/lib/possession.ts`. Recording a stat event automatically flips possession on made FG / TOV / STL / DREB / final FT, leaves it on OREB / missed FG / missed final FT (waits for rebound), and closes the open possession on `period_end`.
-- **Database driver**: `lib/db/src/index.ts` prefers `SUPABASE_DATABASE_URL` and auto-enables SSL for Supabase hosts.
+- **Database driver**: `lib/db/src/index.ts` uses `DATABASE_URL` (the workspace-managed Postgres). SSL is auto-enabled for hosted databases.
 
-### Required secret
-- `SUPABASE_DATABASE_URL` — must be a Postgres connection string (NOT the HTTPS Project URL). Use Supabase → Connect → Connection string → **Transaction pooler**:
-  ```
-  postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
-  ```
-  After updating the secret, run `pnpm --filter @workspace/db run push` to create the tables, then `POST /seed` for sample data.
+### Auth & per-league permissions
+- **Replit Auth** (OpenID Connect via `openid-client`) is the only login provider. Sessions live in the `sessions` table; the `sid` cookie keys them.
+- **League roles**: `viewer < scorer < admin` (`LeagueRole` enum). League creator is auto-promoted to `admin`.
+- **Middleware**: `requireAuth` in `artifacts/api-server/src/middlewares/requireAuth.ts`, and `requireLeagueRole(min)` in `artifacts/api-server/src/lib/leagueAccess.ts`. The latter resolves the owning league from any of `leagueId`, `gameId`, `teamId`, `playerId`, `statEventId`, or `playByPlayId` URL params; resources without a league pass through as orphans.
+- **Adding a member**: must be done by email; the target user must have signed in to Swish Stats at least once so their row exists in `users`.
+- **Local mode** (`VITE_SWISH_LOCAL_MODE`) bypasses both auth and league gating in the browser via `src/lib/local-handler.ts`, which serves a synthetic `Local` user and a single `Local Games` league that exposes every locally-stored game.
+
+### Frontend flow
+- `/` → redirects to `/leagues` if signed in, else `/login` (skipped in local mode).
+- `/login` → calls `useAuth().login(returnTo)` from `@workspace/replit-auth-web`.
+- `/leagues` → list of leagues the user belongs to + create-league dialog.
+- `/leagues/:leagueId` → games tab (create + open) and members tab (admin-only role management). All deep links into game flows append `?league=<id>` so the back/home buttons return to the correct league.
+- All routes inside the app are wrapped in `<ProtectedRoute>` which redirects unauthenticated users to `/login`.
 
 ## Key Commands
 

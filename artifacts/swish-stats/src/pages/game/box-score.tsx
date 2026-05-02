@@ -1,4 +1,4 @@
-import { useRoute, Link } from "wouter";
+import { useRoute, Link, useSearch } from "wouter";
 import { 
   useGetGame, 
   useListTeams, 
@@ -13,10 +13,18 @@ import { Button } from "@/components/ui/button";
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
   const gameId = Number(params?.gameId);
+  const search = useSearch();
+  const leagueQuery = new URLSearchParams(search).get("league");
 
   const { data: game, isLoading: gameLoading } = useGetGame(gameId, {
     query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) }
   });
+
+  const effectiveLeagueId =
+    leagueQuery ?? (game?.leagueId != null ? String(game.leagueId) : null);
+  const backHref = effectiveLeagueId
+    ? `/leagues/${effectiveLeagueId}`
+    : `/game/${gameId}`;
   
   const { data: teams, isLoading: teamsLoading } = useListTeams(gameId, {
     query: { enabled: !!gameId, queryKey: getListTeamsQueryKey(gameId) }
@@ -44,7 +52,7 @@ export default function BoxScore() {
       <div className="max-w-6xl mx-auto space-y-8">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href={`/game/${gameId}`}>
+            <Link href={backHref}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="w-5 h-5" />
               </Button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useRoute, Link, useLocation } from "wouter";
+import { useRoute, Link, useLocation, useSearch } from "wouter";
 import { 
   useGetGame, 
   useListTeams, 
@@ -36,6 +36,8 @@ export default function GameCapture() {
   const gameId = Number(params?.gameId);
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const leagueQuery = new URLSearchParams(search).get("league");
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
@@ -54,6 +56,12 @@ export default function GameCapture() {
   const { data: boxScore } = useGetBoxScore(gameId, { query: { enabled: !!gameId, queryKey: getGetBoxScoreQueryKey(gameId) } });
   const { data: possessions } = useGetPossessions(gameId, { query: { enabled: !!gameId, queryKey: getGetPossessionsQueryKey(gameId) } });
   const { data: statEvents } = useListStatEvents(gameId, { query: { enabled: !!gameId, queryKey: getListStatEventsQueryKey(gameId) } });
+
+  const effectiveLeagueId =
+    leagueQuery ?? (game?.leagueId != null ? String(game.leagueId) : null);
+  const homeHref = effectiveLeagueId
+    ? `/leagues/${effectiveLeagueId}`
+    : "/leagues";
 
   // Mutations
   const recordStat = useRecordStatEvent();
@@ -123,14 +131,14 @@ export default function GameCapture() {
             <p className="text-zinc-400 text-sm">This game has already been finalized and is locked for editing.</p>
           </div>
           <div className="flex flex-col gap-3">
-            <Link href={`/game/${gameId}/box`}>
+            <Link href={`/game/${gameId}/box${effectiveLeagueId ? `?league=${effectiveLeagueId}` : ""}`}>
               <Button className="w-full bg-blue-600 hover:bg-blue-700 font-bold">
                 <BarChart2 className="w-4 h-4 mr-2" /> View Box Score
               </Button>
             </Link>
-            <Link href="/">
+            <Link href={homeHref}>
               <Button variant="outline" className="w-full border-zinc-700 bg-zinc-900 hover:bg-zinc-800">
-                <Home className="w-4 h-4 mr-2" /> Back to Home
+                <Home className="w-4 h-4 mr-2" /> Back to League
               </Button>
             </Link>
           </div>
@@ -351,7 +359,7 @@ export default function GameCapture() {
       queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
       queryClient.invalidateQueries({ queryKey: getListGamesQueryKey() });
       toast.success("Game finalized!");
-      setLocation(`/game/${gameId}/box`);
+      setLocation(`/game/${gameId}/box${effectiveLeagueId ? `?league=${effectiveLeagueId}` : ""}`);
     } catch {
       toast.error("Failed to finalize game. Please try again.");
     }
@@ -405,12 +413,12 @@ export default function GameCapture() {
       {/* Top Header Scoreboard */}
       <header className="h-16 border-b border-white/10 bg-zinc-900 flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center w-1/3 gap-4">
-          <Link href="/">
+          <Link href={homeHref}>
             <Button
               variant="ghost"
               size="icon"
               className="h-9 w-9 text-zinc-400 hover:text-white hover:bg-zinc-800 shrink-0"
-              title="Back to home (does not finalize)"
+              title="Back to league (does not finalize)"
             >
               <Home className="w-5 h-5" />
             </Button>

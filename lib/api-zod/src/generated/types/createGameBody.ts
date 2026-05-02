@@ -9,6 +9,8 @@ import type { CaptureMode } from "./captureMode";
 
 export interface CreateGameBody {
   /** @nullable */
+  leagueId?: number | null;
+  /** @nullable */
   competition?: string | null;
   date?: Date;
   /** @nullable */

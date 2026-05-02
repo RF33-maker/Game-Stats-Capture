@@ -3,12 +3,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/home";
+import Login from "@/pages/login";
+import LeaguesHub from "@/pages/leagues";
+import LeagueDetail from "@/pages/league-detail";
 import SetupInfo from "@/pages/setup/info";
 import SetupTeams from "@/pages/setup/teams";
 import SetupPlayers from "@/pages/setup/players";
 import SetupExtras from "@/pages/setup/extras";
 import GameCapture from "@/pages/game/capture";
 import BoxScore from "@/pages/game/box-score";
+import { ProtectedRoute } from "@/components/protected-route";
+import { RequireLeagueRole } from "@/components/require-league-role";
 import { LocalModeBadge } from "@/components/local-mode-badge";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 
@@ -16,12 +21,59 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/setup/:gameId/info" component={SetupInfo} />
-      <Route path="/setup/:gameId/teams" component={SetupTeams} />
-      <Route path="/setup/:gameId/players" component={SetupPlayers} />
-      <Route path="/setup/:gameId/extras" component={SetupExtras} />
-      <Route path="/game/:gameId" component={GameCapture} />
-      <Route path="/game/:gameId/box" component={BoxScore} />
+      <Route path="/login" component={Login} />
+      <Route path="/leagues">
+        <ProtectedRoute>
+          <LeaguesHub />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/leagues/:leagueId">
+        <ProtectedRoute>
+          <LeagueDetail />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/setup/:gameId/info">
+        <ProtectedRoute>
+          <RequireLeagueRole min="admin">
+            <SetupInfo />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/setup/:gameId/teams">
+        <ProtectedRoute>
+          <RequireLeagueRole min="admin">
+            <SetupTeams />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/setup/:gameId/players">
+        <ProtectedRoute>
+          <RequireLeagueRole min="admin">
+            <SetupPlayers />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/setup/:gameId/extras">
+        <ProtectedRoute>
+          <RequireLeagueRole min="admin">
+            <SetupExtras />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/game/:gameId">
+        <ProtectedRoute>
+          <RequireLeagueRole min="scorer">
+            <GameCapture />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/game/:gameId/box">
+        <ProtectedRoute>
+          <RequireLeagueRole min="viewer">
+            <BoxScore />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

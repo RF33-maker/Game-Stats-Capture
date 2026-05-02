@@ -10,10 +10,14 @@ import {
   UpdatePlayByPlayBody,
   DeletePlayByPlayParams,
 } from "@workspace/api-zod";
+import { requireAuth } from "../middlewares/requireAuth";
+import { requireLeagueRole } from "../lib/leagueAccess";
 
 const router: IRouter = Router();
 
-router.get("/games/:gameId/play-by-play", async (req, res): Promise<void> => {
+router.use(requireAuth);
+
+router.get("/games/:gameId/play-by-play", requireLeagueRole("viewer"), async (req, res): Promise<void> => {
   const params = ListPlayByPlayParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -27,7 +31,7 @@ router.get("/games/:gameId/play-by-play", async (req, res): Promise<void> => {
   res.json(ListPlayByPlayResponse.parse(rows));
 });
 
-router.post("/games/:gameId/play-by-play", async (req, res): Promise<void> => {
+router.post("/games/:gameId/play-by-play", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = CreatePlayByPlayParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -56,7 +60,7 @@ router.post("/games/:gameId/play-by-play", async (req, res): Promise<void> => {
   res.status(201).json(row);
 });
 
-router.patch("/play-by-play/:pbpId", async (req, res): Promise<void> => {
+router.patch("/play-by-play/:pbpId", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = UpdatePlayByPlayParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -79,7 +83,7 @@ router.patch("/play-by-play/:pbpId", async (req, res): Promise<void> => {
   res.json(row);
 });
 
-router.delete("/play-by-play/:pbpId", async (req, res): Promise<void> => {
+router.delete("/play-by-play/:pbpId", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = DeletePlayByPlayParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

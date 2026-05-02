@@ -9,6 +9,109 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface AuthUser {
+  id: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  firstName: string | null;
+  /** @nullable */
+  lastName: string | null;
+  /** @nullable */
+  profileImageUrl: string | null;
+}
+
+export interface AuthUserEnvelope {
+  user: AuthUser | null;
+}
+
+export interface MobileTokenExchangeRequest {
+  /** @minLength 1 */
+  code: string;
+  /** @minLength 1 */
+  code_verifier: string;
+  /** @minLength 1 */
+  redirect_uri: string;
+  /** @minLength 1 */
+  state: string;
+  /** @minLength 1 */
+  nonce?: string;
+}
+
+export interface MobileTokenExchangeSuccess {
+  token: string;
+}
+
+export const LogoutSuccessValue = {
+  success: true,
+} as const;
+export type LogoutSuccess = typeof LogoutSuccessValue;
+
+export interface ErrorEnvelope {
+  error: string;
+}
+
+export type LeagueRole = (typeof LeagueRole)[keyof typeof LeagueRole];
+
+export const LeagueRole = {
+  viewer: "viewer",
+  scorer: "scorer",
+  admin: "admin",
+} as const;
+
+export interface League {
+  id: number;
+  name: string;
+  /** @nullable */
+  season?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  ownerUserId?: string | null;
+  viewerRole: LeagueRole;
+  createdAt: string;
+}
+
+export interface CreateLeagueBody {
+  name: string;
+  /** @nullable */
+  season?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+}
+
+export interface UpdateLeagueBody {
+  name?: string;
+  /** @nullable */
+  season?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+}
+
+export interface LeagueMember {
+  leagueId: number;
+  userId: string;
+  role: LeagueRole;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  profileImageUrl?: string | null;
+  createdAt: string;
+}
+
+export interface AddLeagueMemberBody {
+  email: string;
+  role: LeagueRole;
+}
+
+export interface UpdateLeagueMemberBody {
+  role: LeagueRole;
+}
+
 export interface ErrorResponse {
   error: string;
 }
@@ -51,6 +154,8 @@ export interface Game {
 }
 
 export interface CreateGameBody {
+  /** @nullable */
+  leagueId?: number | null;
   /** @nullable */
   competition?: string | null;
   date?: string;
@@ -341,3 +446,21 @@ export interface PossessionSummary {
  * Not found
  */
 export type NotFoundResponse = ErrorResponse;
+
+/**
+ * Opaque session token — `Bearer <sid>`.
+ */
+export type AuthorizationSessionHeaderParameter = string;
+
+export type BeginBrowserLoginParams = {
+  /**
+   * Relative path to redirect to after login (must start with `/`). Defaults to `/`.
+   */
+  returnTo?: string;
+};
+
+export type HandleBrowserLoginCallbackParams = {
+  code?: string;
+  state?: string;
+  iss?: string;
+};

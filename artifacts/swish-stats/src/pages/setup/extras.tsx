@@ -1,4 +1,4 @@
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, useListTeams, useListGamePlayers, getGetGameQueryKey, getListTeamsQueryKey, getListGamePlayersQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,9 @@ export default function SetupExtras() {
   const [, params] = useRoute("/setup/:gameId/extras");
   const gameId = Number(params?.gameId);
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const leagueQuery = new URLSearchParams(search).get("league");
+  const qs = leagueQuery ? `?league=${leagueQuery}` : "";
 
   const { data: game, isLoading: gameLoading } = useGetGame(gameId, {
     query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) }
@@ -27,7 +30,7 @@ export default function SetupExtras() {
     mutation: {
       onSuccess: () => {
         toast.success("Game is now active!");
-        setLocation(`/game/${gameId}`);
+        setLocation(`/game/${gameId}${qs}`);
       },
       onError: () => toast.error("Failed to start game")
     }
@@ -35,7 +38,7 @@ export default function SetupExtras() {
 
   if (gameLoading || teamsLoading || playersLoading) {
     return (
-      <SetupLayout gameId={String(gameId)} title="Review & Start" step={4}>
+      <SetupLayout gameId={String(gameId)} title="Review & Start" step={4} leagueId={leagueQuery}>
         <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       </SetupLayout>
     );
@@ -51,7 +54,7 @@ export default function SetupExtras() {
   };
 
   return (
-    <SetupLayout gameId={String(gameId)} title="Review & Start" step={4}>
+    <SetupLayout gameId={String(gameId)} title="Review & Start" step={4} leagueId={leagueQuery}>
       <div className="space-y-8">
         <div className="bg-card border rounded-xl p-8 shadow-sm">
           <h2 className="text-2xl font-bold mb-6 border-b pb-4">Game Summary</h2>

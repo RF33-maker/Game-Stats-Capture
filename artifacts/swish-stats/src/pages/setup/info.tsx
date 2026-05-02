@@ -1,4 +1,4 @@
-import { useRoute, useLocation } from "wouter";
+import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, getGetGameQueryKey } from "@workspace/api-client-react";
 import { useForm } from "react-hook-form";
@@ -25,6 +25,9 @@ export default function SetupInfo() {
   const [, params] = useRoute("/setup/:gameId/info");
   const gameId = Number(params?.gameId);
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const leagueQuery = new URLSearchParams(search).get("league");
+  const qs = leagueQuery ? `?league=${leagueQuery}` : "";
 
   const { data: game, isLoading } = useGetGame(gameId, {
     query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) }
@@ -34,7 +37,7 @@ export default function SetupInfo() {
     mutation: {
       onSuccess: () => {
         toast.success("Game info saved");
-        setLocation(`/setup/${gameId}/teams`);
+        setLocation(`/setup/${gameId}/teams${qs}`);
       },
       onError: () => toast.error("Failed to save game info")
     }
@@ -67,14 +70,14 @@ export default function SetupInfo() {
 
   if (isLoading) {
     return (
-      <SetupLayout gameId={String(gameId)} title="Game Information" step={1}>
+      <SetupLayout gameId={String(gameId)} title="Game Information" step={1} leagueId={leagueQuery}>
         <div className="flex justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       </SetupLayout>
     );
   }
 
   return (
-    <SetupLayout gameId={String(gameId)} title="Game Information" step={1}>
+    <SetupLayout gameId={String(gameId)} title="Game Information" step={1} leagueId={leagueQuery}>
       <div className="bg-card border rounded-xl p-8 shadow-sm">
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => updateGame.mutate({ gameId, data }))} className="space-y-6">

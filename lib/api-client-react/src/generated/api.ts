@@ -17,13 +17,24 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AddLeagueMemberBody,
+  AuthUserEnvelope,
+  BeginBrowserLoginParams,
   BoxScore,
   CreateGameBody,
+  CreateLeagueBody,
   CreatePlayByPlayBody,
   CreatePlayerBody,
   CreateTeamBody,
+  ErrorEnvelope,
   Game,
+  HandleBrowserLoginCallbackParams,
   HealthStatus,
+  League,
+  LeagueMember,
+  LogoutSuccess,
+  MobileTokenExchangeRequest,
+  MobileTokenExchangeSuccess,
   NotFoundResponse,
   PlayByPlayEntry,
   Player,
@@ -34,6 +45,8 @@ import type {
   Team,
   UpdateClockBody,
   UpdateGameBody,
+  UpdateLeagueBody,
+  UpdateLeagueMemberBody,
   UpdatePlayByPlayBody,
   UpdatePlayerBody,
   UpdateStatEventBody,
@@ -48,6 +61,1477 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+/**
+ * @summary Get the currently authenticated user
+ */
+export const getGetCurrentAuthUserUrl = () => {
+  return `/api/auth/user`;
+};
+
+export const getCurrentAuthUser = async (
+  options?: RequestInit,
+): Promise<AuthUserEnvelope> => {
+  return customFetch<AuthUserEnvelope>(getGetCurrentAuthUserUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCurrentAuthUserQueryKey = () => {
+  return [`/api/auth/user`] as const;
+};
+
+export const getGetCurrentAuthUserQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCurrentAuthUser>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCurrentAuthUserQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>
+  > = ({ signal }) => getCurrentAuthUser({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCurrentAuthUserQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCurrentAuthUser>>
+>;
+export type GetCurrentAuthUserQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the currently authenticated user
+ */
+
+export function useGetCurrentAuthUser<
+  TData = Awaited<ReturnType<typeof getCurrentAuthUser>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCurrentAuthUserQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Start the browser OIDC login flow
+ */
+export const getBeginBrowserLoginUrl = (params?: BeginBrowserLoginParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/login?${stringifiedParams}`
+    : `/api/login`;
+};
+
+export const beginBrowserLogin = async (
+  params?: BeginBrowserLoginParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getBeginBrowserLoginUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getBeginBrowserLoginQueryKey = (
+  params?: BeginBrowserLoginParams,
+) => {
+  return [`/api/login`, ...(params ? [params] : [])] as const;
+};
+
+export const getBeginBrowserLoginQueryOptions = <
+  TData = Awaited<ReturnType<typeof beginBrowserLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: BeginBrowserLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof beginBrowserLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getBeginBrowserLoginQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof beginBrowserLogin>>
+  > = ({ signal }) => beginBrowserLogin(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof beginBrowserLogin>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type BeginBrowserLoginQueryResult = NonNullable<
+  Awaited<ReturnType<typeof beginBrowserLogin>>
+>;
+export type BeginBrowserLoginQueryError = ErrorType<void>;
+
+/**
+ * @summary Start the browser OIDC login flow
+ */
+
+export function useBeginBrowserLogin<
+  TData = Awaited<ReturnType<typeof beginBrowserLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: BeginBrowserLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof beginBrowserLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getBeginBrowserLoginQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Complete the browser OIDC login flow
+ */
+export const getHandleBrowserLoginCallbackUrl = (
+  params?: HandleBrowserLoginCallbackParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/callback?${stringifiedParams}`
+    : `/api/callback`;
+};
+
+export const handleBrowserLoginCallback = async (
+  params?: HandleBrowserLoginCallbackParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getHandleBrowserLoginCallbackUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getHandleBrowserLoginCallbackQueryKey = (
+  params?: HandleBrowserLoginCallbackParams,
+) => {
+  return [`/api/callback`, ...(params ? [params] : [])] as const;
+};
+
+export const getHandleBrowserLoginCallbackQueryOptions = <
+  TData = Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: HandleBrowserLoginCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getHandleBrowserLoginCallbackQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof handleBrowserLoginCallback>>
+  > = ({ signal }) =>
+    handleBrowserLoginCallback(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type HandleBrowserLoginCallbackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof handleBrowserLoginCallback>>
+>;
+export type HandleBrowserLoginCallbackQueryError = ErrorType<void>;
+
+/**
+ * @summary Complete the browser OIDC login flow
+ */
+
+export function useHandleBrowserLoginCallback<
+  TData = Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: HandleBrowserLoginCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getHandleBrowserLoginCallbackQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Clear the session and begin OIDC logout
+ */
+export const getLogoutBrowserSessionUrl = () => {
+  return `/api/logout`;
+};
+
+export const logoutBrowserSession = async (
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getLogoutBrowserSessionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLogoutBrowserSessionQueryKey = () => {
+  return [`/api/logout`] as const;
+};
+
+export const getLogoutBrowserSessionQueryOptions = <
+  TData = Awaited<ReturnType<typeof logoutBrowserSession>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof logoutBrowserSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLogoutBrowserSessionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof logoutBrowserSession>>
+  > = ({ signal }) => logoutBrowserSession({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof logoutBrowserSession>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LogoutBrowserSessionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof logoutBrowserSession>>
+>;
+export type LogoutBrowserSessionQueryError = ErrorType<void>;
+
+/**
+ * @summary Clear the session and begin OIDC logout
+ */
+
+export function useLogoutBrowserSession<
+  TData = Awaited<ReturnType<typeof logoutBrowserSession>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof logoutBrowserSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLogoutBrowserSessionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Exchange a mobile OIDC code for a session token
+ */
+export const getExchangeMobileAuthorizationCodeUrl = () => {
+  return `/api/mobile-auth/token-exchange`;
+};
+
+export const exchangeMobileAuthorizationCode = async (
+  mobileTokenExchangeRequest: MobileTokenExchangeRequest,
+  options?: RequestInit,
+): Promise<MobileTokenExchangeSuccess> => {
+  return customFetch<MobileTokenExchangeSuccess>(
+    getExchangeMobileAuthorizationCodeUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mobileTokenExchangeRequest),
+    },
+  );
+};
+
+export const getExchangeMobileAuthorizationCodeMutationOptions = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+    TError,
+    { data: BodyType<MobileTokenExchangeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+  TError,
+  { data: BodyType<MobileTokenExchangeRequest> },
+  TContext
+> => {
+  const mutationKey = ["exchangeMobileAuthorizationCode"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+    { data: BodyType<MobileTokenExchangeRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return exchangeMobileAuthorizationCode(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExchangeMobileAuthorizationCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>
+>;
+export type ExchangeMobileAuthorizationCodeMutationBody =
+  BodyType<MobileTokenExchangeRequest>;
+export type ExchangeMobileAuthorizationCodeMutationError =
+  ErrorType<ErrorEnvelope>;
+
+/**
+ * @summary Exchange a mobile OIDC code for a session token
+ */
+export const useExchangeMobileAuthorizationCode = <
+  TError = ErrorType<ErrorEnvelope>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+    TError,
+    { data: BodyType<MobileTokenExchangeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+  TError,
+  { data: BodyType<MobileTokenExchangeRequest> },
+  TContext
+> => {
+  return useMutation(
+    getExchangeMobileAuthorizationCodeMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Delete a mobile session token
+ */
+export const getLogoutMobileSessionUrl = () => {
+  return `/api/mobile-auth/logout`;
+};
+
+export const logoutMobileSession = async (
+  options?: RequestInit,
+): Promise<LogoutSuccess> => {
+  return customFetch<LogoutSuccess>(getLogoutMobileSessionUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLogoutMobileSessionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutMobileSession>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof logoutMobileSession>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["logoutMobileSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof logoutMobileSession>>,
+    void
+  > = () => {
+    return logoutMobileSession(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LogoutMobileSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof logoutMobileSession>>
+>;
+
+export type LogoutMobileSessionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a mobile session token
+ */
+export const useLogoutMobileSession = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutMobileSession>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof logoutMobileSession>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getLogoutMobileSessionMutationOptions(options));
+};
+
+/**
+ * @summary List all leagues the current user can access
+ */
+export const getListLeaguesUrl = () => {
+  return `/api/leagues`;
+};
+
+export const listLeagues = async (options?: RequestInit): Promise<League[]> => {
+  return customFetch<League[]>(getListLeaguesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListLeaguesQueryKey = () => {
+  return [`/api/leagues`] as const;
+};
+
+export const getListLeaguesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLeagues>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listLeagues>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListLeaguesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeagues>>> = ({
+    signal,
+  }) => listLeagues({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLeagues>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLeaguesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLeagues>>
+>;
+export type ListLeaguesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all leagues the current user can access
+ */
+
+export function useListLeagues<
+  TData = Awaited<ReturnType<typeof listLeagues>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listLeagues>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLeaguesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new league (current user becomes admin)
+ */
+export const getCreateLeagueUrl = () => {
+  return `/api/leagues`;
+};
+
+export const createLeague = async (
+  createLeagueBody: CreateLeagueBody,
+  options?: RequestInit,
+): Promise<League> => {
+  return customFetch<League>(getCreateLeagueUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createLeagueBody),
+  });
+};
+
+export const getCreateLeagueMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createLeague>>,
+    TError,
+    { data: BodyType<CreateLeagueBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createLeague>>,
+  TError,
+  { data: BodyType<CreateLeagueBody> },
+  TContext
+> => {
+  const mutationKey = ["createLeague"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createLeague>>,
+    { data: BodyType<CreateLeagueBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createLeague(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateLeagueMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createLeague>>
+>;
+export type CreateLeagueMutationBody = BodyType<CreateLeagueBody>;
+export type CreateLeagueMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new league (current user becomes admin)
+ */
+export const useCreateLeague = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createLeague>>,
+    TError,
+    { data: BodyType<CreateLeagueBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createLeague>>,
+  TError,
+  { data: BodyType<CreateLeagueBody> },
+  TContext
+> => {
+  return useMutation(getCreateLeagueMutationOptions(options));
+};
+
+/**
+ * @summary Get a single league
+ */
+export const getGetLeagueUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}`;
+};
+
+export const getLeague = async (
+  leagueId: number,
+  options?: RequestInit,
+): Promise<League> => {
+  return customFetch<League>(getGetLeagueUrl(leagueId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetLeagueQueryKey = (leagueId: number) => {
+  return [`/api/leagues/${leagueId}`] as const;
+};
+
+export const getGetLeagueQueryOptions = <
+  TData = Awaited<ReturnType<typeof getLeague>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  leagueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLeague>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetLeagueQueryKey(leagueId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeague>>> = ({
+    signal,
+  }) => getLeague(leagueId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!leagueId,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getLeague>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetLeagueQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getLeague>>
+>;
+export type GetLeagueQueryError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Get a single league
+ */
+
+export function useGetLeague<
+  TData = Awaited<ReturnType<typeof getLeague>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  leagueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getLeague>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetLeagueQueryOptions(leagueId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a league (admin only)
+ */
+export const getUpdateLeagueUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}`;
+};
+
+export const updateLeague = async (
+  leagueId: number,
+  updateLeagueBody: UpdateLeagueBody,
+  options?: RequestInit,
+): Promise<League> => {
+  return customFetch<League>(getUpdateLeagueUrl(leagueId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateLeagueBody),
+  });
+};
+
+export const getUpdateLeagueMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLeague>>,
+    TError,
+    { leagueId: number; data: BodyType<UpdateLeagueBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateLeague>>,
+  TError,
+  { leagueId: number; data: BodyType<UpdateLeagueBody> },
+  TContext
+> => {
+  const mutationKey = ["updateLeague"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateLeague>>,
+    { leagueId: number; data: BodyType<UpdateLeagueBody> }
+  > = (props) => {
+    const { leagueId, data } = props ?? {};
+
+    return updateLeague(leagueId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateLeagueMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateLeague>>
+>;
+export type UpdateLeagueMutationBody = BodyType<UpdateLeagueBody>;
+export type UpdateLeagueMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Update a league (admin only)
+ */
+export const useUpdateLeague = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLeague>>,
+    TError,
+    { leagueId: number; data: BodyType<UpdateLeagueBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateLeague>>,
+  TError,
+  { leagueId: number; data: BodyType<UpdateLeagueBody> },
+  TContext
+> => {
+  return useMutation(getUpdateLeagueMutationOptions(options));
+};
+
+/**
+ * @summary Delete a league (admin only)
+ */
+export const getDeleteLeagueUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}`;
+};
+
+export const deleteLeague = async (
+  leagueId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteLeagueUrl(leagueId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteLeagueMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLeague>>,
+    TError,
+    { leagueId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteLeague>>,
+  TError,
+  { leagueId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteLeague"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteLeague>>,
+    { leagueId: number }
+  > = (props) => {
+    const { leagueId } = props ?? {};
+
+    return deleteLeague(leagueId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteLeagueMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteLeague>>
+>;
+
+export type DeleteLeagueMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Delete a league (admin only)
+ */
+export const useDeleteLeague = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLeague>>,
+    TError,
+    { leagueId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteLeague>>,
+  TError,
+  { leagueId: number },
+  TContext
+> => {
+  return useMutation(getDeleteLeagueMutationOptions(options));
+};
+
+/**
+ * @summary List games belonging to a league
+ */
+export const getListLeagueGamesUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}/games`;
+};
+
+export const listLeagueGames = async (
+  leagueId: number,
+  options?: RequestInit,
+): Promise<Game[]> => {
+  return customFetch<Game[]>(getListLeagueGamesUrl(leagueId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListLeagueGamesQueryKey = (leagueId: number) => {
+  return [`/api/leagues/${leagueId}/games`] as const;
+};
+
+export const getListLeagueGamesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLeagueGames>>,
+  TError = ErrorType<unknown>,
+>(
+  leagueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLeagueGames>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListLeagueGamesQueryKey(leagueId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeagueGames>>> = ({
+    signal,
+  }) => listLeagueGames(leagueId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!leagueId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLeagueGames>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLeagueGamesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLeagueGames>>
+>;
+export type ListLeagueGamesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List games belonging to a league
+ */
+
+export function useListLeagueGames<
+  TData = Awaited<ReturnType<typeof listLeagueGames>>,
+  TError = ErrorType<unknown>,
+>(
+  leagueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLeagueGames>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLeagueGamesQueryOptions(leagueId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new game inside a league (admin only)
+ */
+export const getCreateLeagueGameUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}/games`;
+};
+
+export const createLeagueGame = async (
+  leagueId: number,
+  createGameBody: CreateGameBody,
+  options?: RequestInit,
+): Promise<Game> => {
+  return customFetch<Game>(getCreateLeagueGameUrl(leagueId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createGameBody),
+  });
+};
+
+export const getCreateLeagueGameMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createLeagueGame>>,
+    TError,
+    { leagueId: number; data: BodyType<CreateGameBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createLeagueGame>>,
+  TError,
+  { leagueId: number; data: BodyType<CreateGameBody> },
+  TContext
+> => {
+  const mutationKey = ["createLeagueGame"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createLeagueGame>>,
+    { leagueId: number; data: BodyType<CreateGameBody> }
+  > = (props) => {
+    const { leagueId, data } = props ?? {};
+
+    return createLeagueGame(leagueId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateLeagueGameMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createLeagueGame>>
+>;
+export type CreateLeagueGameMutationBody = BodyType<CreateGameBody>;
+export type CreateLeagueGameMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new game inside a league (admin only)
+ */
+export const useCreateLeagueGame = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createLeagueGame>>,
+    TError,
+    { leagueId: number; data: BodyType<CreateGameBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createLeagueGame>>,
+  TError,
+  { leagueId: number; data: BodyType<CreateGameBody> },
+  TContext
+> => {
+  return useMutation(getCreateLeagueGameMutationOptions(options));
+};
+
+/**
+ * @summary List memberships for a league
+ */
+export const getListLeagueMembersUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}/members`;
+};
+
+export const listLeagueMembers = async (
+  leagueId: number,
+  options?: RequestInit,
+): Promise<LeagueMember[]> => {
+  return customFetch<LeagueMember[]>(getListLeagueMembersUrl(leagueId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListLeagueMembersQueryKey = (leagueId: number) => {
+  return [`/api/leagues/${leagueId}/members`] as const;
+};
+
+export const getListLeagueMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLeagueMembers>>,
+  TError = ErrorType<unknown>,
+>(
+  leagueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLeagueMembers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListLeagueMembersQueryKey(leagueId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listLeagueMembers>>
+  > = ({ signal }) =>
+    listLeagueMembers(leagueId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!leagueId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLeagueMembers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLeagueMembersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLeagueMembers>>
+>;
+export type ListLeagueMembersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List memberships for a league
+ */
+
+export function useListLeagueMembers<
+  TData = Awaited<ReturnType<typeof listLeagueMembers>>,
+  TError = ErrorType<unknown>,
+>(
+  leagueId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLeagueMembers>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLeagueMembersQueryOptions(leagueId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a member to a league (admin only)
+ */
+export const getAddLeagueMemberUrl = (leagueId: number) => {
+  return `/api/leagues/${leagueId}/members`;
+};
+
+export const addLeagueMember = async (
+  leagueId: number,
+  addLeagueMemberBody: AddLeagueMemberBody,
+  options?: RequestInit,
+): Promise<LeagueMember> => {
+  return customFetch<LeagueMember>(getAddLeagueMemberUrl(leagueId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(addLeagueMemberBody),
+  });
+};
+
+export const getAddLeagueMemberMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addLeagueMember>>,
+    TError,
+    { leagueId: number; data: BodyType<AddLeagueMemberBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addLeagueMember>>,
+  TError,
+  { leagueId: number; data: BodyType<AddLeagueMemberBody> },
+  TContext
+> => {
+  const mutationKey = ["addLeagueMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addLeagueMember>>,
+    { leagueId: number; data: BodyType<AddLeagueMemberBody> }
+  > = (props) => {
+    const { leagueId, data } = props ?? {};
+
+    return addLeagueMember(leagueId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddLeagueMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addLeagueMember>>
+>;
+export type AddLeagueMemberMutationBody = BodyType<AddLeagueMemberBody>;
+export type AddLeagueMemberMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a member to a league (admin only)
+ */
+export const useAddLeagueMember = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addLeagueMember>>,
+    TError,
+    { leagueId: number; data: BodyType<AddLeagueMemberBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addLeagueMember>>,
+  TError,
+  { leagueId: number; data: BodyType<AddLeagueMemberBody> },
+  TContext
+> => {
+  return useMutation(getAddLeagueMemberMutationOptions(options));
+};
+
+/**
+ * @summary Change a member's role (admin only)
+ */
+export const getUpdateLeagueMemberUrl = (leagueId: number, userId: string) => {
+  return `/api/leagues/${leagueId}/members/${userId}`;
+};
+
+export const updateLeagueMember = async (
+  leagueId: number,
+  userId: string,
+  updateLeagueMemberBody: UpdateLeagueMemberBody,
+  options?: RequestInit,
+): Promise<LeagueMember> => {
+  return customFetch<LeagueMember>(getUpdateLeagueMemberUrl(leagueId, userId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateLeagueMemberBody),
+  });
+};
+
+export const getUpdateLeagueMemberMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLeagueMember>>,
+    TError,
+    {
+      leagueId: number;
+      userId: string;
+      data: BodyType<UpdateLeagueMemberBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateLeagueMember>>,
+  TError,
+  { leagueId: number; userId: string; data: BodyType<UpdateLeagueMemberBody> },
+  TContext
+> => {
+  const mutationKey = ["updateLeagueMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateLeagueMember>>,
+    { leagueId: number; userId: string; data: BodyType<UpdateLeagueMemberBody> }
+  > = (props) => {
+    const { leagueId, userId, data } = props ?? {};
+
+    return updateLeagueMember(leagueId, userId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateLeagueMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateLeagueMember>>
+>;
+export type UpdateLeagueMemberMutationBody = BodyType<UpdateLeagueMemberBody>;
+export type UpdateLeagueMemberMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Change a member's role (admin only)
+ */
+export const useUpdateLeagueMember = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLeagueMember>>,
+    TError,
+    {
+      leagueId: number;
+      userId: string;
+      data: BodyType<UpdateLeagueMemberBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateLeagueMember>>,
+  TError,
+  { leagueId: number; userId: string; data: BodyType<UpdateLeagueMemberBody> },
+  TContext
+> => {
+  return useMutation(getUpdateLeagueMemberMutationOptions(options));
+};
+
+/**
+ * @summary Remove a member from a league (admin only)
+ */
+export const getRemoveLeagueMemberUrl = (leagueId: number, userId: string) => {
+  return `/api/leagues/${leagueId}/members/${userId}`;
+};
+
+export const removeLeagueMember = async (
+  leagueId: number,
+  userId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getRemoveLeagueMemberUrl(leagueId, userId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveLeagueMemberMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeLeagueMember>>,
+    TError,
+    { leagueId: number; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeLeagueMember>>,
+  TError,
+  { leagueId: number; userId: string },
+  TContext
+> => {
+  const mutationKey = ["removeLeagueMember"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeLeagueMember>>,
+    { leagueId: number; userId: string }
+  > = (props) => {
+    const { leagueId, userId } = props ?? {};
+
+    return removeLeagueMember(leagueId, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveLeagueMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeLeagueMember>>
+>;
+
+export type RemoveLeagueMemberMutationError = ErrorType<NotFoundResponse>;
+
+/**
+ * @summary Remove a member from a league (admin only)
+ */
+export const useRemoveLeagueMember = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeLeagueMember>>,
+    TError,
+    { leagueId: number; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeLeagueMember>>,
+  TError,
+  { leagueId: number; userId: string },
+  TContext
+> => {
+  return useMutation(getRemoveLeagueMemberMutationOptions(options));
+};
 
 /**
  * @summary Health check

@@ -24,10 +24,14 @@ import {
   describeEvent,
   applyScoreDelta,
 } from "../lib/possession";
+import { requireAuth } from "../middlewares/requireAuth";
+import { requireLeagueRole } from "../lib/leagueAccess";
 
 const router: IRouter = Router();
 
-router.get("/games/:gameId/stats", async (req, res): Promise<void> => {
+router.use(requireAuth);
+
+router.get("/games/:gameId/stats", requireLeagueRole("viewer"), async (req, res): Promise<void> => {
   const params = ListStatEventsParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -41,7 +45,7 @@ router.get("/games/:gameId/stats", async (req, res): Promise<void> => {
   res.json(ListStatEventsResponse.parse(rows));
 });
 
-router.post("/games/:gameId/stats", async (req, res): Promise<void> => {
+router.post("/games/:gameId/stats", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = RecordStatEventParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -201,7 +205,7 @@ router.post("/games/:gameId/stats", async (req, res): Promise<void> => {
   }
 });
 
-router.patch("/stats/:statEventId", async (req, res): Promise<void> => {
+router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = UpdateStatEventParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -306,7 +310,7 @@ router.patch("/stats/:statEventId", async (req, res): Promise<void> => {
   }
 });
 
-router.delete("/stats/:statEventId", async (req, res): Promise<void> => {
+router.delete("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = DeleteStatEventParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

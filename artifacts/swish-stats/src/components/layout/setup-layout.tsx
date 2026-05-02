@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -8,21 +8,30 @@ interface SetupLayoutProps {
   gameId: string;
   title: string;
   step: number;
+  leagueId?: string | null;
 }
 
-export function SetupLayout({ children, gameId, title, step }: SetupLayoutProps) {
+export function SetupLayout({
+  children,
+  gameId,
+  title,
+  step,
+  leagueId,
+}: SetupLayoutProps) {
+  const qs = leagueId ? `?league=${leagueId}` : "";
+  const backHref = leagueId ? `/leagues/${leagueId}` : "/leagues";
   const steps = [
-    { num: 1, label: "Info", path: `/setup/${gameId}/info` },
-    { num: 2, label: "Teams", path: `/setup/${gameId}/teams` },
-    { num: 3, label: "Players", path: `/setup/${gameId}/players` },
-    { num: 4, label: "Extras", path: `/setup/${gameId}/extras` },
+    { num: 1, label: "Info", path: `/setup/${gameId}/info${qs}` },
+    { num: 2, label: "Teams", path: `/setup/${gameId}/teams${qs}` },
+    { num: 3, label: "Players", path: `/setup/${gameId}/players${qs}` },
+    { num: 4, label: "Extras", path: `/setup/${gameId}/extras${qs}` },
   ];
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
       <header className="border-b bg-card px-6 py-4 sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/">
+          <Link href={backHref}>
             <Button variant="ghost" size="icon">
               <ChevronLeft className="h-5 w-5" />
             </Button>

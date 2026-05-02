@@ -17,8 +17,12 @@ import {
   GetBoxScoreResponse,
   GetPossessionsResponse,
 } from "@workspace/api-zod";
+import { requireAuth } from "../middlewares/requireAuth";
+import { requireLeagueRole } from "../lib/leagueAccess";
 
 const router: IRouter = Router();
+
+router.use(requireAuth);
 
 type StatLine = {
   playerId: number;
@@ -171,7 +175,7 @@ function teamTotals(lines: StatLine[], teamId: number): StatLine {
   return total;
 }
 
-router.get("/games/:gameId/box-score", async (req, res): Promise<void> => {
+router.get("/games/:gameId/box-score", requireLeagueRole("viewer"), async (req, res): Promise<void> => {
   const params = GetBoxScoreParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -269,7 +273,7 @@ router.get("/games/:gameId/box-score", async (req, res): Promise<void> => {
   res.json(GetBoxScoreResponse.parse(payload));
 });
 
-router.get("/games/:gameId/possessions", async (req, res): Promise<void> => {
+router.get("/games/:gameId/possessions", requireLeagueRole("viewer"), async (req, res): Promise<void> => {
   const params = GetPossessionsParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
