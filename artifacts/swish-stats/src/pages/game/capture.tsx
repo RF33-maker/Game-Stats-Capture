@@ -179,7 +179,7 @@ export default function GameCapture() {
     const lastEvent = statEvents?.[0];
     if (!lastEvent) return;
     try {
-      await deleteStat.mutateAsync({ gameId, statEventId: lastEvent.id });
+      await deleteStat.mutateAsync({ statEventId: lastEvent.id });
       invalidateData();
     } catch {
       toast.error("Failed to undo");
@@ -529,7 +529,7 @@ export default function GameCapture() {
           
           <div className="flex-1 overflow-auto p-2 space-y-1">
             {pbp?.map(entry => {
-              const t = entry.teamId ? teams.find(x => x.id === entry.teamId) : null;
+              const t = entry.teamId ? teams?.find(x => x.id === entry.teamId) : null;
               const editable = entry.statEventId != null;
               return (
                 <button
@@ -595,9 +595,9 @@ export default function GameCapture() {
               { value: 'period_end' as StatEventType, label: 'PERIOD END' },
             ].filter((opt, i, arr) => arr.findIndex(o => o.value === opt.value) === i);
 
-            const currentTeam = editForm.teamId ? teams.find(t => t.id === editForm.teamId) : null;
+            const currentTeam = editForm.teamId ? teams?.find(t => t.id === editForm.teamId) : null;
             const eligiblePlayers = editForm.teamId
-              ? players.filter(p => p.teamId === editForm.teamId)
+              ? (players ?? []).filter(p => p.teamId === editForm.teamId)
               : [];
             return (
               <div className="space-y-4 mt-2">

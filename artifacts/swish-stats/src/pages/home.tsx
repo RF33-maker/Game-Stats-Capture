@@ -55,7 +55,7 @@ export default function Home() {
             <p className="text-muted-foreground mt-1">Live game capture & box scores</p>
           </div>
           <div className="flex gap-4">
-            <Button variant="outline" onClick={() => seedGame.mutate({})} disabled={seedGame.isPending}>
+            <Button variant="outline" onClick={() => seedGame.mutate()} disabled={seedGame.isPending}>
               {seedGame.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Database className="w-4 h-4 mr-2" />}
               Seed Sample Game
             </Button>
