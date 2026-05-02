@@ -4,12 +4,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import App from "./App";
 import "./index.css";
+import { LOCAL_MODE_ENABLED, installLocalFetchInterceptor } from "@/lib/local-mode";
+
+if (LOCAL_MODE_ENABLED) {
+  installLocalFetchInterceptor();
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      staleTime: 0, // Live data
+      staleTime: 0,
     },
   },
 });

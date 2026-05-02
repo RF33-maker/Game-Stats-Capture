@@ -23,7 +23,7 @@ import {
   Team,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ChevronLeft, ChevronRight, Activity, ArrowRight, BarChart2 } from "lucide-react";
+import { Loader2, Play, Pause, Undo2, ChevronLeft, ChevronRight, Activity, ArrowLeft, ArrowRight, BarChart2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";

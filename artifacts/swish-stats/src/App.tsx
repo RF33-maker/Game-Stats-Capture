@@ -9,6 +9,8 @@ import SetupPlayers from "@/pages/setup/players";
 import SetupExtras from "@/pages/setup/extras";
 import GameCapture from "@/pages/game/capture";
 import BoxScore from "@/pages/game/box-score";
+import { LocalModeBadge } from "@/components/local-mode-badge";
+import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 
 function Router() {
   return (
@@ -30,6 +32,7 @@ function App() {
     <TooltipProvider>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
+        {LOCAL_MODE_ENABLED && <LocalModeBadge />}
       </WouterRouter>
     </TooltipProvider>
   );
