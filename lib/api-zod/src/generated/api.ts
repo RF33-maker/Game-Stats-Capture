@@ -205,6 +205,36 @@ export const CreateLeagueGameBody = zod.object({
 });
 
 /**
+ * @summary Recent activity feed for a league (finalized games + new members)
+ */
+export const ListLeagueActivityParams = zod.object({
+  leagueId: zod.coerce.number(),
+});
+
+export const ListLeagueActivityQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .optional()
+    .describe("Maximum number of entries to return (default 20, max 50)."),
+});
+
+export const ListLeagueActivityResponseItem = zod.object({
+  type: zod.enum(["game_finalized", "member_joined"]),
+  timestamp: zod.coerce.date(),
+  gameId: zod.number().nullish(),
+  gameLabel: zod.string().nullish(),
+  userId: zod.string().nullish(),
+  userDisplayName: zod.string().nullish(),
+  userEmail: zod.string().nullish(),
+  role: zod
+    .union([zod.enum(["viewer", "scorer", "admin"]), zod.null()])
+    .optional(),
+});
+export const ListLeagueActivityResponse = zod.array(
+  ListLeagueActivityResponseItem,
+);
+
+/**
  * @summary List memberships for a league
  */
 export const ListLeagueMembersParams = zod.object({

@@ -31,7 +31,9 @@ import type {
   HandleBrowserLoginCallbackParams,
   HealthStatus,
   League,
+  LeagueActivityEntry,
   LeagueMember,
+  ListLeagueActivityParams,
   LogoutSuccess,
   MobileTokenExchangeRequest,
   MobileTokenExchangeSuccess,
@@ -1175,6 +1177,126 @@ export const useCreateLeagueGame = <
 > => {
   return useMutation(getCreateLeagueGameMutationOptions(options));
 };
+
+/**
+ * @summary Recent activity feed for a league (finalized games + new members)
+ */
+export const getListLeagueActivityUrl = (
+  leagueId: number,
+  params?: ListLeagueActivityParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/leagues/${leagueId}/activity?${stringifiedParams}`
+    : `/api/leagues/${leagueId}/activity`;
+};
+
+export const listLeagueActivity = async (
+  leagueId: number,
+  params?: ListLeagueActivityParams,
+  options?: RequestInit,
+): Promise<LeagueActivityEntry[]> => {
+  return customFetch<LeagueActivityEntry[]>(
+    getListLeagueActivityUrl(leagueId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListLeagueActivityQueryKey = (
+  leagueId: number,
+  params?: ListLeagueActivityParams,
+) => {
+  return [
+    `/api/leagues/${leagueId}/activity`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListLeagueActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLeagueActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  leagueId: number,
+  params?: ListLeagueActivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLeagueActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListLeagueActivityQueryKey(leagueId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listLeagueActivity>>
+  > = ({ signal }) =>
+    listLeagueActivity(leagueId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!leagueId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLeagueActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLeagueActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listLeagueActivity>>
+>;
+export type ListLeagueActivityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent activity feed for a league (finalized games + new members)
+ */
+
+export function useListLeagueActivity<
+  TData = Awaited<ReturnType<typeof listLeagueActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  leagueId: number,
+  params?: ListLeagueActivityParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listLeagueActivity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLeagueActivityQueryOptions(
+    leagueId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List memberships for a league

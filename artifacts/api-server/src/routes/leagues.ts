@@ -191,6 +191,97 @@ router.post(
 );
 
 router.get(
+  "/leagues/:leagueId/activity",
+  requireLeagueRole("viewer"),
+  async (req: Request, res: Response) => {
+    const leagueId = Number(req.params.leagueId);
+    const limitRaw = Number(req.query.limit ?? 20);
+    const limit = Math.min(
+      Math.max(Math.floor(Number.isFinite(limitRaw) ? limitRaw : 20), 1),
+      50,
+    );
+
+    const finalizedGames = await db
+      .select({
+        id: gamesTable.id,
+        competition: gamesTable.competition,
+        updatedAt: gamesTable.updatedAt,
+      })
+      .from(gamesTable)
+      .where(
+        and(
+          eq(gamesTable.leagueId, leagueId),
+          eq(gamesTable.status, "final"),
+        ),
+      )
+      .orderBy(desc(gamesTable.updatedAt))
+      .limit(limit);
+
+    const newMembers = await db
+      .select({
+        userId: leagueMembershipsTable.userId,
+        role: leagueMembershipsTable.role,
+        createdAt: leagueMembershipsTable.createdAt,
+        email: usersTable.email,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+      })
+      .from(leagueMembershipsTable)
+      .innerJoin(usersTable, eq(leagueMembershipsTable.userId, usersTable.id))
+      .where(eq(leagueMembershipsTable.leagueId, leagueId))
+      .orderBy(desc(leagueMembershipsTable.createdAt))
+      .limit(limit);
+
+    type Entry = {
+      type: "game_finalized" | "member_joined";
+      timestamp: string;
+      gameId: number | null;
+      gameLabel: string | null;
+      userId: string | null;
+      userDisplayName: string | null;
+      userEmail: string | null;
+      role: LeagueRole | null;
+    };
+
+    const entries: Entry[] = [];
+    for (const g of finalizedGames) {
+      entries.push({
+        type: "game_finalized",
+        timestamp: g.updatedAt.toISOString(),
+        gameId: g.id,
+        gameLabel: g.competition || "Exhibition game",
+        userId: null,
+        userDisplayName: null,
+        userEmail: null,
+        role: null,
+      });
+    }
+    for (const m of newMembers) {
+      const display =
+        m.firstName || m.lastName
+          ? `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim()
+          : (m.email ?? m.userId);
+      entries.push({
+        type: "member_joined",
+        timestamp: m.createdAt.toISOString(),
+        gameId: null,
+        gameLabel: null,
+        userId: m.userId,
+        userDisplayName: display,
+        userEmail: m.email,
+        role: m.role,
+      });
+    }
+
+    entries.sort(
+      (a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+    res.json(entries.slice(0, limit));
+  },
+);
+
+router.get(
   "/leagues/:leagueId/members",
   requireLeagueRole("viewer"),
   async (req: Request, res: Response) => {

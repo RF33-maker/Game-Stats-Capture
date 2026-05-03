@@ -108,6 +108,30 @@ export interface AddLeagueMemberBody {
   role: LeagueRole;
 }
 
+export type LeagueActivityType =
+  (typeof LeagueActivityType)[keyof typeof LeagueActivityType];
+
+export const LeagueActivityType = {
+  game_finalized: "game_finalized",
+  member_joined: "member_joined",
+} as const;
+
+export interface LeagueActivityEntry {
+  type: LeagueActivityType;
+  timestamp: string;
+  /** @nullable */
+  gameId?: number | null;
+  /** @nullable */
+  gameLabel?: string | null;
+  /** @nullable */
+  userId?: string | null;
+  /** @nullable */
+  userDisplayName?: string | null;
+  /** @nullable */
+  userEmail?: string | null;
+  role?: LeagueRole | null;
+}
+
 export interface UpdateLeagueMemberBody {
   role: LeagueRole;
 }
@@ -463,4 +487,11 @@ export type HandleBrowserLoginCallbackParams = {
   code?: string;
   state?: string;
   iss?: string;
+};
+
+export type ListLeagueActivityParams = {
+  /**
+   * Maximum number of entries to return (default 20, max 50).
+   */
+  limit?: number;
 };

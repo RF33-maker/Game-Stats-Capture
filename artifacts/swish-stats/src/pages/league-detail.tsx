@@ -5,6 +5,7 @@ import {
   useListLeagueGames,
   useCreateLeagueGame,
   useListLeagueMembers,
+  useListLeagueActivity,
   useAddLeagueMember,
   useRemoveLeagueMember,
   useUpdateLeagueMember,
@@ -12,7 +13,9 @@ import {
   useDeleteGame,
   getListLeagueGamesQueryKey,
   getListLeagueMembersQueryKey,
+  getListLeagueActivityQueryKey,
   getGetLeagueQueryKey,
+  LeagueActivityType,
   type LeagueRole,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -56,9 +59,12 @@ import {
   Zap,
   Users,
   BarChart3,
+  Activity,
+  UserCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { AppHeader } from "@/components/app-header";
 
 const ROLES: LeagueRole[] = ["viewer", "scorer", "admin"];
@@ -106,6 +112,11 @@ export default function LeagueDetail() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
+  const invalidateActivity = () =>
+    queryClient.invalidateQueries({
+      queryKey: getListLeagueActivityQueryKey(leagueId, { limit: 10 }),
+    });
+
   const {
     data: league,
     isLoading,
@@ -129,6 +140,16 @@ export default function LeagueDetail() {
       queryKey: getListLeagueMembersQueryKey(leagueId),
     },
   });
+  const { data: activity } = useListLeagueActivity(
+    leagueId,
+    { limit: 10 },
+    {
+      query: {
+        enabled: !!leagueId,
+        queryKey: getListLeagueActivityQueryKey(leagueId, { limit: 10 }),
+      },
+    },
+  );
 
   const canScore =
     league?.viewerRole === "scorer" || league?.viewerRole === "admin";
@@ -140,6 +161,7 @@ export default function LeagueDetail() {
         queryClient.invalidateQueries({
           queryKey: getListLeagueGamesQueryKey(leagueId),
         });
+        invalidateActivity();
         setLocation(`/setup/${game.id}/info?league=${leagueId}`);
       },
       onError: () => toast.error("Failed to create game"),
@@ -156,6 +178,7 @@ export default function LeagueDetail() {
         queryClient.invalidateQueries({
           queryKey: getListLeagueMembersQueryKey(leagueId),
         });
+        invalidateActivity();
       },
       onError: (err: unknown) => {
         const msg =
@@ -167,10 +190,12 @@ export default function LeagueDetail() {
 
   const updateMember = useUpdateLeagueMember({
     mutation: {
-      onSuccess: () =>
+      onSuccess: () => {
         queryClient.invalidateQueries({
           queryKey: getListLeagueMembersQueryKey(leagueId),
-        }),
+        });
+        invalidateActivity();
+      },
       onError: () => toast.error("Failed to update role"),
     },
   });
@@ -181,6 +206,7 @@ export default function LeagueDetail() {
         queryClient.invalidateQueries({
           queryKey: getListLeagueGamesQueryKey(leagueId),
         });
+        invalidateActivity();
         setLocation(`/game/${game.id}?league=${leagueId}`);
       },
       onError: () => toast.error("Failed to reopen game"),
@@ -194,6 +220,7 @@ export default function LeagueDetail() {
         queryClient.invalidateQueries({
           queryKey: getListLeagueGamesQueryKey(leagueId),
         });
+        invalidateActivity();
       },
       onError: () => toast.error("Failed to delete game"),
     },
@@ -206,6 +233,7 @@ export default function LeagueDetail() {
         queryClient.invalidateQueries({
           queryKey: getListLeagueMembersQueryKey(leagueId),
         });
+        invalidateActivity();
       },
       onError: () => toast.error("Failed to remove member"),
     },
@@ -507,6 +535,104 @@ export default function LeagueDetail() {
                   );
                 })}
               </div>
+            )}
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Activity className="w-4 h-4 text-muted-foreground" />
+                Recent activity
+              </h2>
+            </div>
+
+            {!activity || activity.length === 0 ? (
+              <div className="text-center py-10 border border-dashed rounded-xl bg-card/40 text-muted-foreground text-sm">
+                No activity yet. Finalize a game or add members to see updates here.
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="p-0 divide-y">
+                  {activity.map((entry, idx) => {
+                    const ts = new Date(entry.timestamp);
+                    const relative = formatDistanceToNow(ts, {
+                      addSuffix: true,
+                    });
+                    const exact = format(ts, "MMM d, yyyy h:mm a");
+
+                    if (
+                      entry.type === LeagueActivityType.game_finalized &&
+                      entry.gameId != null
+                    ) {
+                      return (
+                        <Link
+                          key={`g-${entry.gameId}-${idx}`}
+                          href={`/game/${entry.gameId}/box?league=${leagueId}`}
+                          className="flex items-center gap-3 px-5 py-3 hover:bg-muted/40 transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm">
+                              <span className="font-medium">
+                                {entry.gameLabel || "Exhibition game"}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {" "}
+                                was finalized
+                              </span>
+                            </div>
+                            <div
+                              className="text-xs text-muted-foreground"
+                              title={exact}
+                            >
+                              {relative}
+                            </div>
+                          </div>
+                          <BarChart3 className="w-4 h-4 text-muted-foreground shrink-0" />
+                        </Link>
+                      );
+                    }
+
+                    if (entry.type === LeagueActivityType.member_joined) {
+                      return (
+                        <div
+                          key={`m-${entry.userId}-${idx}`}
+                          className="flex items-center gap-3 px-5 py-3"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                            <UserCheck className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm">
+                              <span className="font-medium truncate">
+                                {entry.userDisplayName ||
+                                  entry.userEmail ||
+                                  "A member"}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {" joined as "}
+                              </span>
+                              <span className="font-medium">
+                                {entry.role ?? "member"}
+                              </span>
+                            </div>
+                            <div
+                              className="text-xs text-muted-foreground"
+                              title={exact}
+                            >
+                              {relative}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })}
+                </CardContent>
+              </Card>
             )}
           </section>
 

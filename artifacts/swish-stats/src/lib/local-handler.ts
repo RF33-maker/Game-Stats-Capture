@@ -840,6 +840,36 @@ export async function handleLocalRequest(
     // Return ALL local games for the synthetic league.
     return ok(store.games.list());
   }
+  if (m === "GET" && /^\/api\/leagues\/\d+\/activity$/.test(pathname)) {
+    const leagueId = Number(pathname.split("/")[3]);
+    const qs = path.includes("?") ? path.slice(path.indexOf("?") + 1) : "";
+    const limitParam = new URLSearchParams(qs).get("limit");
+    const limitRaw = Number(limitParam ?? 20);
+    const limit = Math.min(
+      Math.max(Math.floor(Number.isFinite(limitRaw) ? limitRaw : 20), 1),
+      50,
+    );
+    const finalized = store.games
+      .list()
+      .filter((g) => g.status === "final")
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      )
+      .slice(0, limit)
+      .map((g) => ({
+        type: "game_finalized" as const,
+        timestamp: g.updatedAt,
+        gameId: g.id,
+        gameLabel: g.competition || "Exhibition game",
+        userId: null,
+        userDisplayName: null,
+        userEmail: null,
+        role: null,
+      }));
+    void leagueId;
+    return ok(finalized);
+  }
   if (m === "GET" && /^\/api\/leagues\/\d+\/members$/.test(pathname)) {
     return ok([
       {

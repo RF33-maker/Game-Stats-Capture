@@ -265,6 +265,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/Game"
 
+  /leagues/{leagueId}/activity:
+    get:
+      operationId: listLeagueActivity
+      tags: [leagues]
+      summary: Recent activity feed for a league (finalized games + new members)
+      parameters:
+        - $ref: "#/components/parameters/LeagueId"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of entries to return (default 20, max 50).
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Activity entries (newest first)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeagueActivityEntry"
+
   /leagues/{leagueId}/members:
     get:
       operationId: listLeagueMembers
@@ -1004,6 +1027,34 @@ components:
         role:
           $ref: "#/components/schemas/LeagueRole"
       required: [email, role]
+
+    LeagueActivityType:
+      type: string
+      enum: [game_finalized, member_joined]
+
+    LeagueActivityEntry:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/LeagueActivityType"
+        timestamp:
+          type: string
+          format: date-time
+        gameId:
+          type: ["integer", "null"]
+        gameLabel:
+          type: ["string", "null"]
+        userId:
+          type: ["string", "null"]
+        userDisplayName:
+          type: ["string", "null"]
+        userEmail:
+          type: ["string", "null"]
+        role:
+          oneOf:
+            - $ref: "#/components/schemas/LeagueRole"
+            - type: "null"
+      required: [type, timestamp]
 
     UpdateLeagueMemberBody:
       type: object
