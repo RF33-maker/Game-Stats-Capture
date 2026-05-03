@@ -228,12 +228,6 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                 </div>
                 <p className="text-sm text-white/55 mb-7">{cardSubtitle}</p>
 
-                {mode === "local" && (
-                  <div className="mb-5 rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-xs font-medium text-amber-400">
-                    Running in local mode
-                  </div>
-                )}
-
                 <Button
                   size="lg"
                   className="w-full text-base h-12 rounded-md font-semibold"
