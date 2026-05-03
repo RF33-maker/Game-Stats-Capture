@@ -808,37 +808,49 @@ export async function handleLocalRequest(
     });
   }
 
-  // Leagues bypass — pretend the local mode user has a single league.
+  // Leagues — real local CRUD backed by store.leagues.
   if (m === "GET" && pathname === "/api/leagues") {
-    return ok([
-      {
-        id: 1,
-        name: "Local Games",
-        season: "Local Mode",
-        logoUrl: null,
+    store.leagues.ensureSeed();
+    return ok(
+      store.leagues.list().map((l) => ({
+        ...l,
         ownerUserId: "local",
-        viewerRole: "admin",
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+        viewerRole: "admin" as const,
+      })),
+    );
+  }
+  if (m === "POST" && pathname === "/api/leagues") {
+    const data = (body ?? {}) as { name?: unknown; season?: unknown; logoUrl?: unknown };
+    const name = typeof data.name === "string" ? data.name.trim() : "";
+    if (!name) return badRequest("League name is required");
+    const season = typeof data.season === "string" ? data.season : null;
+    const logoUrl = typeof data.logoUrl === "string" ? data.logoUrl : null;
+    const created = store.leagues.create({ name, season, logoUrl });
+    return ok({ ...created, ownerUserId: "local", viewerRole: "admin" as const }, 201);
   }
   if (m === "GET" && /^\/api\/leagues\/\d+$/.test(pathname)) {
-    return ok({
-      id: Number(pathname.split("/")[3]),
-      name: "Local Games",
-      season: "Local Mode",
-      logoUrl: null,
-      ownerUserId: "local",
-      viewerRole: "admin",
-      createdAt: new Date().toISOString(),
-    });
+    const id = Number(pathname.split("/")[3]);
+    const league = store.leagues.get(id) ?? store.leagues.ensureSeed();
+    return ok({ ...league, ownerUserId: "local", viewerRole: "admin" as const });
+  }
+  if (m === "PATCH" && /^\/api\/leagues\/\d+$/.test(pathname)) {
+    const id = Number(pathname.split("/")[3]);
+    const data = (body ?? {}) as Partial<{ name: string; season: string | null; logoUrl: string | null }>;
+    const updated = store.leagues.update(id, data);
+    if (!updated) return notFound("League not found");
+    return ok({ ...updated, ownerUserId: "local", viewerRole: "admin" as const });
+  }
+  if (m === "DELETE" && /^\/api\/leagues\/\d+$/.test(pathname)) {
+    const id = Number(pathname.split("/")[3]);
+    if (!store.leagues.delete(id)) return notFound("League not found");
+    return ok({ ok: true });
   }
   if (m === "GET" && pathname === "/api/games") {
     return ok(store.games.list());
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
-    // Return ALL local games for the synthetic league.
-    return ok(store.games.list());
+    const leagueId = Number(pathname.split("/")[3]);
+    return ok(store.games.list().filter((g) => g.leagueId === leagueId || g.leagueId == null));
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/activity$/.test(pathname)) {
     const leagueId = Number(pathname.split("/")[3]);

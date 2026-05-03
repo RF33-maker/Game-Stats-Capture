@@ -110,6 +110,14 @@ export type SyncQueueItem = {
 
 export type IdMap = Record<string, number>;
 
+export type LSLeague = {
+  id: number;
+  name: string;
+  season: string | null;
+  logoUrl: string | null;
+  createdAt: string;
+};
+
 type Counters = {
   game: number;
   team: number;
@@ -117,10 +125,11 @@ type Counters = {
   statEvent: number;
   pbp: number;
   syncQueue: number;
+  league: number;
 };
 
 function getCounters(): Counters {
-  return load<Counters>("counters", { game: 0, team: 0, player: 0, statEvent: 0, pbp: 0, syncQueue: 0 });
+  return load<Counters>("counters", { game: 0, team: 0, player: 0, statEvent: 0, pbp: 0, syncQueue: 0, league: 0 });
 }
 
 function saveCounters(c: Counters) {
@@ -153,6 +162,48 @@ export const store = {
   reset() {
     const allKeys = Object.keys(localStorage).filter(k => k.startsWith(NS));
     allKeys.forEach(k => localStorage.removeItem(k));
+  },
+
+  leagues: {
+    list(): LSLeague[] { return load<LSLeague[]>("leagues", []); },
+    save(leagues: LSLeague[]) { save("leagues", leagues); },
+    get(id: number) { return this.list().find(l => l.id === id) ?? null; },
+    create(input: { name: string; season?: string | null; logoUrl?: string | null }): LSLeague {
+      const now = new Date().toISOString();
+      const id = nextId("league");
+      const league: LSLeague = {
+        id,
+        name: input.name,
+        season: input.season ?? null,
+        logoUrl: input.logoUrl ?? null,
+        createdAt: now,
+      };
+      const leagues = this.list();
+      leagues.push(league);
+      this.save(leagues);
+      return league;
+    },
+    update(id: number, data: Partial<Omit<LSLeague, "id" | "createdAt">>): LSLeague | null {
+      const leagues = this.list();
+      const idx = leagues.findIndex(l => l.id === id);
+      if (idx === -1) return null;
+      leagues[idx] = { ...leagues[idx], ...data, id };
+      this.save(leagues);
+      return leagues[idx];
+    },
+    delete(id: number): boolean {
+      const leagues = this.list();
+      const idx = leagues.findIndex(l => l.id === id);
+      if (idx === -1) return false;
+      leagues.splice(idx, 1);
+      this.save(leagues);
+      return true;
+    },
+    ensureSeed(): LSLeague {
+      const list = this.list();
+      if (list.length > 0) return list[0];
+      return this.create({ name: "Local Games", season: "Local Mode" });
+    },
   },
 
   syncQueue: {

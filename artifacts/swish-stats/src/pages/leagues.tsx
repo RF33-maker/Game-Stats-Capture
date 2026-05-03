@@ -133,7 +133,7 @@ export default function LeaguesHub() {
   const leagueMap = new Map((leagues ?? []).map((l) => [l.id, l]));
 
   const hasLeagues = (leagues?.length ?? 0) > 0;
-  const canCreateLeague = !LOCAL_MODE_ENABLED;
+  const canCreateLeague = true;
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
@@ -171,7 +171,7 @@ export default function LeaguesHub() {
                 <h2 className="text-xl font-bold">No leagues yet</h2>
                 <p className="text-muted-foreground mt-1 max-w-xs mx-auto">
                   {LOCAL_MODE_ENABLED
-                    ? "Local mode is active. Data is stored in this browser only."
+                    ? "Local mode is active — leagues you create live in this browser."
                     : "Create your first league and invite your team to start tracking games."}
                 </p>
               </div>
