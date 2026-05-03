@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
-  LogIn,
   ArrowRight,
   Zap,
   Shield,
@@ -101,22 +100,6 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
         ? "Go to League Hub"
         : "Sign In";
 
-  const CtaIcon = mode === "guest" ? LogIn : ArrowRight;
-
-  const cardTitle =
-    mode === "local"
-      ? "Local Mode"
-      : mode === "authed"
-        ? "Welcome Back"
-        : "League Hub";
-
-  const cardSubtitle =
-    mode === "local"
-      ? "All data stays in this browser. Continue to start tracking."
-      : mode === "authed"
-        ? "You're signed in. Continue to your league dashboard."
-        : "Sign in to access your league dashboard.";
-
   return (
     <div className="min-h-[100dvh] bg-[#0d0d0f] text-foreground relative overflow-hidden">
       {/* Background ambience */}
@@ -214,35 +197,9 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
               </div>
             </div>
 
-            {/* Right: auth/info card */}
+            {/* Right: live score mockup */}
             <div className="lg:sticky lg:top-8 space-y-5">
               <LiveScoreMockup />
-              <div className="rounded-2xl border border-white/10 bg-[#15151a]/90 backdrop-blur-sm p-7 md:p-8 shadow-2xl shadow-black/40">
-                <div className="flex items-center gap-3 mb-1">
-                  <img
-                    src={logoUrl}
-                    alt=""
-                    className="w-8 h-8 object-contain"
-                  />
-                  <h2 className="text-2xl font-bold text-white">{cardTitle}</h2>
-                </div>
-                <p className="text-sm text-white/55 mb-7">{cardSubtitle}</p>
-
-                <Button
-                  size="lg"
-                  className="w-full text-base h-12 rounded-md font-semibold"
-                  onClick={onCta}
-                >
-                  <CtaIcon className="w-4 h-4 mr-2" />
-                  {ctaLabel}
-                </Button>
-
-                {mode === "guest" && (
-                  <p className="text-center text-xs text-white/40 mt-5">
-                    Authentication powered by Replit
-                  </p>
-                )}
-              </div>
             </div>
           </div>
         </section>
