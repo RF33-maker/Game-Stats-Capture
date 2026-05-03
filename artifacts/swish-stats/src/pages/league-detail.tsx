@@ -33,7 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -48,16 +47,58 @@ import {
 import {
   Loader2,
   Plus,
-  ArrowLeft,
   Play,
   UserPlus,
   Trash2,
   Pencil,
+  Calendar,
+  MapPin,
+  Zap,
+  Users,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { AppHeader } from "@/components/app-header";
 
 const ROLES: LeagueRole[] = ["viewer", "scorer", "admin"];
+
+function roleBadge(role: string) {
+  const classes =
+    role === "admin"
+      ? "bg-primary/20 text-primary border-primary/30"
+      : role === "scorer"
+        ? "bg-violet-500/20 text-violet-400 border-violet-500/30"
+        : "bg-muted text-muted-foreground border-border";
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold border ${classes}`}
+    >
+      {role}
+    </span>
+  );
+}
+
+function statusBadge(status: string) {
+  const classes =
+    status === "active"
+      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+      : status === "final"
+        ? "bg-muted text-muted-foreground border-border"
+        : "bg-blue-500/20 text-blue-400 border-blue-500/30";
+  const label =
+    status === "active" ? "Live" : status === "final" ? "Final" : "Setup";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold border ${classes}`}
+    >
+      {status === "active" && (
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+      )}
+      {label}
+    </span>
+  );
+}
 
 export default function LeagueDetail() {
   const [, params] = useRoute("/leagues/:leagueId");
@@ -188,177 +229,252 @@ export default function LeagueDetail() {
 
   if (leagueError || !league) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground p-6">
-        <div className="max-w-sm w-full text-center space-y-4 border rounded-xl bg-card p-8">
-          <h1 className="text-xl font-bold">League unavailable</h1>
-          <p className="text-sm text-muted-foreground">
-            This league has been deleted or you no longer have access to it.
-          </p>
-          <Link href="/leagues">
-            <Button className="w-full">Back to leagues</Button>
-          </Link>
+      <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
+        <AppHeader />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-sm w-full text-center space-y-4 border rounded-xl bg-card p-8">
+            <h1 className="text-xl font-bold">League unavailable</h1>
+            <p className="text-sm text-muted-foreground">
+              This league has been deleted or you no longer have access to it.
+            </p>
+            <Link href="/leagues">
+              <Button className="w-full">Back to hub</Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
   }
 
+  const sortedGames = [...(games ?? [])].sort((a, b) => {
+    const order = { active: 0, setup: 1, final: 2 };
+    const statusDiff = order[a.status] - order[b.status];
+    if (statusDiff !== 0) return statusDiff;
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+
   return (
-    <div className="min-h-[100dvh] bg-background text-foreground p-8">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-start gap-3">
-            <Link href="/leagues">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">
-                {league.name}
-              </h1>
+    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
+      <AppHeader showBack={{ href: "/leagues", label: "League hub" }} />
+
+      <main className="flex-1">
+        <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-3xl font-bold tracking-tight">
+                  {league.name}
+                </h1>
+                {roleBadge(league.viewerRole)}
+              </div>
               {league.season && (
                 <p className="text-muted-foreground">{league.season}</p>
               )}
-              <span className="text-xs mt-2 inline-block px-2 py-1 rounded-full uppercase tracking-wider font-bold bg-primary/20 text-primary">
-                You: {league.viewerRole}
-              </span>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-4 h-4" />
+                  {members?.length ?? "…"} member
+                  {(members?.length ?? 0) !== 1 ? "s" : ""}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4" />
+                  {games?.length ?? "…"} game
+                  {(games?.length ?? 0) !== 1 ? "s" : ""}
+                </span>
+              </div>
             </div>
+            {canAdmin && (
+              <Button
+                onClick={() =>
+                  createGame.mutate({
+                    leagueId,
+                    data: {
+                      captureMode: "complex",
+                      periodCount: 4,
+                      periodDurationMins: 10,
+                      date: new Date().toISOString(),
+                    },
+                  })
+                }
+                disabled={createGame.isPending}
+              >
+                {createGame.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                New game
+              </Button>
+            )}
           </div>
-          {canAdmin && (
-            <Button
-              onClick={() =>
-                createGame.mutate({
-                  leagueId,
-                  data: {
-                    captureMode: "complex",
-                    periodCount: 4,
-                    periodDurationMins: 10,
-                    date: new Date().toISOString(),
-                  },
-                })
-              }
-              disabled={createGame.isPending}
-            >
-              {createGame.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4 mr-2" />
-              )}
-              New game
-            </Button>
-          )}
-        </header>
 
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold">Games</h2>
-          {!games || games.length === 0 ? (
-            <div className="text-center py-12 border border-dashed rounded-lg bg-card/50 text-muted-foreground">
-              No games yet.{" "}
-              {canAdmin
-                ? "Create one to get started."
-                : "Ask an admin to schedule a game."}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">
+                Games
+                {(games?.length ?? 0) > 0 && (
+                  <span className="text-muted-foreground font-normal text-base ml-2">
+                    ({games?.length})
+                  </span>
+                )}
+              </h2>
             </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {games.map((game) => (
-                <Card key={game.id} className="bg-card">
-                  <CardContent className="p-5 flex flex-col h-full gap-4">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-mono text-muted-foreground">
-                        {format(new Date(game.date), "MMM d, yyyy")}
-                      </span>
-                      <span
-                        className={`px-2 py-1 rounded-full uppercase tracking-wider font-bold ${
-                          game.status === "active"
-                            ? "bg-primary/20 text-primary"
-                            : game.status === "final"
-                              ? "bg-muted text-muted-foreground"
-                              : "bg-blue-500/20 text-blue-400"
-                        }`}
-                      >
-                        {game.status}
-                      </span>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold truncate">
-                        {game.competition || "Exhibition Game"}
-                      </h3>
-                      {game.venue && (
-                        <p className="text-sm text-muted-foreground">
-                          {game.venue}
-                        </p>
-                      )}
-                    </div>
-                    {(() => {
-                      const target =
-                        game.status === "setup"
-                          ? `/setup/${game.id}/info?league=${leagueId}`
-                          : game.status === "final"
-                            ? `/game/${game.id}/box?league=${leagueId}`
-                            : `/game/${game.id}?league=${leagueId}`;
-                      const allowed =
-                        game.status === "final"
-                          ? true
-                          : game.status === "active"
-                            ? canScore
-                            : canAdmin;
-                      const label =
-                        game.status === "setup"
-                          ? canAdmin
-                            ? "Setup"
-                            : "Awaiting setup"
-                          : game.status === "final"
-                            ? "Box Score"
-                            : canScore
-                              ? "Capture"
-                              : "View only";
-                      const variant =
-                        game.status === "final" ? "secondary" : "default";
-                      const primary = (
-                        <Button
-                          size="sm"
-                          className="w-full"
-                          variant={variant}
-                          disabled={!allowed}
-                        >
-                          {label}
-                          <Play className="w-4 h-4 ml-2" />
-                        </Button>
-                      );
-                      const primaryEl = allowed ? (
-                        <Link href={target}>{primary}</Link>
-                      ) : (
-                        primary
-                      );
-                      const actions =
-                        game.status === "final" && canAdmin ? (
-                          <div className="grid grid-cols-2 gap-2">
-                            {primaryEl}
+
+            {!games || games.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-4 text-center border border-dashed rounded-xl bg-card/40 text-muted-foreground">
+                <Play className="w-8 h-8 opacity-40" />
+                <div>
+                  <p className="font-medium text-foreground">No games yet</p>
+                  <p className="text-sm mt-0.5">
+                    {canAdmin
+                      ? "Create a game to start tracking stats."
+                      : "Ask an admin to schedule a game."}
+                  </p>
+                </div>
+                {canAdmin && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      createGame.mutate({
+                        leagueId,
+                        data: {
+                          captureMode: "complex",
+                          periodCount: 4,
+                          periodDurationMins: 10,
+                          date: new Date().toISOString(),
+                        },
+                      })
+                    }
+                    disabled={createGame.isPending}
+                  >
+                    {createGame.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4 mr-2" />
+                    )}
+                    Create first game
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {sortedGames.map((game) => {
+                  const target =
+                    game.status === "setup"
+                      ? `/setup/${game.id}/info?league=${leagueId}`
+                      : game.status === "final"
+                        ? `/game/${game.id}/box?league=${leagueId}`
+                        : `/game/${game.id}?league=${leagueId}`;
+                  const allowed =
+                    game.status === "final"
+                      ? true
+                      : game.status === "active"
+                        ? canScore
+                        : canAdmin;
+                  const label =
+                    game.status === "setup"
+                      ? canAdmin
+                        ? "Finish setup"
+                        : "Awaiting setup"
+                      : game.status === "final"
+                        ? "Box score"
+                        : canScore
+                          ? "Capture"
+                          : "View only";
+                  const isPrimary =
+                    game.status === "active" || game.status === "setup";
+
+                  return (
+                    <Card
+                      key={game.id}
+                      className={`bg-card border transition-colors ${
+                        game.status === "active"
+                          ? "border-emerald-500/30"
+                          : "hover:border-primary/20"
+                      }`}
+                    >
+                      <CardContent className="p-5 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          {statusBadge(game.status)}
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {format(new Date(game.date), "MMM d, yyyy")}
+                          </span>
+                        </div>
+
+                        <div className="flex-1">
+                          <h3 className="font-semibold leading-tight">
+                            {game.competition || "Exhibition game"}
+                          </h3>
+                          {game.venue && (
+                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {game.venue}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                          {game.status === "final" && canAdmin ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Link href={target} className="contents">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="w-full gap-1"
+                                >
+                                  <BarChart3 className="w-3.5 h-3.5" />
+                                  {label}
+                                </Button>
+                              </Link>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={reopenGame.isPending}
+                                onClick={() =>
+                                  reopenGame.mutate({
+                                    gameId: game.id,
+                                    data: { status: "active" },
+                                  })
+                                }
+                              >
+                                {reopenGame.isPending ? (
+                                  <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                                ) : (
+                                  <Pencil className="w-3.5 h-3.5 mr-1" />
+                                )}
+                                Reopen
+                              </Button>
+                            </div>
+                          ) : allowed ? (
+                            <Link href={target} className="block">
+                              <Button
+                                size="sm"
+                                variant={isPrimary ? "default" : "secondary"}
+                                className="w-full gap-1.5"
+                              >
+                                {game.status === "active" && (
+                                  <Zap className="w-3.5 h-3.5" />
+                                )}
+                                {game.status === "final" && (
+                                  <BarChart3 className="w-3.5 h-3.5" />
+                                )}
+                                {game.status === "setup" && (
+                                  <Calendar className="w-3.5 h-3.5" />
+                                )}
+                                {label}
+                              </Button>
+                            </Link>
+                          ) : (
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={reopenGame.isPending}
-                              onClick={() =>
-                                reopenGame.mutate({
-                                  gameId: game.id,
-                                  data: { status: "active" },
-                                })
-                              }
+                              className="w-full"
+                              disabled
                             >
-                              {reopenGame.isPending ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              ) : (
-                                <Pencil className="w-4 h-4 mr-2" />
-                              )}
-                              Edit
+                              {label}
                             </Button>
-                          </div>
-                        ) : (
-                          primaryEl
-                        );
-                      return (
-                        <div className="space-y-2">
-                          {actions}
+                          )}
+
                           {canAdmin && (
                             <Button
                               size="sm"
@@ -372,162 +488,192 @@ export default function LeagueDetail() {
                                 setConfirmDeleteGame({
                                   id: game.id,
                                   label:
-                                    game.competition || "Exhibition Game",
+                                    game.competition || "Exhibition game",
                                 })
                               }
                             >
                               {deleteGame.isPending &&
                               deleteGame.variables?.gameId === game.id ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
                               ) : (
-                                <Trash2 className="w-4 h-4 mr-2" />
+                                <Trash2 className="w-3.5 h-3.5 mr-1" />
                               )}
                               Delete
                             </Button>
                           )}
                         </div>
-                      );
-                    })()}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Members</h2>
-            {canAdmin && (
-              <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Add member
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add member by email</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="memail">Email</Label>
-                      <Input
-                        id="memail"
-                        type="email"
-                        value={memberEmail}
-                        onChange={(e) => setMemberEmail(e.target.value)}
-                        placeholder="user@example.com"
-                      />
-                      <p className="text-xs text-muted-foreground mt-2">
-                        The user must have already signed in to Swish Stats at
-                        least once.
-                      </p>
-                    </div>
-                    <div>
-                      <Label>Role</Label>
-                      <Select
-                        value={memberRole}
-                        onValueChange={(v) => setMemberRole(v as LeagueRole)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ROLES.map((r) => (
-                            <SelectItem key={r} value={r}>
-                              {r}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      onClick={() =>
-                        addMember.mutate({
-                          leagueId,
-                          data: { email: memberEmail, role: memberRole },
-                        })
-                      }
-                      disabled={!memberEmail.trim() || addMember.isPending}
-                    >
-                      {addMember.isPending ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : null}
-                      Add
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             )}
-          </div>
-          <Card>
-            <CardContent className="p-0 divide-y">
-              {(members ?? []).map((m) => (
-                <div
-                  key={m.userId}
-                  className="flex items-center justify-between p-4 gap-4"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">
-                      {m.firstName || m.lastName
-                        ? `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim()
-                        : (m.email ?? m.userId)}
-                    </div>
-                    {m.email && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {m.email}
-                      </div>
-                    )}
-                  </div>
-                  {canAdmin ? (
-                    <Select
-                      value={m.role}
-                      onValueChange={(v) =>
-                        updateMember.mutate({
-                          leagueId,
-                          userId: m.userId,
-                          data: { role: v as LeagueRole },
-                        })
-                      }
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map((r) => (
-                          <SelectItem key={r} value={r}>
-                            {r}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <span className="text-xs px-2 py-1 rounded-full uppercase tracking-wider font-bold bg-muted">
-                      {m.role}
-                    </span>
-                  )}
-                  {canAdmin && league.ownerUserId !== m.userId && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() =>
-                        removeMember.mutate({ leagueId, userId: m.userId })
-                      }
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </section>
-      </div>
+          </section>
 
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">
+                Members
+                {(members?.length ?? 0) > 0 && (
+                  <span className="text-muted-foreground font-normal text-base ml-2">
+                    ({members?.length})
+                  </span>
+                )}
+              </h2>
+              {canAdmin && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setMemberOpen(true)}
+                >
+                  <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                  Add member
+                </Button>
+              )}
+            </div>
+
+            {!members || members.length === 0 ? (
+              <div className="text-center py-10 border border-dashed rounded-xl bg-card/40 text-muted-foreground text-sm">
+                No members found.
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="p-0 divide-y">
+                  {members.map((m) => (
+                    <div
+                      key={m.userId}
+                      className="flex items-center gap-3 px-5 py-4"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 select-none">
+                        {(
+                          (m.firstName?.[0] ?? m.email?.[0] ?? "?")
+                        ).toUpperCase()}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate text-sm">
+                          {m.firstName || m.lastName
+                            ? `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim()
+                            : (m.email ?? m.userId)}
+                        </div>
+                        {m.email && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {m.email}
+                          </div>
+                        )}
+                      </div>
+
+                      {canAdmin ? (
+                        <Select
+                          value={m.role}
+                          onValueChange={(v) =>
+                            updateMember.mutate({
+                              leagueId,
+                              userId: m.userId,
+                              data: { role: v as LeagueRole },
+                            })
+                          }
+                        >
+                          <SelectTrigger className="w-28 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ROLES.map((r) => (
+                              <SelectItem key={r} value={r} className="text-xs">
+                                {r}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        roleBadge(m.role)
+                      )}
+
+                      {canAdmin && league.ownerUserId !== m.userId && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={() =>
+                            removeMember.mutate({ leagueId, userId: m.userId })
+                          }
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </section>
+        </div>
+      </main>
+
+      {/* Add member dialog */}
+      <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add member by email</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="memail">Email</Label>
+              <Input
+                id="memail"
+                type="email"
+                value={memberEmail}
+                onChange={(e) => setMemberEmail(e.target.value)}
+                placeholder="user@example.com"
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">
+                The user must have already signed in to Swish Stats at least
+                once.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Role</Label>
+              <Select
+                value={memberRole}
+                onValueChange={(v) => setMemberRole(v as LeagueRole)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setMemberOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                addMember.mutate({
+                  leagueId,
+                  data: { email: memberEmail, role: memberRole },
+                })
+              }
+              disabled={!memberEmail.trim() || addMember.isPending}
+            >
+              {addMember.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : null}
+              Add member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete game confirm */}
       <AlertDialog
         open={confirmDeleteGame !== null}
         onOpenChange={(open) => {
@@ -539,8 +685,10 @@ export default function LeagueDetail() {
             <AlertDialogTitle>Delete game?</AlertDialogTitle>
             <AlertDialogDescription>
               This permanently deletes
-              {confirmDeleteGame ? ` "${confirmDeleteGame.label}"` : " this game"}
-              {" "}and all of its teams, players, stat events, and play-by-play
+              {confirmDeleteGame
+                ? ` "${confirmDeleteGame.label}"`
+                : " this game"}{" "}
+              and all of its teams, players, stat events, and play-by-play
               entries. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -833,6 +833,9 @@ export async function handleLocalRequest(
       createdAt: new Date().toISOString(),
     });
   }
+  if (m === "GET" && pathname === "/api/games") {
+    return ok(store.games.list());
+  }
   if (m === "GET" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
     // Return ALL local games for the synthetic league.
     return ok(store.games.list());

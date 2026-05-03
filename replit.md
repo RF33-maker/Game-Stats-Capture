@@ -35,9 +35,10 @@ Basketball stat-capture platform inspired by FIBA Livestats. Backend lives in `a
 
 ### Frontend flow
 - `/` → redirects to `/leagues` if signed in, else `/login` (skipped in local mode).
-- `/login` → calls `useAuth().login(returnTo)` from `@workspace/replit-auth-web`.
-- `/leagues` → list of leagues the user belongs to + create-league dialog.
-- `/leagues/:leagueId` → games tab (create + open) and members tab (admin-only role management). All deep links into game flows append `?league=<id>` so the back/home buttons return to the correct league.
+- `/login` → branded split-screen layout: left brand panel (logo, tagline, feature list), right auth panel with "Sign in with Replit" CTA. Local mode shows a simplified centered card.
+- `/leagues` → full league hub: shared `AppHeader`, "Upcoming games" section (aggregated via `useListGames`), "Your leagues" grid with role badges and inline admin actions, prominent "New league" actions, first-run empty state. Create-league dialog routes to the new league on success.
+- `/leagues/:leagueId` → league detail: `AppHeader` with "← League hub" back nav, league hero with member/game counts, Games section (sorted active→setup→final) with contextual action buttons, Members section with avatar initials and role selects.
+- **Shared header**: `artifacts/swish-stats/src/components/app-header.tsx` — sticky branded header with logo link, user avatar/initials, local mode badge, and sign-out. Used on hub and league detail pages.
 - All routes inside the app are wrapped in `<ProtectedRoute>` which redirects unauthenticated users to `/login`.
 
 ## Key Commands
