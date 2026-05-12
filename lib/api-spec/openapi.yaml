@@ -1335,6 +1335,7 @@ components:
         - "pf"
         - "tf"
         - "flagrant"
+        - "fd"
         - "plus"
         - "minus"
         - "sub_in"

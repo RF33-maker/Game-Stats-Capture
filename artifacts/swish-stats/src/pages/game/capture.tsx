@@ -388,6 +388,7 @@ export default function GameCapture() {
     { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
     { type: 'pf', label: 'P FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
     { type: 'tf', label: 'T FOUL', color: 'bg-purple-700 hover:bg-purple-800' },
+    { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
   const simpleStats = [
@@ -403,6 +404,7 @@ export default function GameCapture() {
     { type: 'stl', label: 'STEAL', color: 'bg-cyan-600 hover:bg-cyan-700' },
     { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
     { type: 'pf', label: 'FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
+    { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
   const statButtons = activeMode === 'complex' ? complexStats : simpleStats;

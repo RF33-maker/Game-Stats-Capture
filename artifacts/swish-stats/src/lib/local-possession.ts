@@ -100,6 +100,7 @@ const EVENT_LABELS: Record<string, string> = {
   pf: "personal foul",
   tf: "technical foul",
   flagrant: "flagrant foul",
+  fd: "drew foul",
   sub_in: "substituted in",
   sub_out: "substituted out",
   timeout: "timeout",

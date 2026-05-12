@@ -303,6 +303,7 @@ export const StatEventType = {
   pf: "pf",
   tf: "tf",
   flagrant: "flagrant",
+  fd: "fd",
   plus: "plus",
   minus: "minus",
   sub_in: "sub_in",
