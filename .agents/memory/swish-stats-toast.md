@@ -1,15 +1,16 @@
 ---
-name: Swish Stats toast mismatch
-description: Toast provider vs. toast caller mismatch in the swish-stats artifact
+name: Swish Stats toasts use sonner
+description: Which toast system is authoritative in the swish-stats artifact
 ---
 
-Pages in `artifacts/swish-stats/src` import `{ toast }` from `sonner`
-(e.g. leagues, capture, settings), but `src/main.tsx` mounts only the shadcn
-`<Toaster />` from `@/components/ui/toaster` — not sonner's `<Toaster />`.
+The swish-stats artifact standardizes on **sonner** for toasts (`import { toast }
+from "sonner"`). Sonner's `<Toaster />` (wrapped in `components/ui/sonner.tsx`) is
+mounted in `main.tsx`.
 
-**Why:** This means sonner toasts can silently fail to render. A `sonner.tsx`
-wrapper exists in `components/ui/` but is not mounted in main.tsx.
+**Why:** Historically a shadcn `<Toaster />` was the only provider mounted while
+every page called sonner's `toast()`, so notifications silently never rendered.
+Mounting sonner's Toaster fixed it app-wide.
 
-**How to apply:** If toast notifications don't appear, mount sonner's `<Toaster />`
-in main.tsx (or switch callers to the shadcn `useToast` hook). Stay consistent
-with the existing sonner-import pattern when adding new toasts.
+**How to apply:** Add new toasts with sonner's `toast()`. Do not reintroduce the
+shadcn `useToast` hook for new code — keep one toast system to avoid silent
+no-op notifications.

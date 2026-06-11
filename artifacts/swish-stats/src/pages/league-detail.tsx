@@ -20,6 +20,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { newGameDefaults } from "@/lib/app-settings";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -316,12 +317,7 @@ export default function LeagueDetail() {
                 onClick={() =>
                   createGame.mutate({
                     leagueId,
-                    data: {
-                      captureMode: "complex",
-                      periodCount: 4,
-                      periodDurationMins: 10,
-                      date: new Date().toISOString(),
-                    },
+                    data: newGameDefaults(),
                   })
                 }
                 disabled={createGame.isPending}
@@ -365,12 +361,7 @@ export default function LeagueDetail() {
                     onClick={() =>
                       createGame.mutate({
                         leagueId,
-                        data: {
-                          captureMode: "complex",
-                          periodCount: 4,
-                          periodDurationMins: 10,
-                          date: new Date().toISOString(),
-                        },
+                        data: newGameDefaults(),
                       })
                     }
                     disabled={createGame.isPending}

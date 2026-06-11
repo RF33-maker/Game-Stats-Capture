@@ -27,6 +27,7 @@ import {
 import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
+import { loadSettings } from "@/lib/app-settings";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -629,7 +630,13 @@ export default function GameCapture() {
           <div className="p-4 bg-zinc-950 border-t border-white/10">
             <Button 
               className="w-full font-bold bg-blue-600 hover:bg-blue-700" 
-              onClick={() => setFinalizeDialogOpen(true)}
+              onClick={() => {
+                if (loadSettings().confirmBeforeFinalize) {
+                  setFinalizeDialogOpen(true);
+                } else {
+                  handleFinalizeGame();
+                }
+              }}
               disabled={updateGame.isPending}
             >
               {updateGame.isPending ? (

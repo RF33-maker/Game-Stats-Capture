@@ -1,2 +1,2 @@
-- [Swish Stats toast mismatch](swish-stats-toast.md) — pages call `toast` from `sonner`, but main.tsx only mounts the shadcn `@/components/ui/toaster`; sonner toasts may not render.
+- [Swish Stats toasts use sonner](swish-stats-toast.md) — artifact standardizes on sonner; its `<Toaster/>` is mounted in main.tsx. Don't reintroduce shadcn useToast for new code.
 - [Swish Stats auth/local-mode](swish-stats-auth.md) — login is required by default; `LOCAL_MODE_ENABLED` is opt-in via `VITE_LOCAL_MODE=true`. Auth gating via ProtectedRoute + useAuth.

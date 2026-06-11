@@ -35,3 +35,20 @@ export function saveSettings(settings: AppSettings): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }
+
+// Build the data payload for a new game from the user's saved settings,
+// falling back to FIBA defaults when nothing is saved.
+export function newGameDefaults(): {
+  captureMode: CaptureModePref;
+  periodCount: number;
+  periodDurationMins: number;
+  date: string;
+} {
+  const s = loadSettings();
+  return {
+    captureMode: s.captureMode,
+    periodCount: s.periodCount,
+    periodDurationMins: s.periodDurationMins,
+    date: new Date().toISOString(),
+  };
+}
