@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import { Link } from "wouter";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppMenu } from "@/components/app-menu";
 
 interface SetupLayoutProps {
   children: ReactNode;
@@ -41,22 +42,25 @@ export function SetupLayout({
             <p className="text-sm text-muted-foreground">{title}</p>
           </div>
         </div>
-        <div className="flex gap-2">
-          {steps.map((s) => (
-            <Link key={s.num} href={s.path}>
-              <div
-                className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold transition-colors cursor-pointer ${
-                  s.num === step
-                    ? "bg-primary text-primary-foreground"
-                    : s.num < step
-                    ? "bg-muted text-foreground border border-muted-foreground/30 hover:border-primary/50"
-                    : "bg-muted/50 text-muted-foreground border border-transparent hover:border-primary/50"
-                }`}
-              >
-                {s.num}
-              </div>
-            </Link>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-2">
+            {steps.map((s) => (
+              <Link key={s.num} href={s.path}>
+                <div
+                  className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold transition-colors cursor-pointer ${
+                    s.num === step
+                      ? "bg-primary text-primary-foreground"
+                      : s.num < step
+                      ? "bg-muted text-foreground border border-muted-foreground/30 hover:border-primary/50"
+                      : "bg-muted/50 text-muted-foreground border border-transparent hover:border-primary/50"
+                  }`}
+                >
+                  {s.num}
+                </div>
+              </Link>
+            ))}
+          </div>
+          <AppMenu />
         </div>
       </header>
       <main className="flex-1 p-6 md:p-12 overflow-auto">

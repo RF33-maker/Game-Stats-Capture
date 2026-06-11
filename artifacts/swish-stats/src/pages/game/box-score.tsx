@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-client-react";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppMenu } from "@/components/app-menu";
 
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
@@ -64,16 +65,19 @@ export default function BoxScore() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-8 text-3xl font-black font-mono">
-            <div className="flex items-center gap-4">
-              <span style={{ color: awayTeam.colorPrimary }}>{awayTeam.abbreviation}</span>
-              <span>{boxScore.away.totalPoints}</span>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-8 text-3xl font-black font-mono">
+              <div className="flex items-center gap-4">
+                <span style={{ color: awayTeam.colorPrimary }}>{awayTeam.abbreviation}</span>
+                <span>{boxScore.away.totalPoints}</span>
+              </div>
+              <span className="text-muted-foreground">-</span>
+              <div className="flex items-center gap-4">
+                <span>{boxScore.home.totalPoints}</span>
+                <span style={{ color: homeTeam.colorPrimary }}>{homeTeam.abbreviation}</span>
+              </div>
             </div>
-            <span className="text-muted-foreground">-</span>
-            <div className="flex items-center gap-4">
-              <span>{boxScore.home.totalPoints}</span>
-              <span style={{ color: homeTeam.colorPrimary }}>{homeTeam.abbreviation}</span>
-            </div>
+            <AppMenu />
           </div>
         </header>
 

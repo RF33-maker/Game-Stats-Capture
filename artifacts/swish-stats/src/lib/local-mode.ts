@@ -2,7 +2,10 @@ import { handleLocalRequest } from "./local-handler";
 import { store } from "./local-store";
 import { enqueueIfMutation, initLocalSync } from "./local-sync";
 
-export const LOCAL_MODE_ENABLED = import.meta.env.VITE_LOCAL_MODE !== "false";
+// Login is required by default: the app runs against the real API and Replit
+// Auth. Local mode (auth bypass + in-browser data) is now strictly opt-in for
+// development by setting VITE_LOCAL_MODE=true.
+export const LOCAL_MODE_ENABLED = import.meta.env.VITE_LOCAL_MODE === "true";
 
 export function resetLocalData() {
   store.reset();

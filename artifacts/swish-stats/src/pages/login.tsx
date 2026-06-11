@@ -3,6 +3,7 @@ import { useAuth } from "@workspace/replit-auth-web";
 import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { LogIn, Loader2, BarChart3, Users, Zap } from "lucide-react";
+import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 
 const FEATURES = [
@@ -69,7 +70,10 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex flex-col md:flex-row">
+    <div className="relative min-h-[100dvh] flex flex-col md:flex-row">
+      <div className="absolute top-4 right-4 z-20">
+        <AppMenu triggerClassName="text-foreground/70 hover:text-foreground bg-background/70 backdrop-blur-sm border border-border" />
+      </div>
       <div className="relative flex flex-col justify-between bg-primary text-primary-foreground p-10 md:w-[52%] md:min-h-[100dvh]">
         {/* Background texture */}
         <div

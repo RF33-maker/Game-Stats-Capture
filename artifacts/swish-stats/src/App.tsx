@@ -12,6 +12,11 @@ import SetupPlayers from "@/pages/setup/players";
 import SetupExtras from "@/pages/setup/extras";
 import GameCapture from "@/pages/game/capture";
 import BoxScore from "@/pages/game/box-score";
+import Profile from "@/pages/profile";
+import Settings from "@/pages/settings";
+import Stats from "@/pages/stats";
+import Help from "@/pages/help";
+import Organizer from "@/pages/organizer";
 import { ProtectedRoute } from "@/components/protected-route";
 import { RequireLeagueRole } from "@/components/require-league-role";
 import { LocalModeBadge } from "@/components/local-mode-badge";
@@ -32,6 +37,27 @@ function Router() {
           <LeagueDetail />
         </ProtectedRoute>
       </Route>
+      <Route path="/profile">
+        <ProtectedRoute>
+          <Profile />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/settings">
+        <ProtectedRoute>
+          <Settings />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/stats">
+        <ProtectedRoute>
+          <Stats />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/organizer">
+        <ProtectedRoute>
+          <Organizer />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/help" component={Help} />
       <Route path="/setup/:gameId/info">
         <ProtectedRoute>
           <RequireLeagueRole min="admin">

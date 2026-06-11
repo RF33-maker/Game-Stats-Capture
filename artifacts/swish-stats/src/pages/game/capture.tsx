@@ -26,6 +26,7 @@ import {
 } from "@workspace/api-client-react";
 import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppMenu } from "@/components/app-menu";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -425,6 +426,7 @@ export default function GameCapture() {
               <Home className="w-5 h-5" />
             </Button>
           </Link>
+          <AppMenu triggerClassName="text-zinc-400 hover:text-white hover:bg-zinc-800" />
           <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: awayTeam.colorPrimary }}>
             {awayTeam.abbreviation}
           </div>

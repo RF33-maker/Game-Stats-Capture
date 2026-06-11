@@ -1,7 +1,6 @@
 import { Link } from "wouter";
 import { useAuth } from "@workspace/replit-auth-web";
-import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
+import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 
 interface AppHeaderProps {
@@ -9,7 +8,7 @@ interface AppHeaderProps {
 }
 
 export function AppHeader({ showBack }: AppHeaderProps) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   const displayName = user
     ? ([user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || user.id)
@@ -60,17 +59,7 @@ export function AppHeader({ showBack }: AppHeaderProps) {
               LOCAL
             </span>
           )}
-          {!LOCAL_MODE_ENABLED && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground gap-1.5"
-              onClick={() => logout()}
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign out</span>
-            </Button>
-          )}
+          <AppMenu />
         </div>
       </div>
     </header>

@@ -18,6 +18,7 @@ import {
   Share2,
 } from "lucide-react";
 import { useAuth } from "@workspace/replit-auth-web";
+import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import logoUrl from "@assets/ChatGPT_Image_Jul_5,_2025,_09_52_53_PM_(1)_1777802723071.png";
 
@@ -138,14 +139,17 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
         <header className="px-6 py-5 border-b border-white/5">
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <Brand />
-            <Button
-              size="sm"
-              className="rounded-md font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
-              onClick={onCta}
-            >
-              {ctaLabel}
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="rounded-md font-semibold shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+                onClick={onCta}
+              >
+                {ctaLabel}
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+              <AppMenu triggerClassName="text-white/70 hover:text-white hover:bg-white/10" />
+            </div>
           </div>
         </header>
 
