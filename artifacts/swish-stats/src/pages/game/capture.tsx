@@ -187,6 +187,18 @@ export default function GameCapture() {
   const homeOnCourt = getOnCourtPlayers(homeTeam.id);
   const awayOnCourt = getOnCourtPlayers(awayTeam.id);
 
+  // Bench = active roster players not currently on the court. This is a
+  // read-only placeholder for now (see TeamPanel) — no sub-in/sub-out UI yet.
+  const getBenchPlayers = (teamId: number, onCourt: { id: number }[]) => {
+    const onCourtIds = new Set(onCourt.map(p => p.id));
+    return players
+      .filter(p => p.teamId === teamId && p.isActive && !onCourtIds.has(p.id))
+      .sort((a, b) => Number(a.jerseyNumber) - Number(b.jerseyNumber));
+  };
+
+  const homeBench = getBenchPlayers(homeTeam.id, homeOnCourt);
+  const awayBench = getBenchPlayers(awayTeam.id, awayOnCourt);
+
   const invalidateData = () => {
     queryClient.invalidateQueries({ queryKey: getListStatEventsQueryKey(gameId) });
     queryClient.invalidateQueries({ queryKey: getListPlayByPlayQueryKey(gameId) });
@@ -553,6 +565,7 @@ export default function GameCapture() {
                 key={team.id}
                 team={team}
                 onCourt={awayOnCourt}
+                bench={awayBench}
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => { setSelectedPlayerId(id); setSelectedTeamId(team.id); setPendingFgEvent(null); }}
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
@@ -601,6 +614,7 @@ export default function GameCapture() {
                 key={team.id}
                 team={team}
                 onCourt={homeOnCourt}
+                bench={homeBench}
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => { setSelectedPlayerId(id); setSelectedTeamId(team.id); setPendingFgEvent(null); }}
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
@@ -985,6 +999,7 @@ export default function GameCapture() {
 function TeamPanel({
   team,
   onCourt,
+  bench,
   selectedPlayerId,
   onSelectPlayer,
   onTimeout,
@@ -992,6 +1007,7 @@ function TeamPanel({
 }: {
   team: { id: number; abbreviation: string; colorPrimary: string };
   onCourt: { id: number; jerseyNumber: string | number; lastName: string }[];
+  bench: { id: number; jerseyNumber: string | number; lastName: string }[];
   selectedPlayerId: number | null;
   onSelectPlayer: (id: number) => void;
   onTimeout: () => void;
@@ -1001,14 +1017,14 @@ function TeamPanel({
     <div className="flex flex-col bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm relative">
       <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: team.colorPrimary }} />
 
-      <div className="flex-1 p-2 grid grid-rows-5 gap-2">
+      <div className="p-2 grid grid-rows-5 gap-2 shrink-0">
         {onCourt.map(p => {
           const isSelected = selectedPlayerId === p.id;
           return (
             <button
               key={p.id}
               onClick={() => onSelectPlayer(p.id)}
-              className={`flex items-center gap-4 px-4 rounded-lg border-2 transition-all font-bold ${
+              className={`flex items-center gap-4 px-4 py-2 rounded-lg border-2 transition-all font-bold ${
                 isSelected
                   ? 'border-slate-900 bg-slate-100 shadow-sm'
                   : 'border-transparent bg-slate-50 hover:bg-slate-100'
@@ -1026,6 +1042,39 @@ function TeamPanel({
             </button>
           );
         })}
+      </div>
+
+      {/* Bench — read-only placeholder; sub-in/sub-out UI is a future task. */}
+      <div className="flex-1 min-h-0 flex flex-col border-t border-slate-200 px-2 pt-2">
+        <div className="flex items-center justify-between px-1 shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bench</span>
+          <span className="text-[10px] font-mono text-slate-300">{bench.length}</span>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-1 py-1">
+          {bench.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-center text-[11px] text-slate-300 italic px-2">
+              No bench players
+            </div>
+          ) : (
+            bench.map(p => (
+              <div
+                key={p.id}
+                title="Substitutions aren't wired up yet — this is a preview of the bench."
+                className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-50 border border-transparent opacity-60 cursor-not-allowed select-none"
+              >
+                <div className="text-sm font-black font-mono w-8 text-center text-slate-400">
+                  {p.jerseyNumber}
+                </div>
+                <div className="text-left flex-1 min-w-0 truncate text-sm tracking-tight uppercase text-slate-500">
+                  {p.lastName}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="text-[9px] uppercase tracking-wider text-slate-300 text-center py-1 shrink-0">
+          Substitutions coming soon
+        </div>
       </div>
 
       {/* Team Actions */}
