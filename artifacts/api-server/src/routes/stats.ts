@@ -7,8 +7,10 @@ import {
   playersTable,
   statEventsTable,
   playByPlayTable,
+  ZONE_SHOT_VALUE,
   type StatEventType,
   type Player,
+  type ShotZone,
 } from "@workspace/db";
 import {
   RecordStatEventBody,
@@ -30,6 +32,37 @@ import { requireLeagueRole } from "../lib/leagueAccess";
 const router: IRouter = Router();
 
 router.use(requireAuth);
+
+// Point value a field-goal event type is worth, or null for non-FG events
+// (rebounds, fouls, etc.) that must not carry a shot zone at all.
+function fgShotValueFor(eventType: StatEventType): 2 | 3 | null {
+  if (eventType === "2ptm" || eventType === "2pta") return 2;
+  if (eventType === "3ptm" || eventType === "3pta") return 3;
+  return null;
+}
+
+// Authoritative guard so a stat event's shot zone always matches its event
+// type's point value — the frontend applies the same rule for UX, but the
+// API must enforce it since clients aren't trusted.
+function assertShotZoneMatchesEventType(
+  eventType: StatEventType,
+  shotZone: string | null | undefined,
+): void {
+  if (shotZone == null) return;
+  const shotValue = fgShotValueFor(eventType);
+  if (shotValue == null) {
+    throw new HttpError(
+      400,
+      "shotZone can only be set on 2PT/3PT field goal events",
+    );
+  }
+  if (ZONE_SHOT_VALUE[shotZone as ShotZone] !== shotValue) {
+    throw new HttpError(
+      400,
+      "shotZone does not match the event type's point value",
+    );
+  }
+}
 
 router.get("/games/:gameId/stats", requireLeagueRole("viewer"), async (req, res): Promise<void> => {
   const params = ListStatEventsParams.safeParse(req.params);
@@ -108,6 +141,7 @@ router.post("/games/:gameId/stats", requireLeagueRole("scorer"), async (req, res
       }
 
       const eventType = parsed.data.eventType as StatEventType;
+      assertShotZoneMatchesEventType(eventType, parsed.data.shotZone ?? null);
 
       const effect = computePossessionEffect({
         eventType,
@@ -278,6 +312,20 @@ router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res
           );
         }
       }
+
+      // Same whole-state re-check pattern as team/player above: validate the
+      // effective post-patch (eventType, shotZone) pair, not just the fields
+      // that were actually sent, so changing only the event type still
+      // catches a now-mismatched zone retained from before.
+      const effectiveEventType =
+        parsed.data.eventType !== undefined
+          ? (parsed.data.eventType as StatEventType)
+          : (target.eventType as StatEventType);
+      const effectiveShotZone =
+        parsed.data.shotZone !== undefined
+          ? parsed.data.shotZone
+          : target.shotZone;
+      assertShotZoneMatchesEventType(effectiveEventType, effectiveShotZone);
 
       const updates: Partial<typeof statEventsTable.$inferInsert> = {};
       if (parsed.data.teamId !== undefined) updates.teamId = parsed.data.teamId;

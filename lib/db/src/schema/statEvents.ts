@@ -60,6 +60,25 @@ export const SHOT_ZONES = [
   "top_arc_three",
 ] as const;
 export type ShotZone = (typeof SHOT_ZONES)[number];
+
+// Point value each zone is worth. Mirrors the frontend's own copy in
+// swish-stats/src/components/court-zones.tsx (kept independent so that file
+// stays free of server-only imports) — used here to reject stat events where
+// the event type (2PT/3PT) doesn't match the shot zone's point value.
+export const ZONE_SHOT_VALUE: Record<ShotZone, 2 | 3> = {
+  paint: 2,
+  left_short_corner: 2,
+  right_short_corner: 2,
+  left_baseline_midrange: 2,
+  right_baseline_midrange: 2,
+  top_key_midrange: 2,
+  left_corner_three: 3,
+  right_corner_three: 3,
+  left_wing_three: 3,
+  right_wing_three: 3,
+  top_arc_three: 3,
+};
+
 export const SHOT_ZONE_LABELS: Record<ShotZone, string> = {
   paint: "Paint",
   left_short_corner: "Left Short Corner",

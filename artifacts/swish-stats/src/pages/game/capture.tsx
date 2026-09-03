@@ -32,10 +32,17 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CourtZones, SHOT_ZONES, shotZoneLabel, type ShotZoneId } from "@/components/court-zones";
+import { CourtZones, SHOT_ZONES, ZONE_SHOT_VALUE, shotZoneLabel, type ShotZoneId } from "@/components/court-zones";
 
 // Field-goal make/miss event types — the only ones a shot zone applies to.
 const FG_SHOT_TYPES = new Set<StatEventType>(['2ptm', '2pta', '3ptm', '3pta']);
+
+// Point value a given FG stat button represents, or null for non-FG stats.
+function fgShotValue(type: StatEventType): 2 | 3 | null {
+  if (type === '2ptm' || type === '2pta') return 2;
+  if (type === '3ptm' || type === '3pta') return 3;
+  return null;
+}
 
 export default function GameCapture() {
   const [, params] = useRoute("/game/:gameId");
@@ -48,6 +55,10 @@ export default function GameCapture() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [selectedZone, setSelectedZone] = useState<ShotZoneId | null>(null);
+  // When an operator taps a 2PT/3PT button before picking a zone, we "arm"
+  // that shot type: the court diagram filters to matching zones, and a
+  // second tap on the same button (or an edit/undo) confirms without a zone.
+  const [pendingFgEvent, setPendingFgEvent] = useState<StatEventType | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
   const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
@@ -184,7 +195,7 @@ export default function GameCapture() {
     queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
   };
 
-  const handleStat = async (eventType: StatEventType, value: number = 0, ftData?: any) => {
+  const handleStat = async (eventType: StatEventType, value: number = 0, ftData?: any, zoneOverride?: ShotZoneId | null) => {
     if (!selectedTeamId && !['timeout', 'period_start', 'period_end', 'jump_ball'].includes(eventType)) {
       toast.error("Select a player first");
       return;
@@ -197,6 +208,7 @@ export default function GameCapture() {
     }
 
     const isFgShot = FG_SHOT_TYPES.has(eventType);
+    const shotZone = zoneOverride !== undefined ? zoneOverride : selectedZone;
 
     try {
       await recordStat.mutateAsync({
@@ -208,7 +220,7 @@ export default function GameCapture() {
           clockSeconds: localClock,
           eventType,
           value,
-          shotZone: isFgShot ? selectedZone : null,
+          shotZone: isFgShot ? shotZone : null,
           ...ftData
         }
       });
@@ -219,10 +231,51 @@ export default function GameCapture() {
       }
       if (isFgShot) {
         setSelectedZone(null);
+        setPendingFgEvent(null);
       }
     } catch (e) {
       toast.error("Failed to record stat");
     }
+  };
+
+  // Click handler for the 2PT/3PT/etc stat buttons. FG buttons are "armed"
+  // rather than fired immediately when no zone is selected yet, so the
+  // court diagram can filter to matching zones (see handleZoneSelect).
+  const handleStatButtonClick = (eventType: StatEventType, value?: number) => {
+    if (!FG_SHOT_TYPES.has(eventType)) {
+      handleStat(eventType, value);
+      return;
+    }
+
+    const btnValue = fgShotValue(eventType);
+    if (selectedZone) {
+      // A zone is already chosen — only a matching type may fire (the
+      // button is disabled otherwise, this is just a safety net).
+      if (ZONE_SHOT_VALUE[selectedZone] !== btnValue) return;
+      handleStat(eventType, value);
+      return;
+    }
+
+    if (pendingFgEvent === eventType) {
+      // Second tap on the same armed button — confirm without a zone.
+      handleStat(eventType, value);
+      setPendingFgEvent(null);
+      return;
+    }
+
+    // Arm this shot type and wait for a matching zone (or a repeat tap).
+    setPendingFgEvent(eventType);
+  };
+
+  // Click handler passed to the court diagram. When a shot type is armed,
+  // tapping a (matching) zone completes the recording in one step.
+  const handleZoneSelect = (zone: ShotZoneId | null) => {
+    if (zone && pendingFgEvent) {
+      const btn = statButtons.find(b => b.type === pendingFgEvent);
+      handleStat(pendingFgEvent, btn?.val, undefined, zone);
+      return;
+    }
+    setSelectedZone(zone);
   };
 
   const handleUndo = async () => {
@@ -271,6 +324,7 @@ export default function GameCapture() {
       setSelectedPlayerId(null);
       setSelectedTeamId(null);
       setSelectedZone(null);
+      setPendingFgEvent(null);
       invalidateData();
 
       const label = isLastRegPeriod
@@ -493,14 +547,14 @@ export default function GameCapture() {
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           
           {/* Team Panels + Court */}
-          <div className="flex-1 grid grid-cols-[1fr_260px_1fr] gap-4 min-h-0">
+          <div className="flex-1 grid grid-cols-[0.7fr_1.6fr_0.7fr] gap-4 min-h-0">
             {[awayTeam].map(team => (
               <TeamPanel
                 key={team.id}
                 team={team}
                 onCourt={awayOnCourt}
                 selectedPlayerId={selectedPlayerId}
-                onSelectPlayer={(id) => { setSelectedPlayerId(id); setSelectedTeamId(team.id); }}
+                onSelectPlayer={(id) => { setSelectedPlayerId(id); setSelectedTeamId(team.id); setPendingFgEvent(null); }}
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
               />
@@ -509,19 +563,33 @@ export default function GameCapture() {
             {/* Court zone picker */}
             <div className="flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm p-3">
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center">
-                Shot Location <span className="font-normal normal-case text-slate-300">(optional)</span>
+                {pendingFgEvent ? (
+                  <span className="text-amber-600">
+                    Tap a {fgShotValue(pendingFgEvent)}PT zone, or press the button again to skip
+                  </span>
+                ) : (
+                  <>Shot Location <span className="font-normal normal-case text-slate-300">(optional)</span></>
+                )}
               </div>
               <CourtZones
                 selectedZone={selectedZone}
-                onSelectZone={setSelectedZone}
+                onSelectZone={handleZoneSelect}
                 accentColor={shootingTeam?.colorPrimary ?? '#f97316'}
+                allowedShotValue={
+                  selectedZone
+                    ? null
+                    : pendingFgEvent
+                    ? fgShotValue(pendingFgEvent)
+                    : null
+                }
+                className="flex-1"
               />
-              {selectedZone && (
+              {(selectedZone || pendingFgEvent) && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="mt-2 h-7 text-xs text-slate-500 hover:text-slate-900"
-                  onClick={() => setSelectedZone(null)}
+                  onClick={() => { setSelectedZone(null); setPendingFgEvent(null); }}
                 >
                   <X className="w-3 h-3 mr-1" /> Clear zone
                 </Button>
@@ -534,7 +602,7 @@ export default function GameCapture() {
                 team={team}
                 onCourt={homeOnCourt}
                 selectedPlayerId={selectedPlayerId}
-                onSelectPlayer={(id) => { setSelectedPlayerId(id); setSelectedTeamId(team.id); }}
+                onSelectPlayer={(id) => { setSelectedPlayerId(id); setSelectedTeamId(team.id); setPendingFgEvent(null); }}
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
               />
@@ -544,19 +612,32 @@ export default function GameCapture() {
           {/* Stat Buttons Matrix */}
           <div className="h-64 bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 shrink-0">
             <div className="grid grid-cols-6 gap-2 flex-1">
-              {statButtons.map(btn => (
-                <button
-                  key={btn.type}
-                  disabled={!selectedPlayerId}
-                  onClick={() => handleStat(btn.type as StatEventType, btn.val)}
-                  className={`rounded-lg font-black text-lg tracking-tighter uppercase text-white transition-all
-                    ${btn.color} 
-                    ${!selectedPlayerId ? 'opacity-20 cursor-not-allowed grayscale' : 'shadow-md active:scale-95'}
-                  `}
-                >
-                  {btn.label}
-                </button>
-              ))}
+              {statButtons.map(btn => {
+                const btnType = btn.type as StatEventType;
+                const btnShotValue = fgShotValue(btnType);
+                const enforcedShotValue = selectedZone
+                  ? ZONE_SHOT_VALUE[selectedZone]
+                  : pendingFgEvent
+                  ? fgShotValue(pendingFgEvent)
+                  : null;
+                const isMismatched = btnShotValue != null && enforcedShotValue != null && btnShotValue !== enforcedShotValue;
+                const isArmed = pendingFgEvent === btnType;
+                const isDisabled = !selectedPlayerId || isMismatched;
+                return (
+                  <button
+                    key={btn.type}
+                    disabled={isDisabled}
+                    onClick={() => handleStatButtonClick(btnType, btn.val)}
+                    className={`rounded-lg font-black text-lg tracking-tighter uppercase text-white transition-all
+                      ${btn.color} 
+                      ${isDisabled ? 'opacity-20 cursor-not-allowed grayscale' : 'shadow-md active:scale-95'}
+                      ${isArmed ? 'ring-4 ring-amber-400 ring-offset-1' : ''}
+                    `}
+                  >
+                    {btn.label}
+                  </button>
+                );
+              })}
             </div>
             <div className="flex gap-2 h-12">
               <Button 
@@ -700,7 +781,15 @@ export default function GameCapture() {
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Event type</div>
                   <Select
                     value={editForm.eventType}
-                    onValueChange={(v) => setEditForm({ ...editForm, eventType: v as StatEventType })}
+                    onValueChange={(v) => {
+                      const nextType = v as StatEventType;
+                      const nextShotValue = fgShotValue(nextType);
+                      // Clear a shot zone that no longer matches the new event type's
+                      // point value, mirroring the capture screen's zone/type guard.
+                      const keepZone =
+                        editForm.shotZone && (nextShotValue == null || ZONE_SHOT_VALUE[editForm.shotZone] === nextShotValue);
+                      setEditForm({ ...editForm, eventType: nextType, shotZone: keepZone ? editForm.shotZone : null });
+                    }}
                   >
                     <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10">
                       <SelectValue />
@@ -762,29 +851,35 @@ export default function GameCapture() {
                   </Select>
                 </div>
 
-                {isFgShot && (
-                  <div>
-                    <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                      Shot location <span className="font-normal normal-case text-slate-300">(optional)</span>
+                {isFgShot && (() => {
+                  const editShotValue = fgShotValue(editForm.eventType);
+                  const eligibleZones = SHOT_ZONES.filter(
+                    (z) => editShotValue == null || ZONE_SHOT_VALUE[z.id] === editShotValue,
+                  );
+                  return (
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        Shot location <span className="font-normal normal-case text-slate-300">(optional)</span>
+                      </div>
+                      <Select
+                        value={editForm.shotZone ?? 'none'}
+                        onValueChange={(v) => setEditForm({ ...editForm, shotZone: v === 'none' ? null : v as ShotZoneId })}
+                      >
+                        <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10">
+                          <SelectValue placeholder="No zone" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white border-slate-300 text-slate-900">
+                          <SelectItem value="none" className="focus:bg-slate-100 focus:text-slate-900">No zone</SelectItem>
+                          {eligibleZones.map(z => (
+                            <SelectItem key={z.id} value={z.id} className="focus:bg-slate-100 focus:text-slate-900">
+                              {z.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <Select
-                      value={editForm.shotZone ?? 'none'}
-                      onValueChange={(v) => setEditForm({ ...editForm, shotZone: v === 'none' ? null : v as ShotZoneId })}
-                    >
-                      <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10">
-                        <SelectValue placeholder="No zone" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white border-slate-300 text-slate-900">
-                        <SelectItem value="none" className="focus:bg-slate-100 focus:text-slate-900">No zone</SelectItem>
-                        {SHOT_ZONES.map(z => (
-                          <SelectItem key={z.id} value={z.id} className="focus:bg-slate-100 focus:text-slate-900">
-                            {z.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}
@@ -925,7 +1020,7 @@ function TeamPanel({
               >
                 {p.jerseyNumber}
               </div>
-              <div className="text-left flex-1 min-w-0 text-xl tracking-tight uppercase text-slate-900">
+              <div className="text-left flex-1 min-w-0 truncate text-xl tracking-tight uppercase text-slate-900">
                 {p.lastName}
               </div>
             </button>

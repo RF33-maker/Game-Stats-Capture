@@ -23,6 +23,23 @@ export function shotZoneLabel(id: string | null | undefined): string | null {
   return SHOT_ZONES.find((z) => z.id === id)?.label ?? null;
 }
 
+// Point value each zone is worth — lets the capture screen keep the zone
+// picker and the 2PT/3PT stat buttons in sync so an operator can't record a
+// mismatched pairing (e.g. a 3PT make tagged with a 2-point zone).
+export const ZONE_SHOT_VALUE: Record<ShotZoneId, 2 | 3> = {
+  paint: 2,
+  left_short_corner: 2,
+  right_short_corner: 2,
+  left_baseline_midrange: 2,
+  right_baseline_midrange: 2,
+  top_key_midrange: 2,
+  left_corner_three: 3,
+  right_corner_three: 3,
+  left_wing_three: 3,
+  right_wing_three: 3,
+  top_arc_three: 3,
+};
+
 // Halfcourt viewBox 0 0 500 470, basket at (250, 52), hoop facing downcourt.
 //
 // The 11 zones tile the entire 500x470 court with no gaps or overlaps:
@@ -85,6 +102,10 @@ interface CourtZonesProps {
   accentColor?: string;
   disabled?: boolean;
   className?: string;
+  // When set, only zones worth this many points are selectable — the rest
+  // render disabled/dimmed. Used to keep the zone picker in sync with a
+  // 2PT/3PT stat button chosen elsewhere on the capture screen.
+  allowedShotValue?: 2 | 3 | null;
 }
 
 export function CourtZones({
@@ -93,6 +114,7 @@ export function CourtZones({
   accentColor = "#f97316",
   disabled = false,
   className,
+  allowedShotValue = null,
 }: CourtZonesProps) {
   return (
     <div className={cn("relative w-full", className)}>
@@ -109,22 +131,27 @@ export function CourtZones({
         {SHOT_ZONES.map(({ id, label }) => {
           const d = ZONE_PATHS[id];
           const isSelected = selectedZone === id;
+          const isZoneDisabled =
+            disabled || (allowedShotValue != null && ZONE_SHOT_VALUE[id] !== allowedShotValue);
           return (
             <path
               key={id}
               d={d}
-              tabIndex={disabled ? -1 : 0}
+              tabIndex={isZoneDisabled ? -1 : 0}
               role="button"
               aria-label={label}
+              aria-disabled={isZoneDisabled}
               aria-pressed={isSelected}
               className={cn(
                 "stroke-slate-200 transition-colors",
-                disabled ? "cursor-not-allowed fill-white" : "cursor-pointer fill-white hover:fill-slate-100 focus:outline-none",
+                isZoneDisabled
+                  ? "cursor-not-allowed fill-slate-50 opacity-40"
+                  : "cursor-pointer fill-white hover:fill-slate-100 focus:outline-none",
               )}
               style={isSelected ? { fill: `${accentColor}33`, stroke: accentColor, strokeWidth: 2 } : undefined}
-              onClick={() => !disabled && onSelectZone(isSelected ? null : id)}
+              onClick={() => !isZoneDisabled && onSelectZone(isSelected ? null : id)}
               onKeyDown={(e) => {
-                if (disabled) return;
+                if (isZoneDisabled) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelectZone(isSelected ? null : id);
