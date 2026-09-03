@@ -559,7 +559,7 @@ export default function GameCapture() {
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           
           {/* Team Panels + Court */}
-          <div className="flex-1 grid grid-cols-[0.7fr_1.6fr_0.7fr] gap-4 min-h-0">
+          <div className="flex-1 grid grid-rows-1 grid-cols-[0.7fr_1.6fr_0.7fr] gap-4 min-h-0">
             {[awayTeam].map(team => (
               <TeamPanel
                 key={team.id}
@@ -574,8 +574,8 @@ export default function GameCapture() {
             ))}
 
             {/* Court zone picker */}
-            <div className="flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm p-3">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center">
+            <div className="flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm p-3 min-h-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center shrink-0">
                 {pendingFgEvent ? (
                   <span className="text-amber-600">
                     Tap a {fgShotValue(pendingFgEvent)}PT zone, or press the button again to skip
@@ -595,7 +595,7 @@ export default function GameCapture() {
                     ? fgShotValue(pendingFgEvent)
                     : null
                 }
-                className="flex-1"
+                className="flex-1 min-h-0"
               />
               {(selectedZone || pendingFgEvent) && (
                 <Button
@@ -1014,7 +1014,7 @@ function TeamPanel({
   onTeamFoul: () => void;
 }) {
   return (
-    <div className="flex flex-col bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm relative">
+    <div className="flex flex-col min-h-0 bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm relative">
       <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: team.colorPrimary }} />
 
       <div className="p-2 grid grid-rows-5 gap-2 shrink-0">

@@ -120,7 +120,8 @@ export function CourtZones({
     <div className={cn("relative w-full", className)}>
       <svg
         viewBox="0 0 500 470"
-        className="w-full h-auto select-none"
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full h-full max-w-full max-h-full select-none"
         role="group"
         aria-label="Shot location zones"
       >
