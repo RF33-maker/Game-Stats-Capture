@@ -23,20 +23,60 @@ export function shotZoneLabel(id: string | null | undefined): string | null {
   return SHOT_ZONES.find((z) => z.id === id)?.label ?? null;
 }
 
-// Rectangular hit-areas for each zone on a standardized halfcourt,
-// viewBox 0 0 500 470 with the basket at the top (250, 52).
-const ZONE_RECTS: Record<ShotZoneId, { x: number; y: number; w: number; h: number }> = {
-  left_corner_three: { x: 0, y: 0, w: 30, h: 190 },
-  left_short_corner: { x: 30, y: 0, w: 140, h: 190 },
-  paint: { x: 170, y: 0, w: 160, h: 190 },
-  right_short_corner: { x: 330, y: 0, w: 140, h: 190 },
-  right_corner_three: { x: 470, y: 0, w: 30, h: 190 },
-  left_baseline_midrange: { x: 0, y: 190, w: 170, h: 130 },
-  top_key_midrange: { x: 170, y: 190, w: 160, h: 130 },
-  right_baseline_midrange: { x: 330, y: 190, w: 170, h: 130 },
-  left_wing_three: { x: 0, y: 320, w: 190, h: 150 },
-  top_arc_three: { x: 190, y: 320, w: 120, h: 150 },
-  right_wing_three: { x: 310, y: 320, w: 190, h: 150 },
+// Halfcourt viewBox 0 0 500 470, basket at (250, 52), hoop facing downcourt.
+//
+// The 11 zones tile the entire 500x470 court with no gaps or overlaps:
+// five vertical columns (corner / short-corner+baseline / key / short-corner
+// +baseline / corner), each column beyond the paint split by the actual
+// three-point arc into a mid-range zone (inside the arc) and a three-point
+// zone (outside it). This gives the classic NBA "hotspot" fan-out look
+// (short corner -> baseline -> wing/top, clipped by the arc) while keeping
+// every boundary derived from the same hoop + radius so the drawn court
+// lines and the clickable zones always agree.
+const HOOP = { x: 250, y: 52 };
+const COL = { sideline: 0, corner: 30, key: 170, keyEnd: 330, cornerEnd: 470, farSideline: 500 };
+const PAINT_BOTTOM = 190;
+const COURT_BOTTOM = 470;
+
+// Radius of the three-point arc, derived so the circle centered on the hoop
+// passes exactly through the corner-three break points (30, PAINT_BOTTOM)
+// and (470, PAINT_BOTTOM) — the same points the decorative arc line below uses.
+const THREE_R = Math.sqrt(
+  (HOOP.x - COL.corner) ** 2 + (PAINT_BOTTOM - HOOP.y) ** 2,
+);
+
+// y-coordinate of the three-point arc at a given x (only valid for
+// COL.corner <= x <= COL.cornerEnd).
+function arcY(x: number): number {
+  return HOOP.y + Math.sqrt(THREE_R ** 2 - (HOOP.x - x) ** 2);
+}
+
+// SVG arc command tracing the three-point circle from x=xFrom to x=xTo.
+function arcTo(xFrom: number, xTo: number): string {
+  const sweep = xTo > xFrom ? 0 : 1;
+  return `A ${THREE_R} ${THREE_R} 0 0 ${sweep} ${xTo} ${arcY(xTo)}`;
+}
+
+const ZONE_PATHS: Record<ShotZoneId, string> = {
+  // Full-height strips beyond the sidelines — always past the arc.
+  left_corner_three: `M ${COL.sideline} 0 H ${COL.corner} V ${COURT_BOTTOM} H ${COL.sideline} Z`,
+  right_corner_three: `M ${COL.cornerEnd} 0 H ${COL.farSideline} V ${COURT_BOTTOM} H ${COL.cornerEnd} Z`,
+
+  // Shallow zones beside the paint, above the arc's break point — always 2pt.
+  left_short_corner: `M ${COL.corner} 0 H ${COL.key} V ${PAINT_BOTTOM} H ${COL.corner} Z`,
+  right_short_corner: `M ${COL.keyEnd} 0 H ${COL.cornerEnd} V ${PAINT_BOTTOM} H ${COL.keyEnd} Z`,
+
+  paint: `M ${COL.key} 0 H ${COL.keyEnd} V ${PAINT_BOTTOM} H ${COL.key} Z`,
+
+  // Between the paint/short-corner line and the arc.
+  left_baseline_midrange: `M ${COL.corner} ${PAINT_BOTTOM} L ${COL.key} ${PAINT_BOTTOM} L ${COL.key} ${arcY(COL.key)} ${arcTo(COL.key, COL.corner)} Z`,
+  right_baseline_midrange: `M ${COL.cornerEnd} ${PAINT_BOTTOM} L ${COL.keyEnd} ${PAINT_BOTTOM} L ${COL.keyEnd} ${arcY(COL.keyEnd)} ${arcTo(COL.keyEnd, COL.cornerEnd)} Z`,
+  top_key_midrange: `M ${COL.key} ${PAINT_BOTTOM} L ${COL.keyEnd} ${PAINT_BOTTOM} L ${COL.keyEnd} ${arcY(COL.keyEnd)} ${arcTo(COL.keyEnd, COL.key)} Z`,
+
+  // Beyond the arc, down to the far end of the half-court.
+  left_wing_three: `M ${COL.corner} ${PAINT_BOTTOM} L ${COL.corner} ${COURT_BOTTOM} L ${COL.key} ${COURT_BOTTOM} L ${COL.key} ${arcY(COL.key)} ${arcTo(COL.key, COL.corner)} Z`,
+  right_wing_three: `M ${COL.cornerEnd} ${PAINT_BOTTOM} L ${COL.cornerEnd} ${COURT_BOTTOM} L ${COL.keyEnd} ${COURT_BOTTOM} L ${COL.keyEnd} ${arcY(COL.keyEnd)} ${arcTo(COL.keyEnd, COL.cornerEnd)} Z`,
+  top_arc_three: `M ${COL.key} ${arcY(COL.key)} L ${COL.key} ${COURT_BOTTOM} L ${COL.keyEnd} ${COURT_BOTTOM} L ${COL.keyEnd} ${arcY(COL.keyEnd)} ${arcTo(COL.keyEnd, COL.key)} Z`,
 };
 
 interface CourtZonesProps {
@@ -67,15 +107,12 @@ export function CourtZones({
 
         {/* Zone hit-areas */}
         {SHOT_ZONES.map(({ id, label }) => {
-          const r = ZONE_RECTS[id];
+          const d = ZONE_PATHS[id];
           const isSelected = selectedZone === id;
           return (
-            <rect
+            <path
               key={id}
-              x={r.x}
-              y={r.y}
-              width={r.w}
-              height={r.h}
+              d={d}
               tabIndex={disabled ? -1 : 0}
               role="button"
               aria-label={label}
@@ -102,25 +139,19 @@ export function CourtZones({
           {/* Baseline */}
           <line x1={0} y1={2} x2={500} y2={2} />
           {/* Paint outline */}
-          <rect x={170} y={0} width={160} height={190} />
+          <rect x={COL.key} y={0} width={COL.keyEnd - COL.key} height={PAINT_BOTTOM} />
           {/* Free-throw circle */}
-          <circle cx={250} cy={190} r={60} />
+          <circle cx={250} cy={PAINT_BOTTOM} r={60} />
           {/* Backboard + rim */}
           <line x1={220} y1={40} x2={280} y2={40} strokeWidth={3} />
-          <circle cx={250} cy={52} r={8} />
+          <circle cx={HOOP.x} cy={HOOP.y} r={8} />
           {/* Restricted area */}
           <path d="M 210 52 A 40 40 0 0 0 290 52" />
           {/* Corner three lines */}
-          <line x1={30} y1={0} x2={30} y2={190} />
-          <line x1={470} y1={0} x2={470} y2={190} />
+          <line x1={COL.corner} y1={0} x2={COL.corner} y2={PAINT_BOTTOM} />
+          <line x1={COL.cornerEnd} y1={0} x2={COL.cornerEnd} y2={PAINT_BOTTOM} />
           {/* Three point arc */}
-          <path d="M 30 190 A 237.5 237.5 0 0 0 470 190" />
-        </g>
-
-        {/* Zone boundary grid lines (subtle) */}
-        <g className="pointer-events-none" stroke="#e2e8f0" strokeWidth={1}>
-          <line x1={0} y1={190} x2={500} y2={190} />
-          <line x1={0} y1={320} x2={500} y2={320} />
+          <path d={`M ${COL.corner} ${PAINT_BOTTOM} ${arcTo(COL.corner, COL.cornerEnd)}`} />
         </g>
       </svg>
 
