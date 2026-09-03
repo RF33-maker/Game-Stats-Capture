@@ -314,6 +314,26 @@ export const StatEventType = {
   jump_ball: "jump_ball",
 } as const;
 
+/**
+ * Coarse shot-location zone on a standardized halfcourt shot chart. Only meaningful for field-goal make/miss events (2ptm/2pta/3ptm/3pta).
+
+ */
+export type ShotZone = (typeof ShotZone)[keyof typeof ShotZone];
+
+export const ShotZone = {
+  paint: "paint",
+  left_short_corner: "left_short_corner",
+  right_short_corner: "right_short_corner",
+  left_corner_three: "left_corner_three",
+  right_corner_three: "right_corner_three",
+  left_baseline_midrange: "left_baseline_midrange",
+  right_baseline_midrange: "right_baseline_midrange",
+  top_key_midrange: "top_key_midrange",
+  left_wing_three: "left_wing_three",
+  right_wing_three: "right_wing_three",
+  top_arc_three: "top_arc_three",
+} as const;
+
 export interface StatEvent {
   id: number;
   gameId: number;
@@ -331,6 +351,7 @@ export interface StatEvent {
   ftSequenceTotal?: number | null;
   /** @nullable */
   possessionTeamId?: number | null;
+  shotZone?: ShotZone | null;
   createdAt: string;
 }
 
@@ -347,6 +368,7 @@ export interface RecordStatEventBody {
   ftSequenceIndex?: number | null;
   /** @nullable */
   ftSequenceTotal?: number | null;
+  shotZone?: ShotZone | null;
 }
 
 /**
@@ -361,6 +383,7 @@ export interface UpdateStatEventBody {
   period?: number;
   clockSeconds?: number;
   value?: number;
+  shotZone?: ShotZone | null;
 }
 
 export interface PlayByPlayEntry {

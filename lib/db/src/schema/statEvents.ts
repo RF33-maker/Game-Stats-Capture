@@ -42,6 +42,38 @@ export const STAT_EVENT_TYPES = [
 ] as const;
 export type StatEventType = (typeof STAT_EVENT_TYPES)[number];
 
+// Coarse shot-location zones for a standardized halfcourt shot chart.
+// Only meaningful for field-goal make/miss events (2ptm/2pta/3ptm/3pta).
+// Kept simple and independently extensible so a future precise x/y
+// coordinate system can be added without breaking this column.
+export const SHOT_ZONES = [
+  "paint",
+  "left_short_corner",
+  "right_short_corner",
+  "left_corner_three",
+  "right_corner_three",
+  "left_baseline_midrange",
+  "right_baseline_midrange",
+  "top_key_midrange",
+  "left_wing_three",
+  "right_wing_three",
+  "top_arc_three",
+] as const;
+export type ShotZone = (typeof SHOT_ZONES)[number];
+export const SHOT_ZONE_LABELS: Record<ShotZone, string> = {
+  paint: "Paint",
+  left_short_corner: "Left Short Corner",
+  right_short_corner: "Right Short Corner",
+  left_corner_three: "Left Corner 3",
+  right_corner_three: "Right Corner 3",
+  left_baseline_midrange: "Left Baseline Mid-Range",
+  right_baseline_midrange: "Right Baseline Mid-Range",
+  top_key_midrange: "Top of Key Mid-Range",
+  left_wing_three: "Left Wing 3",
+  right_wing_three: "Right Wing 3",
+  top_arc_three: "Top of the Arc 3",
+};
+
 export const statEventsTable = pgTable("stat_events", {
   id: serial("id").primaryKey(),
   gameId: integer("game_id")
@@ -61,6 +93,8 @@ export const statEventsTable = pgTable("stat_events", {
   ftSequenceIndex: integer("ft_sequence_index"),
   ftSequenceTotal: integer("ft_sequence_total"),
   possessionTeamId: integer("possession_team_id"),
+  // Coarse shot-location zone (see SHOT_ZONES). Only set for FG make/miss events.
+  shotZone: text("shot_zone"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -5,6 +5,7 @@
  * Swish Stats — basketball stat capture API
  * OpenAPI spec version: 0.1.0
  */
+import type { ShotZone } from "./shotZone";
 import type { StatEventType } from "./statEventType";
 
 /**
@@ -19,4 +20,5 @@ export interface UpdateStatEventBody {
   period?: number;
   clockSeconds?: number;
   value?: number;
+  shotZone?: ShotZone | null;
 }

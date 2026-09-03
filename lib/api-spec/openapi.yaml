@@ -1345,6 +1345,24 @@ components:
         - "period_end"
         - "jump_ball"
 
+    ShotZone:
+      type: string
+      description: >
+        Coarse shot-location zone on a standardized halfcourt shot chart.
+        Only meaningful for field-goal make/miss events (2ptm/2pta/3ptm/3pta).
+      enum:
+        - paint
+        - left_short_corner
+        - right_short_corner
+        - left_corner_three
+        - right_corner_three
+        - left_baseline_midrange
+        - right_baseline_midrange
+        - top_key_midrange
+        - left_wing_three
+        - right_wing_three
+        - top_arc_three
+
     StatEvent:
       type: object
       properties:
@@ -1370,6 +1388,10 @@ components:
           type: ["integer", "null"]
         possessionTeamId:
           type: ["integer", "null"]
+        shotZone:
+          anyOf:
+            - $ref: "#/components/schemas/ShotZone"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -1401,6 +1423,10 @@ components:
           type: ["integer", "null"]
         ftSequenceTotal:
           type: ["integer", "null"]
+        shotZone:
+          anyOf:
+            - $ref: "#/components/schemas/ShotZone"
+            - type: "null"
       required: [period, clockSeconds, eventType]
 
     UpdateStatEventBody:
@@ -1419,6 +1445,10 @@ components:
           type: integer
         value:
           type: integer
+        shotZone:
+          anyOf:
+            - $ref: "#/components/schemas/ShotZone"
+            - type: "null"
 
     PlayByPlayEntry:
       type: object

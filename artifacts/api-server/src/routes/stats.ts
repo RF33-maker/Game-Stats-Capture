@@ -149,6 +149,7 @@ router.post("/games/:gameId/stats", requireLeagueRole("scorer"), async (req, res
           ftSequenceIndex: parsed.data.ftSequenceIndex ?? null,
           ftSequenceTotal: parsed.data.ftSequenceTotal ?? null,
           possessionTeamId: game.possessionTeamId ?? null,
+          shotZone: parsed.data.shotZone ?? null,
         })
         .returning();
 
@@ -160,6 +161,7 @@ router.post("/games/:gameId/stats", requireLeagueRole("scorer"), async (req, res
         clockSeconds: parsed.data.clockSeconds,
         ftSequenceIndex: parsed.data.ftSequenceIndex ?? null,
         ftSequenceTotal: parsed.data.ftSequenceTotal ?? null,
+        shotZone: parsed.data.shotZone ?? null,
       });
 
       const [pbp] = await tx
@@ -287,6 +289,8 @@ router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res
       if (parsed.data.clockSeconds !== undefined)
         updates.clockSeconds = parsed.data.clockSeconds;
       if (parsed.data.value !== undefined) updates.value = parsed.data.value;
+      if (parsed.data.shotZone !== undefined)
+        updates.shotZone = parsed.data.shotZone;
 
       const [next] = await tx
         .update(statEventsTable)
@@ -434,6 +438,7 @@ async function rebuildPlayByPlay(tx: DbLike, gameId: number): Promise<void> {
       clockSeconds: ev.clockSeconds,
       ftSequenceIndex: ev.ftSequenceIndex,
       ftSequenceTotal: ev.ftSequenceTotal,
+      shotZone: ev.shotZone,
     });
 
     await tx.insert(playByPlayTable).values({

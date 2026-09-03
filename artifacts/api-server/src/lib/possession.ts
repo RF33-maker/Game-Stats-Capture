@@ -3,6 +3,8 @@ import {
   type Team,
   type Player,
   type StatEventType,
+  type ShotZone,
+  SHOT_ZONE_LABELS,
 } from "@workspace/db";
 
 export type PossessionEffect = {
@@ -151,6 +153,13 @@ const EVENT_LABELS: Record<string, string> = {
   jump_ball: "jump ball",
 };
 
+const ZONE_TAGGED_EVENT_TYPES = new Set<StatEventType>([
+  "2ptm",
+  "2pta",
+  "3ptm",
+  "3pta",
+]);
+
 export function describeEvent(args: {
   eventType: StatEventType;
   team: Team | null;
@@ -159,6 +168,7 @@ export function describeEvent(args: {
   clockSeconds: number;
   ftSequenceIndex?: number | null;
   ftSequenceTotal?: number | null;
+  shotZone?: string | null;
 }): string {
   const {
     eventType,
@@ -168,6 +178,7 @@ export function describeEvent(args: {
     clockSeconds,
     ftSequenceIndex,
     ftSequenceTotal,
+    shotZone,
   } = args;
 
   const mins = Math.floor(clockSeconds / 60);
@@ -194,6 +205,13 @@ export function describeEvent(args: {
     ftSequenceTotal != null
   ) {
     action = `missed FT ${ftSequenceIndex}/${ftSequenceTotal}`;
+  }
+
+  if (shotZone && ZONE_TAGGED_EVENT_TYPES.has(eventType)) {
+    const zoneLabel = SHOT_ZONE_LABELS[shotZone as ShotZone];
+    if (zoneLabel) {
+      action = `${action} (${zoneLabel})`;
+    }
   }
 
   if (eventType === "period_end") {

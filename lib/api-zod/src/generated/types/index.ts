@@ -39,6 +39,7 @@ export * from "./player";
 export * from "./playerStatLine";
 export * from "./possessionSummary";
 export * from "./recordStatEventBody";
+export * from "./shotZone";
 export * from "./statEvent";
 export * from "./statEventResult";
 export * from "./statEventType";

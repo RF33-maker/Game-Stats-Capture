@@ -623,6 +623,28 @@ export const ListStatEventsResponseItem = zod.object({
   ftSequenceIndex: zod.number().nullish(),
   ftSequenceTotal: zod.number().nullish(),
   possessionTeamId: zod.number().nullish(),
+  shotZone: zod
+    .union([
+      zod
+        .enum([
+          "paint",
+          "left_short_corner",
+          "right_short_corner",
+          "left_corner_three",
+          "right_corner_three",
+          "left_baseline_midrange",
+          "right_baseline_midrange",
+          "top_key_midrange",
+          "left_wing_three",
+          "right_wing_three",
+          "top_arc_three",
+        ])
+        .describe(
+          "Coarse shot-location zone on a standardized halfcourt shot chart. Only meaningful for field-goal make\/miss events (2ptm\/2pta\/3ptm\/3pta).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.coerce.date(),
 });
 export const ListStatEventsResponse = zod.array(ListStatEventsResponseItem);
@@ -670,6 +692,28 @@ export const RecordStatEventBody = zod.object({
   value: zod.number().optional(),
   ftSequenceIndex: zod.number().nullish(),
   ftSequenceTotal: zod.number().nullish(),
+  shotZone: zod
+    .union([
+      zod
+        .enum([
+          "paint",
+          "left_short_corner",
+          "right_short_corner",
+          "left_corner_three",
+          "right_corner_three",
+          "left_baseline_midrange",
+          "right_baseline_midrange",
+          "top_key_midrange",
+          "left_wing_three",
+          "right_wing_three",
+          "top_arc_three",
+        ])
+        .describe(
+          "Coarse shot-location zone on a standardized halfcourt shot chart. Only meaningful for field-goal make\/miss events (2ptm\/2pta\/3ptm\/3pta).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
 });
 
 /**
@@ -716,6 +760,28 @@ export const UpdateStatEventBody = zod
     period: zod.number().optional(),
     clockSeconds: zod.number().optional(),
     value: zod.number().optional(),
+    shotZone: zod
+      .union([
+        zod
+          .enum([
+            "paint",
+            "left_short_corner",
+            "right_short_corner",
+            "left_corner_three",
+            "right_corner_three",
+            "left_baseline_midrange",
+            "right_baseline_midrange",
+            "top_key_midrange",
+            "left_wing_three",
+            "right_wing_three",
+            "top_arc_three",
+          ])
+          .describe(
+            "Coarse shot-location zone on a standardized halfcourt shot chart. Only meaningful for field-goal make\/miss events (2ptm\/2pta\/3ptm\/3pta).\n",
+          ),
+        zod.null(),
+      ])
+      .optional(),
   })
   .describe("Partial update — any field omitted is left unchanged.");
 
@@ -758,6 +824,28 @@ export const UpdateStatEventResponse = zod.object({
   ftSequenceIndex: zod.number().nullish(),
   ftSequenceTotal: zod.number().nullish(),
   possessionTeamId: zod.number().nullish(),
+  shotZone: zod
+    .union([
+      zod
+        .enum([
+          "paint",
+          "left_short_corner",
+          "right_short_corner",
+          "left_corner_three",
+          "right_corner_three",
+          "left_baseline_midrange",
+          "right_baseline_midrange",
+          "top_key_midrange",
+          "left_wing_three",
+          "right_wing_three",
+          "top_arc_three",
+        ])
+        .describe(
+          "Coarse shot-location zone on a standardized halfcourt shot chart. Only meaningful for field-goal make\/miss events (2ptm\/2pta\/3ptm\/3pta).\n",
+        ),
+      zod.null(),
+    ])
+    .optional(),
   createdAt: zod.coerce.date(),
 });
 
