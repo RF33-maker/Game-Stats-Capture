@@ -23,5 +23,8 @@ export interface PlayByPlayEntry {
   homeScore: number;
   awayScore: number;
   eventText: string;
+  /** Denormalized copy of the source stat event's "needs review" flag.
+   */
+  needsReview: boolean;
   createdAt: Date;
 }

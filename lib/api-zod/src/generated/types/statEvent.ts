@@ -26,5 +26,8 @@ export interface StatEvent {
   /** @nullable */
   possessionTeamId?: number | null;
   shotZone?: ShotZone | null;
+  /** Scorer-set flag meaning "come back and double-check this play later." Purely advisory.
+   */
+  needsReview: boolean;
   createdAt: Date;
 }

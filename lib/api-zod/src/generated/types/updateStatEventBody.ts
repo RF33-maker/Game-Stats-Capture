@@ -21,4 +21,7 @@ export interface UpdateStatEventBody {
   clockSeconds?: number;
   value?: number;
   shotZone?: ShotZone | null;
+  /** Set or clear the "needs review" flag on this event. Allowed even on a substitution event (unlike its other fields, which cannot be edited directly).
+   */
+  needsReview?: boolean;
 }

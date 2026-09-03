@@ -3,6 +3,7 @@ import {
   serial,
   text,
   integer,
+  boolean,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -119,6 +120,10 @@ export const statEventsTable = pgTable("stat_events", {
   // pair — this column is how that pairing is enforced without relying on
   // heuristic matching (which player/value combination looks like a pair).
   pairEventId: integer("pair_event_id"),
+  // Scorer-set flag meaning "come back and double-check this play later."
+  // Purely advisory — never blocks recording, editing (other than the
+  // sub-event guard above), or finalizing a game.
+  needsReview: boolean("needs_review").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

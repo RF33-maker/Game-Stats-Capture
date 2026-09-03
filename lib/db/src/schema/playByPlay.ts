@@ -3,6 +3,7 @@ import {
   serial,
   text,
   integer,
+  boolean,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -34,6 +35,10 @@ export const playByPlayTable = pgTable("play_by_play", {
   homeScore: integer("home_score").notNull().default(0),
   awayScore: integer("away_score").notNull().default(0),
   eventText: text("event_text").notNull(),
+  // Denormalized copy of the source stat event's needsReview flag, kept in
+  // sync by rebuildPlayByPlay whenever any event changes — lets the
+  // play-by-play feed show flag state without an extra join.
+  needsReview: boolean("needs_review").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

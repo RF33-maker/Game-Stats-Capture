@@ -645,6 +645,11 @@ export const ListStatEventsResponseItem = zod.object({
       zod.null(),
     ])
     .optional(),
+  needsReview: zod
+    .boolean()
+    .describe(
+      'Scorer-set flag meaning \"come back and double-check this play later.\" Purely advisory.\n',
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListStatEventsResponse = zod.array(ListStatEventsResponseItem);
@@ -805,6 +810,12 @@ export const UpdateStatEventBody = zod
         zod.null(),
       ])
       .optional(),
+    needsReview: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Set or clear the \"needs review\" flag on this event. Allowed even on a substitution event (unlike its other fields, which cannot be edited directly).\n',
+      ),
   })
   .describe("Partial update — any field omitted is left unchanged.");
 
@@ -869,6 +880,11 @@ export const UpdateStatEventResponse = zod.object({
       zod.null(),
     ])
     .optional(),
+  needsReview: zod
+    .boolean()
+    .describe(
+      'Scorer-set flag meaning \"come back and double-check this play later.\" Purely advisory.\n',
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -899,6 +915,11 @@ export const ListPlayByPlayResponseItem = zod.object({
   homeScore: zod.number(),
   awayScore: zod.number(),
   eventText: zod.string(),
+  needsReview: zod
+    .boolean()
+    .describe(
+      'Denormalized copy of the source stat event\'s \"needs review\" flag.\n',
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListPlayByPlayResponse = zod.array(ListPlayByPlayResponseItem);
@@ -950,6 +971,11 @@ export const UpdatePlayByPlayResponse = zod.object({
   homeScore: zod.number(),
   awayScore: zod.number(),
   eventText: zod.string(),
+  needsReview: zod
+    .boolean()
+    .describe(
+      'Denormalized copy of the source stat event\'s \"needs review\" flag.\n',
+    ),
   createdAt: zod.coerce.date(),
 });
 

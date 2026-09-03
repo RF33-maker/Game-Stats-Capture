@@ -25,7 +25,7 @@ import {
   PlayByPlayEntry,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home, X } from "lucide-react";
+import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { loadSettings } from "@/lib/app-settings";
@@ -69,6 +69,11 @@ export default function GameCapture() {
   const [subMode, setSubMode] = useState<{ teamId: number; benchPlayerId: number } | null>(null);
   const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null; shotZone: ShotZoneId | null }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null, shotZone: null });
   const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false);
+  // Non-blocking prompt shown after a period ends or a timeout is called,
+  // listing plays flagged "needs review" in the relevant period so the
+  // scorer can double-check them while it's fresh rather than only at
+  // finalize time.
+  const [reviewPrompt, setReviewPrompt] = useState<{ open: boolean; periodLabel: string; entries: PlayByPlayEntry[] }>({ open: false, periodLabel: '', entries: [] });
 
   // Data fetching
   const { data: game, isLoading: gameLoading } = useGetGame(gameId, { query: { enabled: !!gameId, queryKey: getGetGameQueryKey(gameId) } });
@@ -250,6 +255,14 @@ export default function GameCapture() {
         setSelectedZone(null);
         setPendingFgEvent(null);
       }
+      if (eventType === 'timeout') {
+        const flaggedThisPeriod = (pbp ?? []).filter(
+          p => p.period === game.currentPeriod && p.needsReview,
+        );
+        if (flaggedThisPeriod.length > 0) {
+          setReviewPrompt({ open: true, periodLabel: periodLabel(game.currentPeriod), entries: flaggedThisPeriod });
+        }
+      }
     } catch (e) {
       toast.error("Failed to record stat");
     }
@@ -391,6 +404,13 @@ export default function GameCapture() {
         ? `OT${nextPeriod - game.periodCount}`
         : `Q${nextPeriod}`;
       toast.success(`Period ended — advanced to ${label}`);
+
+      const flaggedThisPeriod = (pbp ?? []).filter(
+        p => p.period === game.currentPeriod && p.needsReview,
+      );
+      if (flaggedThisPeriod.length > 0) {
+        setReviewPrompt({ open: true, periodLabel: periodLabel(game.currentPeriod), entries: flaggedThisPeriod });
+      }
     } catch {
       toast.error("Failed to end period");
     } finally {
@@ -500,6 +520,23 @@ export default function GameCapture() {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const periodLabel = (period: number) =>
+    period > game.periodCount ? `OT${period - game.periodCount}` : `Q${period}`;
+
+  const handleToggleReview = async (entry: PlayByPlayEntry) => {
+    if (entry.statEventId == null) return;
+    try {
+      await updateStat.mutateAsync({
+        statEventId: entry.statEventId,
+        data: { needsReview: !entry.needsReview },
+      });
+      invalidateData();
+      toast.success(entry.needsReview ? "Marked as reviewed" : "Flagged for review");
+    } catch {
+      toast.error("Failed to update flag");
+    }
   };
 
   const activeMode = game.captureMode;
@@ -759,17 +796,18 @@ export default function GameCapture() {
               const t = entry.teamId ? teams?.find(x => x.id === entry.teamId) : null;
               const editable = entry.statEventId != null;
               return (
-                <button
+                <div
                   key={entry.id}
-                  type="button"
-                  disabled={!editable}
-                  onClick={() => openEditPbp(entry)}
-                  className={`w-full text-left text-sm p-3 bg-slate-50 rounded flex items-start gap-3 border border-slate-200 group ${editable ? 'hover:bg-slate-100 hover:border-amber-400 cursor-pointer' : 'opacity-70 cursor-default'}`}
+                  role={editable ? "button" : undefined}
+                  tabIndex={editable ? 0 : undefined}
+                  onClick={editable ? () => openEditPbp(entry) : undefined}
+                  onKeyDown={editable ? (e) => { if (e.key === 'Enter') openEditPbp(entry); } : undefined}
+                  className={`w-full text-left text-sm p-3 rounded flex items-start gap-3 border group ${entry.needsReview ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200'} ${editable ? 'hover:bg-slate-100 hover:border-amber-400 cursor-pointer' : 'opacity-70 cursor-default'}`}
                 >
                   <div className="text-xs font-mono text-slate-400 shrink-0 w-12 text-right pt-0.5">
                     {formatClock(entry.clockSeconds)}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       {t && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.colorPrimary }} />}
                       <span className="font-bold font-mono tracking-tighter text-slate-900">
@@ -781,9 +819,19 @@ export default function GameCapture() {
                     </div>
                   </div>
                   {editable && (
+                    <button
+                      type="button"
+                      title={entry.needsReview ? "Mark as reviewed" : "Flag for review"}
+                      onClick={(e) => { e.stopPropagation(); handleToggleReview(entry); }}
+                      className={`shrink-0 mt-0.5 p-0.5 rounded ${entry.needsReview ? 'text-amber-600 hover:text-amber-700' : 'text-slate-300 hover:text-amber-500'}`}
+                    >
+                      {entry.needsReview ? <Flag className="w-3.5 h-3.5 fill-current" /> : <Flag className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                  {editable && (
                     <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-amber-500 shrink-0 mt-0.5" />
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -792,7 +840,11 @@ export default function GameCapture() {
             <Button 
               className="w-full font-bold bg-blue-600 hover:bg-blue-700" 
               onClick={() => {
-                if (loadSettings().confirmBeforeFinalize) {
+                const flagged = (pbp ?? []).filter(p => p.needsReview);
+                // Outstanding flags always force the confirmation dialog —
+                // even if the scorer turned off "confirm before finalize" —
+                // so a flagged play is never silently finalized unseen.
+                if (loadSettings().confirmBeforeFinalize || flagged.length > 0) {
                   setFinalizeDialogOpen(true);
                 } else {
                   handleFinalizeGame();
@@ -994,6 +1046,31 @@ export default function GameCapture() {
               This locks the game and stops all stat capture. You won't be able to record or edit any more plays. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {(() => {
+            const flaggedPlays = (pbp ?? []).filter(p => p.needsReview);
+            if (flaggedPlays.length === 0) return null;
+            return (
+              <div className="mt-2 border border-amber-300 bg-amber-50 rounded-lg p-3 max-h-48 overflow-auto">
+                <div className="flex items-center gap-2 text-amber-700 font-bold text-xs uppercase tracking-wide mb-2">
+                  <ShieldAlert className="w-4 h-4" />
+                  Quality check — {flaggedPlays.length} flagged {flaggedPlays.length === 1 ? 'play' : 'plays'}
+                </div>
+                <div className="space-y-1.5">
+                  {flaggedPlays.map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="w-full text-left text-xs text-slate-700 hover:text-slate-900 flex items-start gap-2"
+                      onClick={() => { setFinalizeDialogOpen(false); openEditPbp(entry); }}
+                    >
+                      <Flag className="w-3 h-3 fill-current text-amber-600 shrink-0 mt-0.5" />
+                      <span>{periodLabel(entry.period)} {formatClock(entry.clockSeconds)} — {entry.eventText}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <DialogFooter className="gap-2 sm:gap-2 mt-4">
             <Button
               variant="outline"
@@ -1015,6 +1092,63 @@ export default function GameCapture() {
               ) : (
                 'Yes, finalize game'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Non-blocking prompt after a period ends or a timeout is called —
+          surfaces flagged plays from the relevant period while it's still
+          fresh, without stopping the scorer from continuing. */}
+      <Dialog open={reviewPrompt.open} onOpenChange={(open) => !open && setReviewPrompt(p => ({ ...p, open: false }))}>
+        <DialogContent className="bg-white text-slate-900 border-slate-200 sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-500" />
+              Flagged plays — {reviewPrompt.periodLabel}
+            </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              These plays were flagged for review during {reviewPrompt.periodLabel}. Take a look now, or check them again before you finalize.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-72 overflow-auto">
+            {reviewPrompt.entries.map(entry => (
+              <div key={entry.id} className="flex items-start gap-2 p-2 rounded border border-amber-200 bg-amber-50">
+                <div className="flex-1 min-w-0 text-sm">
+                  <div className="text-xs font-mono text-slate-400">{formatClock(entry.clockSeconds)}</div>
+                  <div className="text-slate-700 leading-tight">{entry.eventText}</div>
+                </div>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs bg-white border-slate-300"
+                    onClick={() => { setReviewPrompt(p => ({ ...p, open: false })); openEditPbp(entry); }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-amber-700 hover:text-amber-800"
+                    onClick={async () => {
+                      await handleToggleReview(entry);
+                      setReviewPrompt(p => ({ ...p, entries: p.entries.filter(e => e.id !== entry.id) }));
+                    }}
+                  >
+                    <FlagOff className="w-3.5 h-3.5 mr-1" /> Reviewed
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="mt-2">
+            <Button
+              variant="outline"
+              className="bg-white border-slate-300 text-slate-700 hover:bg-slate-100"
+              onClick={() => setReviewPrompt(p => ({ ...p, open: false }))}
+            >
+              Dismiss
             </Button>
           </DialogFooter>
         </DialogContent>

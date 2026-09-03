@@ -1419,6 +1419,11 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ShotZone"
             - type: "null"
+        needsReview:
+          type: boolean
+          description: >
+            Scorer-set flag meaning "come back and double-check this play
+            later." Purely advisory.
         createdAt:
           type: string
           format: date-time
@@ -1429,6 +1434,7 @@ components:
         - clockSeconds
         - eventType
         - value
+        - needsReview
         - createdAt
 
     RecordStatEventBody:
@@ -1476,6 +1482,12 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ShotZone"
             - type: "null"
+        needsReview:
+          type: boolean
+          description: >
+            Set or clear the "needs review" flag on this event. Allowed even
+            on a substitution event (unlike its other fields, which cannot
+            be edited directly).
 
     PlayByPlayEntry:
       type: object
@@ -1504,6 +1516,10 @@ components:
           type: integer
         eventText:
           type: string
+        needsReview:
+          type: boolean
+          description: >
+            Denormalized copy of the source stat event's "needs review" flag.
         createdAt:
           type: string
           format: date-time
@@ -1516,6 +1532,7 @@ components:
         - awayScore
         - eventText
         - possessionEnded
+        - needsReview
         - createdAt
 
     CreatePlayByPlayBody:

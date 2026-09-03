@@ -158,6 +158,9 @@ function rebuildPlayByPlay(gameId: number): void {
       homeScore,
       awayScore,
       eventText,
+      // Keep the pbp row's flag in sync with its source stat event, mirroring
+      // the server's rebuildPlayByPlay.
+      needsReview: ev.needsReview,
     });
 
     if (effect.nextPossessionTeamId !== undefined) {
@@ -364,6 +367,7 @@ function seedSampleGame(): HandlerResult {
       ftSequenceTotal: ev.ftSeqTotal ?? null,
       possessionTeamId: currentGame.possessionTeamId,
       pairEventId: null,
+      needsReview: false,
     });
 
     const team = [home, away].find(t => t.id === ev.teamId) ?? null;
@@ -391,6 +395,7 @@ function seedSampleGame(): HandlerResult {
       homeScore,
       awayScore,
       eventText,
+      needsReview: false,
     });
 
     if (effect.nextPossessionTeamId !== undefined) {
@@ -660,6 +665,7 @@ export async function handleLocalRequest(
       ftSequenceTotal: data.ftSequenceTotal ?? null,
       possessionTeamId: game.possessionTeamId,
       pairEventId: null,
+      needsReview: false,
     });
 
     const team = data.teamId ? (teams.find(t => t.id === data.teamId) ?? null) : null;
@@ -687,6 +693,7 @@ export async function handleLocalRequest(
       homeScore,
       awayScore,
       eventText,
+      needsReview: false,
     });
 
     const gameUpdates: Partial<LSGame> = {
@@ -715,7 +722,13 @@ export async function handleLocalRequest(
       period: number;
       clockSeconds: number;
       value: number;
+      needsReview: boolean;
     }>;
+
+    // Toggling the review flag is allowed on any event, including a
+    // substitution — it's advisory metadata, not part of the pair's
+    // identity, so it doesn't need the same protection as the fields below.
+    const isReviewFlagOnlyPatch = Object.keys(data).every(k => k === "needsReview");
 
     // Substitutions are an indivisible pair; editing one side independently
     // could desync it from its pair and corrupt the derived on-court lineup.
@@ -723,10 +736,11 @@ export async function handleLocalRequest(
     // re-recording it via POST /api/games/:gameId/substitutions.
     const effectiveEventTypeForGuard = data.eventType !== undefined ? data.eventType : target.eventType;
     if (
-      target.eventType === "sub_in" ||
-      target.eventType === "sub_out" ||
-      effectiveEventTypeForGuard === "sub_in" ||
-      effectiveEventTypeForGuard === "sub_out"
+      !isReviewFlagOnlyPatch &&
+      (target.eventType === "sub_in" ||
+        target.eventType === "sub_out" ||
+        effectiveEventTypeForGuard === "sub_in" ||
+        effectiveEventTypeForGuard === "sub_out")
     ) {
       return badRequest("Substitution events cannot be edited directly — delete and re-record the substitution instead");
     }
@@ -765,6 +779,7 @@ export async function handleLocalRequest(
     if (data.period !== undefined) patch.period = data.period;
     if (data.clockSeconds !== undefined) patch.clockSeconds = data.clockSeconds;
     if (data.value !== undefined) patch.value = data.value;
+    if (data.needsReview !== undefined) patch.needsReview = data.needsReview;
 
     const updated = store.statEvents.update(statEventId, patch);
     if (!updated) return notFound("Stat event not found");
@@ -870,6 +885,7 @@ export async function handleLocalRequest(
       ftSequenceTotal: null,
       possessionTeamId: game.possessionTeamId,
       pairEventId: null,
+      needsReview: false,
     });
     const inEvent = store.statEvents.create({
       gameId,
@@ -883,6 +899,7 @@ export async function handleLocalRequest(
       ftSequenceTotal: null,
       possessionTeamId: game.possessionTeamId,
       pairEventId: outEvent.id,
+      needsReview: false,
     });
     const linkedOutEvent = store.statEvents.update(outEvent.id, { pairEventId: inEvent.id })!;
 
@@ -907,6 +924,7 @@ export async function handleLocalRequest(
         ftSequenceTotal: null,
         otherPlayer: inPlayer,
       }),
+      needsReview: false,
     });
     const inPbp = store.playByPlay.create({
       gameId,
@@ -929,6 +947,7 @@ export async function handleLocalRequest(
         ftSequenceTotal: null,
         otherPlayer: outPlayer,
       }),
+      needsReview: false,
     });
 
     const updatedGame = store.games.update(gameId, { clockSeconds: data.clockSeconds, currentPeriod: data.period })!;

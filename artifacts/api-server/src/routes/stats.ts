@@ -505,6 +505,13 @@ router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res
   }
   const statEventId = params.data.statEventId;
 
+  // Toggling the review flag is allowed on any event, including a
+  // substitution — it's advisory metadata, not part of the pair's identity,
+  // so it doesn't need the same protection as team/player/eventType/value.
+  const isReviewFlagOnlyPatch = Object.keys(parsed.data).every(
+    (k) => k === "needsReview",
+  );
+
   try {
     const updated = await db.transaction(async (tx) => {
       const [target] = await tx
@@ -526,10 +533,11 @@ router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res
           ? (parsed.data.eventType as StatEventType)
           : (target.eventType as StatEventType);
       if (
-        target.eventType === "sub_in" ||
-        target.eventType === "sub_out" ||
-        effectiveEventTypeForGuard === "sub_in" ||
-        effectiveEventTypeForGuard === "sub_out"
+        !isReviewFlagOnlyPatch &&
+        (target.eventType === "sub_in" ||
+          target.eventType === "sub_out" ||
+          effectiveEventTypeForGuard === "sub_in" ||
+          effectiveEventTypeForGuard === "sub_out")
       ) {
         throw new HttpError(
           400,
@@ -611,6 +619,8 @@ router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res
       if (parsed.data.value !== undefined) updates.value = parsed.data.value;
       if (parsed.data.shotZone !== undefined)
         updates.shotZone = parsed.data.shotZone;
+      if (parsed.data.needsReview !== undefined)
+        updates.needsReview = parsed.data.needsReview;
 
       const [next] = await tx
         .update(statEventsTable)
@@ -789,6 +799,10 @@ async function rebuildPlayByPlay(tx: DbLike, gameId: number): Promise<void> {
       homeScore,
       awayScore,
       eventText,
+      // Keep the pbp row's flag in sync with its source stat event — this
+      // runs after every create/edit, so it's the single place needsReview
+      // propagates from stat_events into play_by_play.
+      needsReview: ev.needsReview,
     });
 
     if (effect.nextPossessionTeamId !== undefined) {

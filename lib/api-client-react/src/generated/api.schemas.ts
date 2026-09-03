@@ -352,6 +352,9 @@ export interface StatEvent {
   /** @nullable */
   possessionTeamId?: number | null;
   shotZone?: ShotZone | null;
+  /** Scorer-set flag meaning "come back and double-check this play later." Purely advisory.
+   */
+  needsReview: boolean;
   createdAt: string;
 }
 
@@ -384,6 +387,9 @@ export interface UpdateStatEventBody {
   clockSeconds?: number;
   value?: number;
   shotZone?: ShotZone | null;
+  /** Set or clear the "needs review" flag on this event. Allowed even on a substitution event (unlike its other fields, which cannot be edited directly).
+   */
+  needsReview?: boolean;
 }
 
 export interface PlayByPlayEntry {
@@ -403,6 +409,9 @@ export interface PlayByPlayEntry {
   homeScore: number;
   awayScore: number;
   eventText: string;
+  /** Denormalized copy of the source stat event's "needs review" flag.
+   */
+  needsReview: boolean;
   createdAt: string;
 }
 

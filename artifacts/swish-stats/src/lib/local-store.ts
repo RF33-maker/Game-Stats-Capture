@@ -76,6 +76,8 @@ export type LSStatEvent = {
   // Durable link between a sub_out row and its paired sub_in row (mirrors
   // the server schema) — substitutions are always created/deleted as a pair.
   pairEventId: number | null;
+  // Scorer-set "come back and check this later" flag. Advisory only.
+  needsReview: boolean;
   createdAt: string;
 };
 
@@ -92,6 +94,9 @@ export type LSPlayByPlay = {
   homeScore: number;
   awayScore: number;
   eventText: string;
+  // Denormalized copy of the source stat event's needsReview flag (mirrors
+  // the server schema), kept in sync by rebuildPlayByPlay.
+  needsReview: boolean;
   createdAt: string;
 };
 
