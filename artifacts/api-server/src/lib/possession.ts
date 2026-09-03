@@ -169,6 +169,9 @@ export function describeEvent(args: {
   ftSequenceIndex?: number | null;
   ftSequenceTotal?: number | null;
   shotZone?: string | null;
+  // The other half of a substitution pair — e.g. for a sub_in event, the
+  // player who came out; for a sub_out event, the player who came in.
+  otherPlayer?: Player | null;
 }): string {
   const {
     eventType,
@@ -179,6 +182,7 @@ export function describeEvent(args: {
     ftSequenceIndex,
     ftSequenceTotal,
     shotZone,
+    otherPlayer,
   } = args;
 
   const mins = Math.floor(clockSeconds / 60);
@@ -225,6 +229,16 @@ export function describeEvent(args: {
   }
   if (eventType === "jump_ball") {
     return `${periodLabel} ${clock} — Jump ball`;
+  }
+  if (eventType === "sub_in") {
+    return otherPlayer
+      ? `${periodLabel} ${clock} — ${subject} subs in for ${otherPlayer.lastName}`
+      : `${periodLabel} ${clock} — ${subject} substituted in`;
+  }
+  if (eventType === "sub_out") {
+    return otherPlayer
+      ? `${periodLabel} ${clock} — ${subject} subs out for ${otherPlayer.lastName}`
+      : `${periodLabel} ${clock} — ${subject} substituted out`;
   }
 
   return `${periodLabel} ${clock} — ${subject} ${action}`;

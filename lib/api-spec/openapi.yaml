@@ -647,6 +647,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/StatEventResult"
 
+  /games/{gameId}/substitutions:
+    post:
+      operationId: substitutePlayers
+      tags: [stats]
+      summary: Atomically substitute a bench player in for an on-court player
+      parameters:
+        - $ref: "#/components/parameters/GameId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubstitutePlayersBody"
+      responses:
+        "201":
+          description: Substitution recorded as a paired sub-out/sub-in stat event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubstitutionResult"
+        "400":
+          description: Invalid substitution (e.g. player not on court/bench)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /stats/{statEventId}:
     patch:
       operationId: updateStatEvent
@@ -1538,6 +1565,43 @@ components:
         game:
           $ref: "#/components/schemas/Game"
       required: [statEvent, playByPlay, game]
+
+    SubstitutePlayersBody:
+      type: object
+      description: >
+        Atomically swaps one on-court player for one bench player on the same
+        team. Both the sub-out and sub-in stat events are written in a single
+        transaction after validating current lineup state server-side, so a
+        substitution can never leave the game with a player missing.
+      properties:
+        teamId:
+          type: integer
+        outPlayerId:
+          type: integer
+          description: Currently on-court player being substituted out.
+        inPlayerId:
+          type: integer
+          description: Currently benched player being substituted in.
+        period:
+          type: integer
+        clockSeconds:
+          type: integer
+      required: [teamId, outPlayerId, inPlayerId, period, clockSeconds]
+
+    SubstitutionResult:
+      type: object
+      properties:
+        outEvent:
+          $ref: "#/components/schemas/StatEvent"
+        inEvent:
+          $ref: "#/components/schemas/StatEvent"
+        outPlayByPlay:
+          $ref: "#/components/schemas/PlayByPlayEntry"
+        inPlayByPlay:
+          $ref: "#/components/schemas/PlayByPlayEntry"
+        game:
+          $ref: "#/components/schemas/Game"
+      required: [outEvent, inEvent, outPlayByPlay, inPlayByPlay, game]
 
     PlayerStatLine:
       type: object

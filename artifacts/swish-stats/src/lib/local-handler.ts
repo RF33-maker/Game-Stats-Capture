@@ -130,6 +130,10 @@ function rebuildPlayByPlay(gameId: number): void {
 
     const team = ev.teamId ? (teamMap.get(ev.teamId) ?? null) : null;
     const player = ev.playerId ? (playerMap.get(ev.playerId) ?? null) : null;
+    const otherPlayer =
+      (ev.eventType === "sub_in" || ev.eventType === "sub_out") && ev.value != null
+        ? (playerMap.get(ev.value) ?? null)
+        : null;
 
     const eventText = describeEvent({
       eventType: ev.eventType,
@@ -139,6 +143,7 @@ function rebuildPlayByPlay(gameId: number): void {
       clockSeconds: ev.clockSeconds,
       ftSequenceIndex: ev.ftSequenceIndex,
       ftSequenceTotal: ev.ftSequenceTotal,
+      otherPlayer,
     });
 
     store.playByPlay.create({
@@ -358,6 +363,7 @@ function seedSampleGame(): HandlerResult {
       ftSequenceIndex: ev.ftSeqIdx ?? null,
       ftSequenceTotal: ev.ftSeqTotal ?? null,
       possessionTeamId: currentGame.possessionTeamId,
+      pairEventId: null,
     });
 
     const team = [home, away].find(t => t.id === ev.teamId) ?? null;
@@ -608,6 +614,16 @@ export async function handleLocalRequest(
       ftSequenceTotal?: number | null;
     };
 
+    // Substitutions are an indivisible pair validated against the live
+    // lineup — they must go through POST /api/games/:gameId/substitutions,
+    // never this generic event-creation route, or a lone unpaired sub event
+    // could desync the derived on-court lineup.
+    if (data.eventType === "sub_in" || data.eventType === "sub_out") {
+      return badRequest(
+        "Substitutions must be created via POST /api/games/:gameId/substitutions, not this endpoint",
+      );
+    }
+
     const game = store.games.get(gameId);
     if (!game) return notFound("Game not found");
 
@@ -643,6 +659,7 @@ export async function handleLocalRequest(
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
       possessionTeamId: game.possessionTeamId,
+      pairEventId: null,
     });
 
     const team = data.teamId ? (teams.find(t => t.id === data.teamId) ?? null) : null;
@@ -700,6 +717,20 @@ export async function handleLocalRequest(
       value: number;
     }>;
 
+    // Substitutions are an indivisible pair; editing one side independently
+    // could desync it from its pair and corrupt the derived on-court lineup.
+    // Scorers correct a substitution by deleting it (removes both sides) and
+    // re-recording it via POST /api/games/:gameId/substitutions.
+    const effectiveEventTypeForGuard = data.eventType !== undefined ? data.eventType : target.eventType;
+    if (
+      target.eventType === "sub_in" ||
+      target.eventType === "sub_out" ||
+      effectiveEventTypeForGuard === "sub_in" ||
+      effectiveEventTypeForGuard === "sub_out"
+    ) {
+      return badRequest("Substitution events cannot be edited directly — delete and re-record the substitution instead");
+    }
+
     const teams = store.teams.forGame(target.gameId);
 
     if (data.teamId !== undefined && data.teamId !== null) {
@@ -750,10 +781,168 @@ export async function handleLocalRequest(
     if (!ev) return notFound("Stat event not found");
     const gameId = ev.gameId;
 
+    // Substitutions are an indivisible pair: deleting one side without the
+    // other would leave a dangling sub_in/sub_out event and desync the
+    // derived on-court lineup, so always delete both rows together.
     store.statEvents.delete(statEventId);
+    if ((ev.eventType === "sub_in" || ev.eventType === "sub_out") && ev.pairEventId != null) {
+      store.statEvents.delete(ev.pairEventId);
+    }
     rebuildPlayByPlay(gameId);
 
     return { status: 204, body: null };
+  }
+
+  // Substitute players — atomic swap: validates the current on-court/bench
+  // state server-side (mirrors the hosted API's /substitutions endpoint) and
+  // writes both stat events + both play-by-play rows as a single pair.
+  match = pathname.match(/^\/api\/games\/(\d+)\/substitutions$/);
+  if (m === "POST" && match) {
+    const gameId = Number(match[1]);
+    const data = (body ?? {}) as {
+      teamId?: number;
+      outPlayerId?: number;
+      inPlayerId?: number;
+      period?: number;
+      clockSeconds?: number;
+    };
+
+    const game = store.games.get(gameId);
+    if (!game) return notFound("Game not found");
+
+    if (
+      typeof data.teamId !== "number" ||
+      typeof data.outPlayerId !== "number" ||
+      typeof data.inPlayerId !== "number" ||
+      typeof data.period !== "number" ||
+      typeof data.clockSeconds !== "number"
+    ) {
+      return badRequest("teamId, outPlayerId, inPlayerId, period, and clockSeconds are required");
+    }
+    if (data.outPlayerId === data.inPlayerId) {
+      return badRequest("outPlayerId and inPlayerId must differ");
+    }
+
+    const teams = store.teams.forGame(gameId);
+    const team = teams.find(t => t.id === data.teamId);
+    if (!team) return badRequest("teamId does not belong to this game");
+
+    const outPlayer = store.players.get(data.outPlayerId);
+    const inPlayer = store.players.get(data.inPlayerId);
+    if (!outPlayer || !inPlayer) return notFound("Player not found");
+    if (outPlayer.teamId !== data.teamId || inPlayer.teamId !== data.teamId) {
+      return badRequest("Both players must belong to the given team");
+    }
+    if (!outPlayer.isActive || !inPlayer.isActive) {
+      return badRequest("Both players must be active on the roster");
+    }
+
+    // Derive the current on-court set server-side (replaying sub history
+    // over starters) so a stale client can't produce an invalid swap.
+    const onCourt = new Set(
+      store.players.forGame(gameId).filter(p => p.teamId === data.teamId && p.isStarter).map(p => p.id),
+    );
+    const subEvents = store.statEvents
+      .forGame(gameId)
+      .filter(e => e.teamId === data.teamId)
+      .sort((a, b) => a.id - b.id);
+    for (const e of subEvents) {
+      if (e.eventType === "sub_in" && e.playerId != null) onCourt.add(e.playerId);
+      else if (e.eventType === "sub_out" && e.playerId != null) onCourt.delete(e.playerId);
+    }
+    if (!onCourt.has(data.outPlayerId)) return badRequest("outPlayerId is not currently on court");
+    if (onCourt.has(data.inPlayerId)) return badRequest("inPlayerId is already on court");
+
+    const pbpRows = store.playByPlay.forGame(gameId).sort((a, b) => a.id - b.id);
+    const lastPbp = pbpRows[pbpRows.length - 1];
+    const homeScore = lastPbp?.homeScore ?? 0;
+    const awayScore = lastPbp?.awayScore ?? 0;
+
+    const outEvent = store.statEvents.create({
+      gameId,
+      teamId: data.teamId,
+      playerId: data.outPlayerId,
+      period: data.period,
+      clockSeconds: data.clockSeconds,
+      eventType: "sub_out",
+      value: data.inPlayerId,
+      ftSequenceIndex: null,
+      ftSequenceTotal: null,
+      possessionTeamId: game.possessionTeamId,
+      pairEventId: null,
+    });
+    const inEvent = store.statEvents.create({
+      gameId,
+      teamId: data.teamId,
+      playerId: data.inPlayerId,
+      period: data.period,
+      clockSeconds: data.clockSeconds,
+      eventType: "sub_in",
+      value: data.outPlayerId,
+      ftSequenceIndex: null,
+      ftSequenceTotal: null,
+      possessionTeamId: game.possessionTeamId,
+      pairEventId: outEvent.id,
+    });
+    const linkedOutEvent = store.statEvents.update(outEvent.id, { pairEventId: inEvent.id })!;
+
+    const outPbp = store.playByPlay.create({
+      gameId,
+      statEventId: linkedOutEvent.id,
+      teamId: data.teamId,
+      playerId: data.outPlayerId,
+      period: data.period,
+      clockSeconds: data.clockSeconds,
+      possessionTeamId: game.possessionTeamId,
+      possessionEnded: "false",
+      homeScore,
+      awayScore,
+      eventText: describeEvent({
+        eventType: "sub_out",
+        team,
+        player: outPlayer,
+        period: data.period,
+        clockSeconds: data.clockSeconds,
+        ftSequenceIndex: null,
+        ftSequenceTotal: null,
+        otherPlayer: inPlayer,
+      }),
+    });
+    const inPbp = store.playByPlay.create({
+      gameId,
+      statEventId: inEvent.id,
+      teamId: data.teamId,
+      playerId: data.inPlayerId,
+      period: data.period,
+      clockSeconds: data.clockSeconds,
+      possessionTeamId: game.possessionTeamId,
+      possessionEnded: "false",
+      homeScore,
+      awayScore,
+      eventText: describeEvent({
+        eventType: "sub_in",
+        team,
+        player: inPlayer,
+        period: data.period,
+        clockSeconds: data.clockSeconds,
+        ftSequenceIndex: null,
+        ftSequenceTotal: null,
+        otherPlayer: outPlayer,
+      }),
+    });
+
+    const updatedGame = store.games.update(gameId, { clockSeconds: data.clockSeconds, currentPeriod: data.period })!;
+
+    return ok(
+      {
+        outEvent: linkedOutEvent,
+        inEvent,
+        outPlayByPlay: outPbp,
+        inPlayByPlay: inPbp,
+        game: updatedGame,
+      },
+      201,
+    );
   }
 
   // List play-by-play (newest first to match server)

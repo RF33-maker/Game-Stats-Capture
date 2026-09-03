@@ -717,6 +717,29 @@ export const RecordStatEventBody = zod.object({
 });
 
 /**
+ * @summary Atomically substitute a bench player in for an on-court player
+ */
+export const SubstitutePlayersParams = zod.object({
+  gameId: zod.coerce.number(),
+});
+
+export const SubstitutePlayersBody = zod
+  .object({
+    teamId: zod.number(),
+    outPlayerId: zod
+      .number()
+      .describe("Currently on-court player being substituted out."),
+    inPlayerId: zod
+      .number()
+      .describe("Currently benched player being substituted in."),
+    period: zod.number(),
+    clockSeconds: zod.number(),
+  })
+  .describe(
+    "Atomically swaps one on-court player for one bench player on the same team. Both the sub-out and sub-in stat events are written in a single transaction after validating current lineup state server-side, so a substitution can never leave the game with a player missing.\n",
+  );
+
+/**
  * @summary Edit a recorded stat event (corrects player, team, or event type) and rebuilds play-by-play
  */
 export const UpdateStatEventParams = zod.object({

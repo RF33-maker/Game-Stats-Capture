@@ -20,6 +20,8 @@ import {
   DeleteStatEventParams,
   UpdateStatEventBody,
   UpdateStatEventParams,
+  SubstitutePlayersBody,
+  SubstitutePlayersParams,
 } from "@workspace/api-zod";
 import {
   computePossessionEffect,
@@ -143,6 +145,18 @@ router.post("/games/:gameId/stats", requireLeagueRole("scorer"), async (req, res
       const eventType = parsed.data.eventType as StatEventType;
       assertShotZoneMatchesEventType(eventType, parsed.data.shotZone ?? null);
 
+      // Substitutions are an indivisible pair (sub_out + sub_in written
+      // together, with server-validated lineup state) and must always go
+      // through POST /games/:gameId/substitutions, never this generic
+      // event-creation route — otherwise a lone, unpaired sub event could
+      // corrupt the derived on-court lineup.
+      if (eventType === "sub_in" || eventType === "sub_out") {
+        throw new HttpError(
+          400,
+          "Substitutions must be created via POST /games/:gameId/substitutions, not this endpoint",
+        );
+      }
+
       const effect = computePossessionEffect({
         eventType,
         eventTeamId: parsed.data.teamId ?? null,
@@ -241,6 +255,243 @@ router.post("/games/:gameId/stats", requireLeagueRole("scorer"), async (req, res
   }
 });
 
+// Replays a team's sub_in/sub_out history (ordered by createdAt, then id) on
+// top of its starters to derive who is currently on court. Used to validate
+// substitutions server-side so a client can never swap a player who isn't
+// actually on the court/bench right now.
+async function getOnCourtPlayerIds(
+  tx: DbLike,
+  teamId: number,
+): Promise<Set<number>> {
+  const teamPlayers = await tx
+    .select()
+    .from(playersTable)
+    .where(eq(playersTable.teamId, teamId));
+  const onCourt = new Set(
+    teamPlayers.filter((p) => p.isStarter).map((p) => p.id),
+  );
+
+  const subEvents = await tx
+    .select()
+    .from(statEventsTable)
+    .where(eq(statEventsTable.teamId, teamId))
+    .orderBy(asc(statEventsTable.createdAt), asc(statEventsTable.id));
+  for (const ev of subEvents) {
+    if (ev.eventType === "sub_in" && ev.playerId != null) {
+      onCourt.add(ev.playerId);
+    } else if (ev.eventType === "sub_out" && ev.playerId != null) {
+      onCourt.delete(ev.playerId);
+    }
+  }
+  return onCourt;
+}
+
+router.post(
+  "/games/:gameId/substitutions",
+  requireLeagueRole("scorer"),
+  async (req, res): Promise<void> => {
+    const params = SubstitutePlayersParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+    const parsed = SubstitutePlayersBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const gameId = params.data.gameId;
+    const { teamId, outPlayerId, inPlayerId, period, clockSeconds } =
+      parsed.data;
+
+    if (outPlayerId === inPlayerId) {
+      res.status(400).json({ error: "outPlayerId and inPlayerId must differ" });
+      return;
+    }
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        const [game] = await tx
+          .select()
+          .from(gamesTable)
+          .where(eq(gamesTable.id, gameId));
+        if (!game) {
+          throw new HttpError(404, "Game not found");
+        }
+
+        const teams = await tx
+          .select()
+          .from(teamsTable)
+          .where(eq(teamsTable.gameId, gameId));
+        const team = teams.find((t) => t.id === teamId);
+        if (!team) {
+          throw new HttpError(400, "teamId does not belong to this game");
+        }
+
+        const [outPlayer, inPlayer] = await Promise.all([
+          tx
+            .select()
+            .from(playersTable)
+            .where(eq(playersTable.id, outPlayerId))
+            .then((r) => r[0]),
+          tx
+            .select()
+            .from(playersTable)
+            .where(eq(playersTable.id, inPlayerId))
+            .then((r) => r[0]),
+        ]);
+        if (!outPlayer || !inPlayer) {
+          throw new HttpError(404, "Player not found");
+        }
+        if (outPlayer.teamId !== teamId || inPlayer.teamId !== teamId) {
+          throw new HttpError(
+            400,
+            "Both players must belong to the given team",
+          );
+        }
+        if (!outPlayer.isActive || !inPlayer.isActive) {
+          throw new HttpError(400, "Both players must be active on the roster");
+        }
+
+        // Validate current lineup state (server-authoritative, not trusted
+        // from the client) so a stale UI can't produce an invalid swap.
+        const onCourtIds = await getOnCourtPlayerIds(tx, teamId);
+        if (!onCourtIds.has(outPlayerId)) {
+          throw new HttpError(400, "outPlayerId is not currently on court");
+        }
+        if (onCourtIds.has(inPlayerId)) {
+          throw new HttpError(400, "inPlayerId is already on court");
+        }
+
+        // Substitutions don't affect possession/score.
+        const latest = await tx
+          .select()
+          .from(playByPlayTable)
+          .where(eq(playByPlayTable.gameId, gameId))
+          .orderBy(asc(playByPlayTable.id));
+        const lastPbp = latest[latest.length - 1];
+        const homeScore = lastPbp?.homeScore ?? 0;
+        const awayScore = lastPbp?.awayScore ?? 0;
+
+        const [outEvent] = await tx
+          .insert(statEventsTable)
+          .values({
+            gameId,
+            teamId,
+            playerId: outPlayerId,
+            period,
+            clockSeconds,
+            eventType: "sub_out" as StatEventType,
+            value: inPlayerId,
+            possessionTeamId: game.possessionTeamId ?? null,
+          })
+          .returning();
+
+        const [inEvent] = await tx
+          .insert(statEventsTable)
+          .values({
+            gameId,
+            teamId,
+            playerId: inPlayerId,
+            period,
+            clockSeconds,
+            eventType: "sub_in" as StatEventType,
+            value: outPlayerId,
+            possessionTeamId: game.possessionTeamId ?? null,
+            pairEventId: outEvent.id,
+          })
+          .returning();
+
+        // Link the other side of the pair now that inEvent's id exists.
+        // pairEventId is the durable link used by PATCH/DELETE to treat the
+        // two rows as one indivisible operation, instead of relying on
+        // heuristically matching value/player fields.
+        const [linkedOutEvent] = await tx
+          .update(statEventsTable)
+          .set({ pairEventId: inEvent.id })
+          .where(eq(statEventsTable.id, outEvent.id))
+          .returning();
+
+        const [outPbp] = await tx
+          .insert(playByPlayTable)
+          .values({
+            gameId,
+            statEventId: outEvent.id,
+            teamId,
+            playerId: outPlayerId,
+            period,
+            clockSeconds,
+            possessionTeamId: game.possessionTeamId ?? null,
+            possessionEnded: "false",
+            homeScore,
+            awayScore,
+            eventText: describeEvent({
+              eventType: "sub_out" as StatEventType,
+              team,
+              player: outPlayer,
+              period,
+              clockSeconds,
+              ftSequenceIndex: null,
+              ftSequenceTotal: null,
+              shotZone: null,
+              otherPlayer: inPlayer,
+            }),
+          })
+          .returning();
+
+        const [inPbp] = await tx
+          .insert(playByPlayTable)
+          .values({
+            gameId,
+            statEventId: inEvent.id,
+            teamId,
+            playerId: inPlayerId,
+            period,
+            clockSeconds,
+            possessionTeamId: game.possessionTeamId ?? null,
+            possessionEnded: "false",
+            homeScore,
+            awayScore,
+            eventText: describeEvent({
+              eventType: "sub_in" as StatEventType,
+              team,
+              player: inPlayer,
+              period,
+              clockSeconds,
+              ftSequenceIndex: null,
+              ftSequenceTotal: null,
+              shotZone: null,
+              otherPlayer: outPlayer,
+            }),
+          })
+          .returning();
+
+        const [updatedGame] = await tx
+          .update(gamesTable)
+          .set({ clockSeconds, currentPeriod: period })
+          .where(eq(gamesTable.id, gameId))
+          .returning();
+
+        return {
+          outEvent: linkedOutEvent,
+          inEvent,
+          outPlayByPlay: outPbp,
+          inPlayByPlay: inPbp,
+          game: updatedGame,
+        };
+      });
+
+      res.status(201).json(result);
+    } catch (err) {
+      if (err instanceof HttpError) {
+        res.status(err.status).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+  },
+);
+
 router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res): Promise<void> => {
   const params = UpdateStatEventParams.safeParse(req.params);
   if (!params.success) {
@@ -264,6 +515,27 @@ router.patch("/stats/:statEventId", requireLeagueRole("scorer"), async (req, res
         throw new HttpError(404, "Stat event not found");
       }
       const gameId = target.gameId;
+
+      // Substitutions are an indivisible pair; editing one side independently
+      // could desync it from its pair (wrong team/player/clock on only one
+      // row) and corrupt the derived on-court lineup. Scorers correct a
+      // substitution by deleting it (which removes both sides) and
+      // re-recording it via POST /games/:gameId/substitutions.
+      const effectiveEventTypeForGuard =
+        parsed.data.eventType !== undefined
+          ? (parsed.data.eventType as StatEventType)
+          : (target.eventType as StatEventType);
+      if (
+        target.eventType === "sub_in" ||
+        target.eventType === "sub_out" ||
+        effectiveEventTypeForGuard === "sub_in" ||
+        effectiveEventTypeForGuard === "sub_out"
+      ) {
+        throw new HttpError(
+          400,
+          "Substitution events cannot be edited directly — delete and re-record the substitution instead",
+        );
+      }
 
       const teams = await tx
         .select()
@@ -381,13 +653,24 @@ router.delete("/stats/:statEventId", requireLeagueRole("scorer"), async (req, re
       }
       const gameId = target.gameId;
 
-      // Delete the pbp row(s) tied to this event and the event itself.
-      await tx
-        .delete(playByPlayTable)
-        .where(eq(playByPlayTable.statEventId, statEventId));
-      await tx
-        .delete(statEventsTable)
-        .where(eq(statEventsTable.id, statEventId));
+      // Substitutions are an indivisible pair: deleting one side without the
+      // other would leave a dangling sub_in/sub_out event and desync the
+      // derived on-court lineup, so always delete both rows together.
+      const idsToDelete = [statEventId];
+      if (
+        (target.eventType === "sub_in" || target.eventType === "sub_out") &&
+        target.pairEventId != null
+      ) {
+        idsToDelete.push(target.pairEventId);
+      }
+
+      // Delete the pbp row(s) tied to these event(s) and the event(s) themselves.
+      for (const id of idsToDelete) {
+        await tx
+          .delete(playByPlayTable)
+          .where(eq(playByPlayTable.statEventId, id));
+        await tx.delete(statEventsTable).where(eq(statEventsTable.id, id));
+      }
 
       // Rebuild pbp scores + game possession by replaying remaining events.
       await rebuildPlayByPlay(tx, gameId);
@@ -477,6 +760,10 @@ async function rebuildPlayByPlay(tx: DbLike, gameId: number): Promise<void> {
 
     const team = teams.find((t) => t.id === ev.teamId) ?? null;
     const player = ev.playerId ? (playerMap.get(ev.playerId) ?? null) : null;
+    const otherPlayer =
+      (eventType === "sub_in" || eventType === "sub_out") && ev.value != null
+        ? (playerMap.get(ev.value) ?? null)
+        : null;
 
     const eventText = describeEvent({
       eventType,
@@ -487,6 +774,7 @@ async function rebuildPlayByPlay(tx: DbLike, gameId: number): Promise<void> {
       ftSequenceIndex: ev.ftSequenceIndex,
       ftSequenceTotal: ev.ftSequenceTotal,
       shotZone: ev.shotZone,
+      otherPlayer,
     });
 
     await tx.insert(playByPlayTable).values({

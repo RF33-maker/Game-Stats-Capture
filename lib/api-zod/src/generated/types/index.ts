@@ -43,6 +43,8 @@ export * from "./shotZone";
 export * from "./statEvent";
 export * from "./statEventResult";
 export * from "./statEventType";
+export * from "./substitutePlayersBody";
+export * from "./substitutionResult";
 export * from "./team";
 export * from "./teamBoxScore";
 export * from "./updateClockBody";

@@ -114,6 +114,11 @@ export const statEventsTable = pgTable("stat_events", {
   possessionTeamId: integer("possession_team_id"),
   // Coarse shot-location zone (see SHOT_ZONES). Only set for FG make/miss events.
   shotZone: text("shot_zone"),
+  // Durable link between a sub_out row and its paired sub_in row (and vice
+  // versa). Substitutions must always be created, edited, and deleted as a
+  // pair — this column is how that pairing is enforced without relying on
+  // heuristic matching (which player/value combination looks like a pair).
+  pairEventId: integer("pair_event_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

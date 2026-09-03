@@ -73,6 +73,9 @@ export type LSStatEvent = {
   ftSequenceIndex: number | null;
   ftSequenceTotal: number | null;
   possessionTeamId: number | null;
+  // Durable link between a sub_out row and its paired sub_in row (mirrors
+  // the server schema) — substitutions are always created/deleted as a pair.
+  pairEventId: number | null;
   createdAt: string;
 };
 

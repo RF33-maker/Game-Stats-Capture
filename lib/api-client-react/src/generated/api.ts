@@ -27,6 +27,7 @@ import type {
   CreatePlayerBody,
   CreateTeamBody,
   ErrorEnvelope,
+  ErrorResponse,
   Game,
   HandleBrowserLoginCallbackParams,
   HealthStatus,
@@ -44,6 +45,8 @@ import type {
   RecordStatEventBody,
   StatEvent,
   StatEventResult,
+  SubstitutePlayersBody,
+  SubstitutionResult,
   Team,
   UpdateClockBody,
   UpdateGameBody,
@@ -3076,6 +3079,93 @@ export const useRecordStatEvent = <
   TContext
 > => {
   return useMutation(getRecordStatEventMutationOptions(options));
+};
+
+/**
+ * @summary Atomically substitute a bench player in for an on-court player
+ */
+export const getSubstitutePlayersUrl = (gameId: number) => {
+  return `/api/games/${gameId}/substitutions`;
+};
+
+export const substitutePlayers = async (
+  gameId: number,
+  substitutePlayersBody: SubstitutePlayersBody,
+  options?: RequestInit,
+): Promise<SubstitutionResult> => {
+  return customFetch<SubstitutionResult>(getSubstitutePlayersUrl(gameId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(substitutePlayersBody),
+  });
+};
+
+export const getSubstitutePlayersMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof substitutePlayers>>,
+    TError,
+    { gameId: number; data: BodyType<SubstitutePlayersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof substitutePlayers>>,
+  TError,
+  { gameId: number; data: BodyType<SubstitutePlayersBody> },
+  TContext
+> => {
+  const mutationKey = ["substitutePlayers"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof substitutePlayers>>,
+    { gameId: number; data: BodyType<SubstitutePlayersBody> }
+  > = (props) => {
+    const { gameId, data } = props ?? {};
+
+    return substitutePlayers(gameId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubstitutePlayersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof substitutePlayers>>
+>;
+export type SubstitutePlayersMutationBody = BodyType<SubstitutePlayersBody>;
+export type SubstitutePlayersMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Atomically substitute a bench player in for an on-court player
+ */
+export const useSubstitutePlayers = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof substitutePlayers>>,
+    TError,
+    { gameId: number; data: BodyType<SubstitutePlayersBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof substitutePlayers>>,
+  TError,
+  { gameId: number; data: BodyType<SubstitutePlayersBody> },
+  TContext
+> => {
+  return useMutation(getSubstitutePlayersMutationOptions(options));
 };
 
 /**

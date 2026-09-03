@@ -436,6 +436,28 @@ export interface StatEventResult {
   game: Game;
 }
 
+/**
+ * Atomically swaps one on-court player for one bench player on the same team. Both the sub-out and sub-in stat events are written in a single transaction after validating current lineup state server-side, so a substitution can never leave the game with a player missing.
+
+ */
+export interface SubstitutePlayersBody {
+  teamId: number;
+  /** Currently on-court player being substituted out. */
+  outPlayerId: number;
+  /** Currently benched player being substituted in. */
+  inPlayerId: number;
+  period: number;
+  clockSeconds: number;
+}
+
+export interface SubstitutionResult {
+  outEvent: StatEvent;
+  inEvent: StatEvent;
+  outPlayByPlay: PlayByPlayEntry;
+  inPlayByPlay: PlayByPlayEntry;
+  game: Game;
+}
+
 export interface PlayerStatLine {
   playerId: number;
   firstName: string;
