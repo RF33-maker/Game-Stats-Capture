@@ -99,7 +99,7 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
   switch (item.table) {
     case "leagues": {
       const l = store.leagues.getByUid(item.uid);
-      return l && { uid: l.uid, name: l.name, season: l.season, logo_url: l.logoUrl };
+      return l && { uid: l.uid, name: l.name, season: l.season, logo_url: l.logoUrl, site_league_id: l.siteLeagueId ?? null };
     }
     case "games": {
       const g = store.games.getByUid(item.uid);

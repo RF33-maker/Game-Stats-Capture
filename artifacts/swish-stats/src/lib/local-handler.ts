@@ -522,8 +522,9 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/games\/(\d+)\/teams$/);
   if (m === "POST" && match) {
     const gameId = Number(match[1]);
-    const data = (body ?? {}) as Partial<{ name: string; abbreviation: string; colorPrimary: string; colorSecondary: string; logoUrl: string | null; isHome: boolean }>;
+    const data = (body ?? {}) as Partial<{ name: string; abbreviation: string; colorPrimary: string; colorSecondary: string; logoUrl: string | null; isHome: boolean; siteTeamId: string | null }>;
     const team = store.teams.create({
+      siteTeamId: data.siteTeamId ?? null,
       gameId,
       name: data.name ?? "",
       abbreviation: data.abbreviation ?? "",
@@ -546,6 +547,7 @@ export async function handleLocalRequest(
       colorSecondary: string;
       logoUrl: string | null;
       isHome: boolean;
+      siteTeamId: string | null;
     }>;
     const updated = store.teams.update(teamId, data);
     if (!updated) return notFound("Team not found");
@@ -562,8 +564,9 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/teams\/(\d+)\/players$/);
   if (m === "POST" && match) {
     const teamId = Number(match[1]);
-    const data = (body ?? {}) as Partial<{ jerseyNumber: string; firstName: string; lastName: string; position: string | null; headshotUrl: string | null; isStarter: boolean }>;
+    const data = (body ?? {}) as Partial<{ jerseyNumber: string; firstName: string; lastName: string; position: string | null; headshotUrl: string | null; isStarter: boolean; sitePlayerId: string | null }>;
     const player = store.players.create({
+      sitePlayerId: data.sitePlayerId ?? null,
       teamId,
       jerseyNumber: data.jerseyNumber ?? "",
       firstName: data.firstName ?? "",
@@ -588,6 +591,7 @@ export async function handleLocalRequest(
       headshotUrl: string | null;
       isActive: boolean;
       isStarter: boolean;
+      sitePlayerId: string | null;
     }>;
     const updated = store.players.update(playerId, data);
     if (!updated) return notFound("Player not found");
@@ -1070,7 +1074,7 @@ export async function handleLocalRequest(
   }
   if (m === "PATCH" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
-    const data = (body ?? {}) as Partial<{ name: string; season: string | null; logoUrl: string | null }>;
+    const data = (body ?? {}) as Partial<{ name: string; season: string | null; logoUrl: string | null; siteLeagueId: string | null; siteLeagueName: string | null }>;
     const updated = store.leagues.update(id, data);
     if (!updated) return notFound("League not found");
     return ok({ ...updated, ownerUserId: "local", viewerRole: updated.role });

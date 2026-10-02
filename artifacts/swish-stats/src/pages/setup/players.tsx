@@ -8,10 +8,15 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, Plus, Trash2, UserCircle2 } from "lucide-react";
+import { Loader2, Plus, Trash2, UserCircle2, Search, Download, BadgeCheck, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PlayerSearchDialog } from "@/components/directory-search";
+import { DIRECTORY_AVAILABLE, dedupeRoster, localApi, searchPlayers, splitName, type SitePlayer } from "@/lib/directory";
+
+type LinkedTeam = Team & { siteTeamId?: string | null };
+type LinkedPlayer = Player & { sitePlayerId?: string | null };
 import { textOnColor } from "@/lib/team-colors";
 
 const playerSchema = z.object({
@@ -22,13 +27,76 @@ const playerSchema = z.object({
   position: z.string().optional(),
 });
 
-function TeamRoster({ team, players, gameId }: { team: Team, players: Player[], gameId: number }) {
+function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam, players: LinkedPlayer[], gameId: number, competitionId: string | null }) {
   const queryClient = useQueryClient();
   const createPlayer = useCreatePlayer();
   const updatePlayer = useUpdatePlayer();
   const deletePlayer = useDeletePlayer();
   
   const startersCount = players.filter(p => p.isStarter).length;
+  // null = closed; "add" = add a Swish player; otherwise the roster row being linked
+  const [searching, setSearching] = useState<"add" | LinkedPlayer | null>(null);
+  const [importing, setImporting] = useState(false);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: getListGamePlayersQueryKey(gameId) });
+
+  const addFromSwish = async (sp: SitePlayer) => {
+    if (players.some(p => p.sitePlayerId === sp.playerId)) {
+      toast.error(`${sp.fullName} is already on this roster`);
+      return;
+    }
+    const { firstName, lastName } = splitName(sp);
+    await localApi(`/api/teams/${team.id}/players`, "POST", {
+      jerseyNumber: sp.shirtNumber ?? "", firstName, lastName,
+      position: sp.position ?? null, headshotUrl: sp.photoUrl, isStarter: false, sitePlayerId: sp.playerId,
+    });
+    refresh();
+    toast.success(`${sp.fullName} added`);
+  };
+
+  const linkRow = async (row: LinkedPlayer, sp: SitePlayer) => {
+    await localApi(`/api/players/${row.id}`, "PATCH", {
+      sitePlayerId: sp.playerId,
+      headshotUrl: row.headshotUrl ?? sp.photoUrl,
+      jerseyNumber: row.jerseyNumber || (sp.shirtNumber ?? ""),
+    });
+    refresh();
+    toast.success(`Linked to ${sp.fullName}`);
+  };
+
+  // Bring in the linked Swish team's roster. Rows already on this roster
+  // (same Swish player, or same name not yet linked) are linked, not duplicated.
+  const importRoster = async () => {
+    if (!team.siteTeamId) return;
+    setImporting(true);
+    try {
+      const roster = dedupeRoster(await searchPlayers("", { teamId: team.siteTeamId, limit: 200 }));
+      let added = 0, linked = 0;
+      for (const sp of roster) {
+        if (players.some(p => p.sitePlayerId === sp.playerId)) continue;
+        const { firstName, lastName } = splitName(sp);
+        const sameName = players.find(p => !p.sitePlayerId
+          && p.firstName.trim().toLowerCase() === firstName.trim().toLowerCase()
+          && p.lastName.trim().toLowerCase() === lastName.trim().toLowerCase());
+        if (sameName) {
+          await localApi(`/api/players/${sameName.id}`, "PATCH", { sitePlayerId: sp.playerId });
+          linked++;
+        } else {
+          await localApi(`/api/teams/${team.id}/players`, "POST", {
+            jerseyNumber: sp.shirtNumber ?? "", firstName, lastName,
+            position: sp.position ?? null, headshotUrl: sp.photoUrl, isStarter: false, sitePlayerId: sp.playerId,
+          });
+          added++;
+        }
+      }
+      refresh();
+      toast.success(roster.length === 0 ? "That Swish team has no players yet"
+        : `Imported ${added} player${added === 1 ? "" : "s"}${linked ? `, linked ${linked}` : ""}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't import the roster");
+    } finally {
+      setImporting(false);
+    }
+  };
   const headerText = textOnColor(team.colorPrimary);
 
   const form = useForm<z.infer<typeof playerSchema>>({
@@ -88,6 +156,39 @@ function TeamRoster({ team, players, gameId }: { team: Team, players: Player[], 
         </div>
       </div>
 
+      {DIRECTORY_AVAILABLE && (
+        <div className="flex gap-2 px-4 pt-3">
+          <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={() => setSearching("add")}>
+            <Search className="w-3.5 h-3.5" /> Find player
+          </Button>
+          {team.siteTeamId && (
+            <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={importRoster} disabled={importing}
+              data-testid="import-roster">
+              {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              Import Swish roster
+            </Button>
+          )}
+        </div>
+      )}
+      <PlayerSearchDialog
+        open={searching !== null}
+        onOpenChange={(o) => { if (!o) setSearching(null); }}
+        initialQuery={searching && searching !== "add" ? `${searching.firstName} ${searching.lastName}`.trim() : ""}
+        teamId={team.siteTeamId ?? null}
+        competitionId={competitionId}
+        title={searching && searching !== "add" ? `Link ${searching.firstName} ${searching.lastName}`.trim() : `Add a player to ${team.name}`}
+        onPick={async (sp) => {
+          const target = searching;
+          setSearching(null);
+          try {
+            if (target === "add") await addFromSwish(sp);
+            else if (target) await linkRow(target, sp);
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Couldn't save that");
+          }
+        }}
+      />
+
       <div className="flex-1 overflow-auto p-4 space-y-2">
         {players.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
@@ -110,6 +211,19 @@ function TeamRoster({ team, players, gameId }: { team: Team, players: Player[], 
                 <p className="font-semibold text-sm truncate">{p.lastName}, {p.firstName}</p>
                 <p className="text-xs text-muted-foreground truncate">{p.position || "N/A"}</p>
               </div>
+              {DIRECTORY_AVAILABLE && (p.sitePlayerId ? (
+                <button type="button" title="Linked to a Swish profile — tap to change"
+                  className="flex items-center gap-1 text-[11px] font-semibold text-emerald-500 shrink-0"
+                  onClick={() => setSearching(p)} data-testid="player-linked">
+                  <BadgeCheck className="w-4 h-4" /> Swish
+                </button>
+              ) : (
+                <button type="button" title="Link to an existing Swish profile"
+                  className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground shrink-0"
+                  onClick={() => setSearching(p)} data-testid="player-link">
+                  <Link2 className="w-4 h-4" /> Link
+                </button>
+              ))}
               <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive opacity-50 hover:opacity-100 shrink-0" onClick={() => handleDelete(p.id)}>
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -156,6 +270,13 @@ export default function SetupPlayers() {
     query: { enabled: !!gameId, queryKey: getListGamePlayersQueryKey(gameId) }
   });
 
+  const { data: league } = useQuery({
+    queryKey: ["league-site-link", leagueQuery],
+    queryFn: () => localApi<{ siteLeagueId?: string | null }>(`/api/leagues/${leagueQuery}`, "GET"),
+    enabled: !!leagueQuery,
+  });
+  const competitionId = league?.siteLeagueId ?? null;
+
   if (teamsLoading || playersLoading) {
     return (
       <SetupLayout gameId={String(gameId)} title="Rosters" step={3} leagueId={leagueQuery}>
@@ -192,8 +313,8 @@ export default function SetupPlayers() {
     <SetupLayout gameId={String(gameId)} title="Rosters" step={3} leagueId={leagueQuery}>
       <div className="max-w-[1200px] mx-auto w-full" style={{ width: '100%', minWidth: '800px' }}>
         <div className="grid md:grid-cols-2 gap-8 mb-8">
-          {homeTeam && <TeamRoster team={homeTeam} players={players?.filter(p => p.teamId === homeTeam.id) || []} gameId={gameId} />}
-          {awayTeam && <TeamRoster team={awayTeam} players={players?.filter(p => p.teamId === awayTeam.id) || []} gameId={gameId} />}
+          {homeTeam && <TeamRoster team={homeTeam} players={players?.filter(p => p.teamId === homeTeam.id) || []} gameId={gameId} competitionId={competitionId} />}
+          {awayTeam && <TeamRoster team={awayTeam} players={players?.filter(p => p.teamId === awayTeam.id) || []} gameId={gameId} competitionId={competitionId} />}
         </div>
         
         <div className="flex justify-end">

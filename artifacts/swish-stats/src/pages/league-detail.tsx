@@ -19,6 +19,9 @@ import {
   type LeagueRole,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { CompetitionSearchDialog } from "@/components/directory-search";
+import { DIRECTORY_AVAILABLE, localApi } from "@/lib/directory";
+import { toast as sonnerToast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { newGameDefaults } from "@/lib/app-settings";
 import { Card, CardContent } from "@/components/ui/card";
@@ -241,6 +244,7 @@ export default function LeagueDetail() {
   });
 
   const [memberOpen, setMemberOpen] = useState(false);
+  const [competitionOpen, setCompetitionOpen] = useState(false);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<LeagueRole>("viewer");
   const [confirmDeleteGame, setConfirmDeleteGame] = useState<{
@@ -299,6 +303,24 @@ export default function LeagueDetail() {
               {league.season && (
                 <p className="text-muted-foreground">{league.season}</p>
               )}
+              {DIRECTORY_AVAILABLE && (() => {
+                const site = league as typeof league & { siteLeagueId?: string | null; siteLeagueName?: string | null };
+                return (
+                  <div className="flex items-center gap-2 text-sm" data-testid="league-site-link">
+                    <span className="text-muted-foreground">Publishes to Swish:</span>
+                    {site.siteLeagueId ? (
+                      <span className="font-medium">{site.siteLeagueName ?? "Linked competition"}</span>
+                    ) : (
+                      <span className="text-muted-foreground italic">not linked yet</span>
+                    )}
+                    {canAdmin && (
+                      <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setCompetitionOpen(true)}>
+                        {site.siteLeagueId ? "Change" : "Link a competition"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Users className="w-4 h-4" />
@@ -433,6 +455,14 @@ export default function LeagueDetail() {
                         </div>
 
                         <div className="space-y-2 pt-1">
+                          {DIRECTORY_AVAILABLE && canScore && game.status !== "setup" && (
+                            <Link href={`/game/${game.id}/link?league=${leagueId}`} className="block">
+                              <Button size="sm" variant="ghost" className="w-full gap-1.5 text-xs" data-testid="link-players">
+                                <Users className="w-3.5 h-3.5" />
+                                Link players to Swish
+                              </Button>
+                            </Link>
+                          )}
                           {game.status === "final" && canAdmin ? (
                             <div className="grid grid-cols-2 gap-2">
                               <Link href={target} className="contents">
@@ -728,6 +758,24 @@ export default function LeagueDetail() {
       </main>
 
       {/* Add member dialog */}
+      <CompetitionSearchDialog
+        open={competitionOpen}
+        onOpenChange={setCompetitionOpen}
+        onPick={async (c) => {
+          try {
+            await localApi(`/api/leagues/${leagueId}`, "PATCH", {
+              siteLeagueId: c.competitionId,
+              siteLeagueName: c.season ? `${c.name} · ${c.season}` : c.name,
+            });
+            setCompetitionOpen(false);
+            sonnerToast.success(`Linked to ${c.name}`);
+            queryClient.invalidateQueries();
+          } catch (e) {
+            sonnerToast.error(e instanceof Error ? e.message : "Couldn't link the competition");
+          }
+        }}
+      />
+
       <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
         <DialogContent>
           <DialogHeader>

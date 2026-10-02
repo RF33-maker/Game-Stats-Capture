@@ -12,6 +12,7 @@ import SetupPlayers from "@/pages/setup/players";
 import SetupExtras from "@/pages/setup/extras";
 import GameCapture from "@/pages/game/capture";
 import BoxScore from "@/pages/game/box-score";
+import LinkPlayers from "@/pages/game/link-players";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import Stats from "@/pages/stats";
@@ -90,6 +91,13 @@ function Router() {
         <ProtectedRoute>
           <RequireLeagueRole min="scorer">
             <GameCapture />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/game/:gameId/link">
+        <ProtectedRoute>
+          <RequireLeagueRole min="scorer">
+            <LinkPlayers />
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>

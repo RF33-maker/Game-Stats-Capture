@@ -16,6 +16,8 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SwishDirectory } from "@/components/swish-directory";
+import { DIRECTORY_AVAILABLE } from "@/lib/directory";
 
 function statusLabel(status: Game["status"]) {
   if (status === "active") return "Live";
@@ -46,7 +48,7 @@ export default function Organizer() {
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              SwishStats Organizer
+              Swish Organiser
             </h1>
             <p className="text-muted-foreground mt-1">
               Manage teams and player rosters across your leagues. Open a game
@@ -193,6 +195,19 @@ export default function Organizer() {
                 );
               })}
             </div>
+          )}
+
+          {DIRECTORY_AVAILABLE && (
+            <section className="space-y-4 border-t border-border pt-8">
+              <div>
+                <h2 className="text-xl font-bold">Swish directory</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Every player, team and competition on Swish Assistant. Find people before game day,
+                  then link them in game setup so their stats land on their existing profiles.
+                </p>
+              </div>
+              <SwishDirectory />
+            </section>
           )}
         </div>
       </main>

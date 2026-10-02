@@ -5,7 +5,7 @@
 // so they must not be queued to be sent back.
 
 import { supabase } from "./supabase";
-import { SYNC_REMOTE_ENABLED } from "./local-sync";
+import { SYNC_REMOTE_ENABLED, syncNow } from "./local-sync";
 import {
   store, withoutOutbox, type LeagueRole, type LSGame, type LSStatEvent,
 } from "./local-store";
@@ -45,6 +45,9 @@ async function doPull() {
   const { data: session } = await supabase.auth.getSession();
   const userId = session.session?.user.id;
   if (!userId || (typeof navigator !== "undefined" && !navigator.onLine)) return;
+  // Send this device's queued changes first, so the server copy we read back
+  // already includes them.
+  await syncNow().catch(() => {});
 
   const memberships = await all("league_members", q => q.eq("user_id", userId));
   const leagueUids = memberships.map(m => m.league_uid as string);
@@ -56,12 +59,12 @@ async function doPull() {
       const local = store.leagues.getByUid(l.uid);
       if (local) {
         store.leagues.update(local.id, {
-          ...(store.outbox.hasPendingFor("leagues", l.uid) ? {} : { name: l.name, season: l.season, logoUrl: l.logo_url }),
+          ...(store.outbox.hasPendingFor("leagues", l.uid) ? {} : { name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id }),
           role: roleOf.get(l.uid) ?? local.role,
         });
       } else {
         store.leagues.create({
-          uid: l.uid, name: l.name, season: l.season, logoUrl: l.logo_url,
+          uid: l.uid, name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id,
           role: roleOf.get(l.uid) ?? "viewer", createdAt: l.created_at,
         });
       }
@@ -118,7 +121,10 @@ async function pullGame(g: Row) {
         colorPrimary: t.color_primary ?? "#ea580c", colorSecondary: t.color_secondary ?? "#ffffff",
         logoUrl: t.logo_url, siteTeamId: t.site_team_id,
       };
-      if (!lt) teamIdByUid.set(t.uid, store.teams.create({ uid: t.uid, ...fields }).id);
+      if (!lt) {
+        if (store.outbox.hasPendingFor("game_teams", t.uid)) continue;
+        teamIdByUid.set(t.uid, store.teams.create({ uid: t.uid, ...fields }).id);
+      }
       else {
         teamIdByUid.set(t.uid, lt.id);
         if (!store.outbox.hasPendingFor("game_teams", t.uid)) store.teams.update(lt.id, fields);
@@ -135,7 +141,11 @@ async function pullGame(g: Row) {
         position: p.position, headshotUrl: p.headshot_url, isActive: p.is_active, isStarter: p.is_starter,
         sitePlayerId: p.site_player_id,
       };
-      if (!lp) playerIdByUid.set(p.uid, store.players.create({ uid: p.uid, ...fields }).id);
+      if (!lp) {
+        // Deleted on this device but the delete hasn't reached the server yet.
+        if (store.outbox.hasPendingFor("game_players", p.uid)) continue;
+        playerIdByUid.set(p.uid, store.players.create({ uid: p.uid, ...fields }).id);
+      }
       else {
         playerIdByUid.set(p.uid, lp.id);
         if (!store.outbox.hasPendingFor("game_players", p.uid)) store.players.update(lp.id, fields);

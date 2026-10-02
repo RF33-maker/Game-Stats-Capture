@@ -139,6 +139,9 @@ export type LSLeague = {
   logoUrl: string | null;
   // This user's role in the league (from the server once synced).
   role: LeagueRole;
+  // The site competition (public.competitions.league_id) games publish into.
+  siteLeagueId?: string | null;
+  siteLeagueName?: string | null;
   createdAt: string;
 };
 
@@ -257,7 +260,7 @@ export const store = {
     save(leagues: LSLeague[]) { save("leagues", leagues); },
     get(id: number) { return this.list().find(l => l.id === id) ?? null; },
     getByUid(uid: string) { return this.list().find(l => l.uid === uid) ?? null; },
-    create(input: { name: string; season?: string | null; logoUrl?: string | null; uid?: string; role?: LeagueRole; createdAt?: string }): LSLeague {
+    create(input: { name: string; season?: string | null; logoUrl?: string | null; uid?: string; role?: LeagueRole; createdAt?: string; siteLeagueId?: string | null }): LSLeague {
       const now = new Date().toISOString();
       const id = nextId("league");
       const league: LSLeague = {
@@ -267,6 +270,7 @@ export const store = {
         season: input.season ?? null,
         logoUrl: input.logoUrl ?? null,
         role: input.role ?? "admin",
+        siteLeagueId: input.siteLeagueId ?? null,
         createdAt: input.createdAt ?? now,
       };
       const leagues = this.list();
@@ -281,7 +285,7 @@ export const store = {
       if (idx === -1) return null;
       leagues[idx] = { ...leagues[idx], ...data, id };
       this.save(leagues);
-      if (Object.keys(data).some(k => k !== "role")) queue("leagues", leagues[idx].uid, "upsert");
+      if (Object.keys(data).some(k => k !== "role" && k !== "siteLeagueName")) queue("leagues", leagues[idx].uid, "upsert");
       return leagues[idx];
     },
     delete(id: number): boolean {

@@ -9,15 +9,31 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link2, Shield, X } from "lucide-react";
+import { TeamSearchDialog } from "@/components/directory-search";
+import { DIRECTORY_AVAILABLE, localApi, type SiteTeam } from "@/lib/directory";
 
 const teamSchema = z.object({
   name: z.string().min(1, "Name required"),
   abbreviation: z.string().min(1, "Abbreviation required").max(4, "Max 4 chars").toUpperCase(),
   colorPrimary: z.string().min(4),
   colorSecondary: z.string().min(4),
+  // Link to the team's existing page on Swish Assistant (public.teams.team_id).
+  siteTeamId: z.string().nullable().optional(),
+  logoUrl: z.string().nullable().optional(),
 });
+
+// "Bedford Thunder Senior Men" -> "BT", "Bath Basketball Senior Men" -> "BATH"
+const GENERIC_WORDS = /^(basketball|bball|senior|seniors|junior|juniors|men|mens|women|womens|ladies|boys|girls|club|bc|team|u\d+|\d+u|\d+\+)$/i;
+function suggestAbbreviation(name: string) {
+  const all = name.replace(/[^A-Za-z0-9+ ]/g, " ").split(/\s+/).filter(Boolean);
+  const meaningful = all.filter(w => !GENERIC_WORDS.test(w));
+  const words = meaningful.length ? meaningful : all;
+  if (words.length >= 2) return words.map(w => w[0]).join("").slice(0, 4).toUpperCase();
+  return (words[0] ?? "").slice(0, 4).toUpperCase();
+}
 
 const formSchema = z.object({
   home: teamSchema,
@@ -40,6 +56,13 @@ export default function SetupTeams() {
   const createTeam = useCreateTeam();
   const updateTeam = useUpdateTeam();
 
+  const { data: league } = useQuery({
+    queryKey: ["league-site-link", leagueQuery],
+    queryFn: () => localApi<{ siteLeagueId?: string | null }>(`/api/leagues/${leagueQuery}`, "GET"),
+    enabled: !!leagueQuery,
+  });
+  const [linking, setLinking] = useState<"home" | "away" | null>(null);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -52,8 +75,8 @@ export default function SetupTeams() {
     if (teams && teams.length > 0) {
       const home = teams.find(t => t.isHome);
       const away = teams.find(t => !t.isHome);
-      if (home) form.setValue("home", home);
-      if (away) form.setValue("away", away);
+      if (home) form.setValue("home", home as z.infer<typeof teamSchema>);
+      if (away) form.setValue("away", away as z.infer<typeof teamSchema>);
     }
   }, [teams, form]);
 
@@ -94,6 +117,22 @@ export default function SetupTeams() {
 
   return (
     <SetupLayout gameId={String(gameId)} title="Teams" step={2} leagueId={leagueQuery}>
+      <TeamSearchDialog
+        open={linking !== null}
+        onOpenChange={(o) => { if (!o) setLinking(null); }}
+        initialQuery={linking ? form.getValues(`${linking}.name`) : ""}
+        competitionId={league?.siteLeagueId ?? null}
+        onPick={(t: SiteTeam) => {
+          if (!linking) return;
+          form.setValue(`${linking}.siteTeamId`, t.teamId, { shouldDirty: true });
+          form.setValue(`${linking}.logoUrl`, t.logoUrl ?? null, { shouldDirty: true });
+          form.setValue(`${linking}.name`, t.name, { shouldDirty: true, shouldValidate: true });
+          if (!form.getValues(`${linking}.abbreviation`)) {
+            form.setValue(`${linking}.abbreviation`, suggestAbbreviation(t.name), { shouldValidate: true });
+          }
+          setLinking(null);
+        }}
+      />
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
           
@@ -105,7 +144,35 @@ export default function SetupTeams() {
                 <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-sm">HOME</span>
                 Team Details
               </h2>
-              
+              {DIRECTORY_AVAILABLE && (
+                <div className="mb-4 flex items-center gap-3 rounded-lg border border-dashed border-border p-3" data-testid="site-team-link-home">
+                  {form.watch("home.siteTeamId") ? (
+                    <>
+                      {form.watch("home.logoUrl") ? (
+                        <img src={form.watch("home.logoUrl") ?? ""} alt="" className="w-8 h-8 rounded object-contain bg-muted" />
+                      ) : <Shield className="w-8 h-8 p-1.5 rounded bg-muted text-muted-foreground" />}
+                      <div className="flex-1 min-w-0 text-sm leading-tight">
+                        <div className="font-semibold">On Swish</div>
+                        <div className="text-xs text-muted-foreground">Stats go to this team's page</div>
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setLinking("home")}>Change</Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Unlink"
+                        onClick={() => form.setValue("home.siteTeamId", null, { shouldDirty: true })}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-5 h-5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 text-xs text-muted-foreground">
+                        Already on Swish Assistant? Link the team to use its page and import its roster.
+                      </div>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setLinking("home")}>Find team</Button>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-4">
                 <FormField
                   control={form.control}
@@ -173,6 +240,34 @@ export default function SetupTeams() {
                 <span className="bg-muted text-muted-foreground px-2 py-0.5 rounded text-sm">AWAY</span>
                 Team Details
               </h2>
+              {DIRECTORY_AVAILABLE && (
+                <div className="mb-4 flex items-center gap-3 rounded-lg border border-dashed border-border p-3" data-testid="site-team-link-away">
+                  {form.watch("away.siteTeamId") ? (
+                    <>
+                      {form.watch("away.logoUrl") ? (
+                        <img src={form.watch("away.logoUrl") ?? ""} alt="" className="w-8 h-8 rounded object-contain bg-muted" />
+                      ) : <Shield className="w-8 h-8 p-1.5 rounded bg-muted text-muted-foreground" />}
+                      <div className="flex-1 min-w-0 text-sm leading-tight">
+                        <div className="font-semibold">On Swish</div>
+                        <div className="text-xs text-muted-foreground">Stats go to this team's page</div>
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setLinking("away")}>Change</Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" title="Unlink"
+                        onClick={() => form.setValue("away.siteTeamId", null, { shouldDirty: true })}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Link2 className="w-5 h-5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 text-xs text-muted-foreground">
+                        Already on Swish Assistant? Link the team to use its page and import its roster.
+                      </div>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => setLinking("away")}>Find team</Button>
+                    </>
+                  )}
+                </div>
+              )}
               
               <div className="space-y-4">
                 <FormField
