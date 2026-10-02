@@ -648,7 +648,7 @@ export default function GameCapture() {
               {isRunning ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
             </Button>
           </div>
-          {LOCAL_MODE_ENABLED && <LocalModeBadge inline />}
+          <LocalModeBadge inline />
         </div>
 
         <div className="flex items-center justify-end w-1/3 gap-4">

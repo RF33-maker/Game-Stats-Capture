@@ -1,4 +1,4 @@
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

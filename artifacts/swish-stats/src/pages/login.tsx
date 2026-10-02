@@ -1,7 +1,9 @@
-import { useEffect } from "react";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useEffect, useState } from "react";
+import { useAuth, signInWithPassword, sendPasswordReset } from "@/lib/auth";
 import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { LogIn, Loader2, BarChart3, Users, Zap } from "lucide-react";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
@@ -25,7 +27,12 @@ const FEATURES = [
 ];
 
 export default function Login() {
-  const { isAuthenticated, isLoading, login } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const search = useSearch();
 
@@ -131,22 +138,55 @@ export default function Login() {
           <div>
             <h3 className="text-2xl font-bold tracking-tight">Welcome back</h3>
             <p className="text-muted-foreground mt-1">
-              Sign in to manage your leagues and capture games.
+              Sign in with your Swish Assistant account.
             </p>
           </div>
 
-          <Button
-            size="lg"
-            className="w-full text-base"
-            onClick={() => {
-              const base =
-                (import.meta.env.BASE_URL as string).replace(/\/+$/, "") || "";
-              login(`${base}${next}`);
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setError(null);
+              setNotice(null);
+              setSubmitting(true);
+              const err = await signInWithPassword(email, password);
+              setSubmitting(false);
+              if (err) setError(err);
             }}
           >
-            <LogIn className="w-5 h-5 mr-2" />
-            Sign in with Replit
-          </Button>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" autoComplete="email" required
+                value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" type="password" autoComplete="current-password" required
+                value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+            {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+            {notice && <p className="text-sm text-muted-foreground" role="status">{notice}</p>}
+            <Button type="submit" size="lg" className="w-full text-base" disabled={submitting}>
+              {submitting ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <LogIn className="w-5 h-5 mr-2" />}
+              Sign in
+            </Button>
+            <button
+              type="button"
+              className="w-full text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+              onClick={async () => {
+                setError(null);
+                if (!email.trim()) { setError("Enter your email first, then tap “Forgot password”."); return; }
+                const err = await sendPasswordReset(email);
+                if (err) setError(err);
+                else setNotice("Check your email for a link to reset your password.");
+              }}
+            >
+              Forgot password?
+            </button>
+          </form>
+          <p className="text-xs text-muted-foreground">
+            No account yet? Sign up at swishassistant.com — the same login works here.
+          </p>
 
         </div>
       </div>

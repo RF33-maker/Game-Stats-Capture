@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@/lib/auth";
 import { useLocation, useSearch } from "wouter";
 import { Loader2 } from "lucide-react";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";

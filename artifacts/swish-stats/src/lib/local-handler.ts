@@ -1,5 +1,11 @@
-import { store, type LSGame, type LSStatEvent } from "./local-store";
+import { store, byOrder, type LSGame, type LSStatEvent, type LeagueRole } from "./local-store";
 import { computePossessionEffect, applyScoreDelta, describeEvent } from "./local-possession";
+
+import { listMembers, addMember, updateMemberRole, removeMember, OfflineError } from "./remote";
+
+// Local-only dev mode seeds a "Local Games" league; signed-in mode uses the
+// user's real leagues pulled from the server.
+const LOCAL_ONLY = import.meta.env.VITE_LOCAL_MODE === "true";
 
 type HandlerResult = { status: number; body: unknown };
 
@@ -92,7 +98,7 @@ function teamTotals(lines: StatLine[], teamId: number): StatLine {
   return total;
 }
 
-function rebuildPlayByPlay(gameId: number): void {
+export function rebuildPlayByPlay(gameId: number): void {
   const game = store.games.get(gameId);
   if (!game) return;
 
@@ -105,7 +111,7 @@ function rebuildPlayByPlay(gameId: number): void {
   const playerMap = new Map(players.map(p => [p.id, p]));
   const teamMap = new Map(teams.map(t => [t.id, t]));
 
-  const events = store.statEvents.forGame(gameId).sort((a, b) => a.id - b.id);
+  const events = store.statEvents.forGame(gameId).sort(byOrder);
 
   store.playByPlay.deleteForGame(gameId);
 
@@ -592,6 +598,13 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/players\/(\d+)$/);
   if (m === "DELETE" && match) {
     const playerId = Number(match[1]);
+    const p = store.players.get(playerId);
+    if (p) {
+      const gameId = store.teams.get(p.teamId)?.gameId;
+      if (gameId != null && store.statEvents.allForGame(gameId).some(e => e.playerId === playerId)) {
+        return badRequest("This player has recorded stats — mark them inactive instead of removing them");
+      }
+    }
     const deleted = store.players.delete(playerId);
     if (!deleted) return notFound("Player not found");
     return { status: 204, body: null };
@@ -600,7 +613,7 @@ export async function handleLocalRequest(
   // List stat events — newest first so statEvents[0] is the latest (used by undo)
   match = pathname.match(/^\/api\/games\/(\d+)\/stats$/);
   if (m === "GET" && match) {
-    const events = store.statEvents.forGame(Number(match[1])).sort((a, b) => b.id - a.id);
+    const events = store.statEvents.forGame(Number(match[1])).sort((a, b) => byOrder(b, a));
     return ok(events);
   }
 
@@ -617,6 +630,7 @@ export async function handleLocalRequest(
       value?: number;
       ftSequenceIndex?: number | null;
       ftSequenceTotal?: number | null;
+      shotZone?: string | null;
     };
 
     // Substitutions are an indivisible pair validated against the live
@@ -661,6 +675,7 @@ export async function handleLocalRequest(
       clockSeconds: data.clockSeconds,
       eventType: data.eventType,
       value: data.value ?? 0,
+      shotZone: data.shotZone ?? null,
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
       possessionTeamId: game.possessionTeamId,
@@ -722,6 +737,7 @@ export async function handleLocalRequest(
       period: number;
       clockSeconds: number;
       value: number;
+      shotZone: string | null;
       needsReview: boolean;
     }>;
 
@@ -772,16 +788,26 @@ export async function handleLocalRequest(
       }
     }
 
-    const patch: Partial<LSStatEvent> = {};
-    if (data.teamId !== undefined) patch.teamId = data.teamId;
-    if (data.playerId !== undefined) patch.playerId = data.playerId;
-    if (data.eventType !== undefined) patch.eventType = data.eventType;
-    if (data.period !== undefined) patch.period = data.period;
-    if (data.clockSeconds !== undefined) patch.clockSeconds = data.clockSeconds;
-    if (data.value !== undefined) patch.value = data.value;
-    if (data.needsReview !== undefined) patch.needsReview = data.needsReview;
+    if (target.voidedAt) return badRequest("This event was already removed or corrected");
 
-    const updated = store.statEvents.update(statEventId, patch);
+    // Events are never edited in place (the server rejects it too): the
+    // review flag is advisory metadata, anything else voids the event and
+    // records a corrected copy in the same position in the sequence.
+    let updated;
+    if (isReviewFlagOnlyPatch) {
+      updated = store.statEvents.update(statEventId, { needsReview: data.needsReview });
+    } else {
+      const changes: Parameters<typeof store.statEvents.replace>[1] = {};
+      if (data.teamId !== undefined) changes.teamId = data.teamId;
+      if (data.playerId !== undefined) changes.playerId = data.playerId;
+      if (data.eventType !== undefined) changes.eventType = data.eventType;
+      if (data.period !== undefined) changes.period = data.period;
+      if (data.clockSeconds !== undefined) changes.clockSeconds = data.clockSeconds;
+      if (data.value !== undefined) changes.value = data.value;
+      if (data.shotZone !== undefined) changes.shotZone = data.shotZone;
+      if (data.needsReview !== undefined) changes.needsReview = data.needsReview;
+      updated = store.statEvents.replace(statEventId, changes);
+    }
     if (!updated) return notFound("Stat event not found");
 
     rebuildPlayByPlay(target.gameId);
@@ -799,9 +825,9 @@ export async function handleLocalRequest(
     // Substitutions are an indivisible pair: deleting one side without the
     // other would leave a dangling sub_in/sub_out event and desync the
     // derived on-court lineup, so always delete both rows together.
-    store.statEvents.delete(statEventId);
+    store.statEvents.void(statEventId, "removed");
     if ((ev.eventType === "sub_in" || ev.eventType === "sub_out") && ev.pairEventId != null) {
-      store.statEvents.delete(ev.pairEventId);
+      store.statEvents.void(ev.pairEventId, "removed");
     }
     rebuildPlayByPlay(gameId);
 
@@ -860,7 +886,7 @@ export async function handleLocalRequest(
     const subEvents = store.statEvents
       .forGame(gameId)
       .filter(e => e.teamId === data.teamId)
-      .sort((a, b) => a.id - b.id);
+      .sort(byOrder);
     for (const e of subEvents) {
       if (e.eventType === "sub_in" && e.playerId != null) onCourt.add(e.playerId);
       else if (e.eventType === "sub_out" && e.playerId != null) onCourt.delete(e.playerId);
@@ -1018,12 +1044,12 @@ export async function handleLocalRequest(
 
   // Leagues — real local CRUD backed by store.leagues.
   if (m === "GET" && pathname === "/api/leagues") {
-    store.leagues.ensureSeed();
+    if (LOCAL_ONLY) store.leagues.ensureSeed();
     return ok(
       store.leagues.list().map((l) => ({
         ...l,
         ownerUserId: "local",
-        viewerRole: "admin" as const,
+        viewerRole: l.role as LeagueRole,
       })),
     );
   }
@@ -1038,15 +1064,16 @@ export async function handleLocalRequest(
   }
   if (m === "GET" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
-    const league = store.leagues.get(id) ?? store.leagues.ensureSeed();
-    return ok({ ...league, ownerUserId: "local", viewerRole: "admin" as const });
+    const league = store.leagues.get(id) ?? (LOCAL_ONLY ? store.leagues.ensureSeed() : null);
+    if (!league) return notFound("League not found");
+    return ok({ ...league, ownerUserId: "local", viewerRole: league.role });
   }
   if (m === "PATCH" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
     const data = (body ?? {}) as Partial<{ name: string; season: string | null; logoUrl: string | null }>;
     const updated = store.leagues.update(id, data);
     if (!updated) return notFound("League not found");
-    return ok({ ...updated, ownerUserId: "local", viewerRole: "admin" as const });
+    return ok({ ...updated, ownerUserId: "local", viewerRole: updated.role });
   }
   if (m === "DELETE" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
@@ -1089,6 +1116,36 @@ export async function handleLocalRequest(
       }));
     void leagueId;
     return ok(finalized);
+  }
+  // League members: real accounts, so these go to the server (online only).
+  const memberMatch = pathname.match(/^\/api\/leagues\/(\d+)\/members(?:\/([^/]+))?$/);
+  if (memberMatch && !LOCAL_ONLY) {
+    const league = store.leagues.get(Number(memberMatch[1]));
+    if (!league) return notFound("League not found");
+    const userId = memberMatch[2] ? decodeURIComponent(memberMatch[2]) : null;
+    const data = (body ?? {}) as { email?: string; role?: LeagueRole };
+    try {
+      if (m === "GET" && !userId) return ok(await listMembers(league.uid, league.id));
+      if (m === "POST" && !userId) {
+        if (!data.email || !data.role) return badRequest("Email and role are required");
+        await addMember(league.uid, data.email, data.role);
+        const members = await listMembers(league.uid, league.id);
+        return ok(members.find((x: { email: string | null }) => x.email?.toLowerCase() === data.email!.trim().toLowerCase()) ?? null, 201);
+      }
+      if ((m === "PATCH" || m === "PUT") && userId) {
+        if (!data.role) return badRequest("Role is required");
+        await updateMemberRole(league.uid, userId, data.role);
+        const members = await listMembers(league.uid, league.id);
+        return ok(members.find((x: { userId: string }) => x.userId === userId) ?? null);
+      }
+      if (m === "DELETE" && userId) {
+        await removeMember(league.uid, userId);
+        return { status: 204, body: null };
+      }
+    } catch (e) {
+      const offline = e instanceof OfflineError;
+      return { status: offline ? 503 : 400, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/members$/.test(pathname)) {
     return ok([

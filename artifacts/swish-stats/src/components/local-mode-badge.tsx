@@ -1,6 +1,6 @@
 import { HardDrive, RotateCcw, Wifi, WifiOff, RefreshCw, CloudUpload, CheckCircle2, AlertTriangle } from "lucide-react";
-import { resetLocalData } from "@/lib/local-mode";
-import { syncNow } from "@/lib/local-sync";
+import { resetLocalData, LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { syncNow, retryFailed } from "@/lib/local-sync";
 import { useSyncStatus } from "@/hooks/use-sync-status";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,40 +25,49 @@ function formatRelative(ts: string | null): string {
 // floating pill would sit on top of the stat buttons).
 export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
   const status = useSyncStatus();
-  // With no remote configured nothing is ever going to sync, so a growing
-  // "pending" count is just noise.
   const showPending = status.remoteEnabled && status.pending > 0;
+  const showFailed = status.remoteEnabled && status.failed > 0;
+  const notSignedIn = status.remoteEnabled && !status.signedIn;
 
   // Pick a "primary" pill color based on current sync state
-  const stateClass = !status.online
-    ? "bg-zinc-700/95 text-zinc-100 border-zinc-500/50"
-    : status.syncing
-      ? "bg-sky-500/95 text-white border-sky-400/50"
-      : showPending
-        ? "bg-amber-500/95 text-amber-950 border-amber-400/50"
-        : status.remoteEnabled
-          ? "bg-emerald-500/95 text-emerald-950 border-emerald-400/50"
-          : "bg-amber-500/95 text-amber-950 border-amber-400/50";
+  const stateClass = showFailed
+    ? "bg-red-600/95 text-white border-red-400/50"
+    : !status.online
+      ? "bg-zinc-700/95 text-zinc-100 border-zinc-500/50"
+      : status.syncing
+        ? "bg-sky-500/95 text-white border-sky-400/50"
+        : showPending || notSignedIn
+          ? "bg-amber-500/95 text-amber-950 border-amber-400/50"
+          : status.remoteEnabled
+            ? "bg-emerald-500/95 text-emerald-950 border-emerald-400/50"
+            : "bg-amber-500/95 text-amber-950 border-amber-400/50";
 
-  const StateIcon = !status.online
-    ? WifiOff
-    : status.syncing
-      ? RefreshCw
-      : showPending
-        ? CloudUpload
-        : status.remoteEnabled
-          ? CheckCircle2
-          : HardDrive;
+  const StateIcon = showFailed
+    ? AlertTriangle
+    : !status.online
+      ? WifiOff
+      : status.syncing
+        ? RefreshCw
+        : showPending || notSignedIn
+          ? CloudUpload
+          : status.remoteEnabled
+            ? CheckCircle2
+            : HardDrive;
 
-  const stateLabel = !status.online
-    ? "OFFLINE"
-    : status.syncing
-      ? "SYNCING…"
-      : showPending
-        ? `${status.pending} PENDING`
-        : status.remoteEnabled
-          ? "ALL SYNCED"
-          : "LOCAL MODE";
+  // Offline is normal mid-game: say the work is safe, not that it's broken.
+  const stateLabel = showFailed
+    ? `${status.failed} FAILED`
+    : !status.online
+      ? status.pending > 0 ? `OFFLINE · ${status.pending} SAVED` : "OFFLINE"
+      : status.syncing
+        ? "SYNCING…"
+        : notSignedIn
+          ? status.pending > 0 ? `${status.pending} WAITING · SIGN IN` : "NOT SIGNED IN"
+          : showPending
+            ? `${status.pending} PENDING`
+            : status.remoteEnabled
+              ? "ALL SYNCED"
+              : "LOCAL MODE";
 
   const tooltip = (() => {
     if (!status.remoteEnabled) {
@@ -78,7 +87,9 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
           {status.online ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
           {status.online ? "Online" : "Offline"}
         </div>
-        <div>Pending: <span className="font-mono">{status.pending}</span></div>
+        <div>Saved on this device, waiting to send: <span className="font-mono">{status.pending}</span></div>
+        {status.failed > 0 && <div>Failed: <span className="font-mono">{status.failed}</span></div>}
+        {!status.signedIn && <div>Sign in to send them.</div>}
         <div>Last sync: <span className="font-mono">{formatRelative(status.lastSyncAt)}</span></div>
         {status.lastError && (
           <div className="flex items-start gap-1 text-amber-300">
@@ -105,6 +116,23 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
         <TooltipContent>{tooltip}</TooltipContent>
       </Tooltip>
 
+      {showFailed && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-[10px] font-bold text-current hover:bg-black/10 hover:text-current rounded-full"
+              onClick={() => retryFailed()}
+              data-testid="button-retry-failed"
+            >
+              RETRY
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Try sending the failed changes again</TooltipContent>
+        </Tooltip>
+      )}
+
       {status.remoteEnabled && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -123,7 +151,7 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
         </Tooltip>
       )}
 
-      <Tooltip>
+      {LOCAL_MODE_ENABLED && <Tooltip>
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
@@ -140,7 +168,7 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
           </Button>
         </TooltipTrigger>
         <TooltipContent>Reset local data</TooltipContent>
-      </Tooltip>
+      </Tooltip>}
     </div>
   );
 }

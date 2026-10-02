@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@/lib/auth";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 

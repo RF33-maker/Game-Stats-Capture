@@ -17,7 +17,7 @@ import {
   Cloud,
   Share2,
 } from "lucide-react";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@/lib/auth";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import logoUrl from "@assets/ChatGPT_Image_Jul_5,_2025,_09_52_53_PM_(1)_1777802723071.png";

@@ -108,7 +108,7 @@ function Router() {
 // The capture screen shows the badge inline in its header instead.
 function FloatingLocalModeBadge() {
   const [onCapture] = useRoute("/game/:gameId");
-  if (!LOCAL_MODE_ENABLED || onCapture) return null;
+  if (onCapture) return null;
   return <LocalModeBadge />;
 }
 
