@@ -19,6 +19,7 @@ import {
   DEFAULT_SETTINGS,
   loadSettings,
   saveSettings,
+  CAPTURE_MODES,
 } from "@/lib/app-settings";
 
 export default function Settings() {
@@ -115,8 +116,11 @@ export default function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="complex">Complex (full stats)</SelectItem>
-                      <SelectItem value="simple">Simple (score only)</SelectItem>
+                      {(["complex", "simple"] as const).map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {CAPTURE_MODES[m].name} — {CAPTURE_MODES[m].description}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>

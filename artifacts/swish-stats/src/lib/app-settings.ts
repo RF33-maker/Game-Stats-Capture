@@ -1,5 +1,15 @@
 export type CaptureModePref = "complex" | "simple";
 
+// Stored values stay "complex" / "simple"; these are the product names.
+export const CAPTURE_MODES: Record<CaptureModePref, { name: string; description: string }> = {
+  complex: { name: "Pro", description: "Full FIBA-style stats with shot chart" },
+  simple: { name: "Lite", description: "Points and the basics, no shot chart" },
+};
+
+export function captureModeName(mode: string | null | undefined): string {
+  return CAPTURE_MODES[mode as CaptureModePref]?.name ?? "Pro";
+}
+
 export interface AppSettings {
   periodCount: number;
   periodDurationMins: number;

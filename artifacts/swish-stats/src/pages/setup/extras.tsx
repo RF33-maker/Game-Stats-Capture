@@ -1,3 +1,4 @@
+import { captureModeName } from "@/lib/app-settings";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, useListTeams, useListGamePlayers, getGetGameQueryKey, getListTeamsQueryKey, getListGamePlayersQueryKey } from "@workspace/api-client-react";
@@ -90,7 +91,7 @@ export default function SetupExtras() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Mode</p>
-                <p className="font-medium capitalize">{game?.captureMode}</p>
+                <p className="font-medium">{captureModeName(game?.captureMode)}</p>
               </div>
             </div>
           </div>

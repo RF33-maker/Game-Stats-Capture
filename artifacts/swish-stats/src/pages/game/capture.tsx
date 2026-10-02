@@ -115,9 +115,14 @@ export default function GameCapture() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncRef = useRef<number>(Date.now());
   const transitioningRef = useRef<boolean>(false);
+  // Only a running → paused transition should write the clock back. Without
+  // this, the first render (localClock still 0, game just loaded) wrote 0
+  // over the saved clock every time the capture screen was opened.
+  const wasRunningRef = useRef<boolean>(false);
   
   useEffect(() => {
     if (isRunning) {
+      wasRunningRef.current = true;
       timerRef.current = setInterval(() => {
         setLocalClock(prev => Math.max(0, prev - 1));
         
@@ -134,12 +139,13 @@ export default function GameCapture() {
       if (timerRef.current) clearInterval(timerRef.current);
       // Final sync on pause — but skip if we're in the middle of a period transition
       // because handleEndPeriod will issue its own authoritative clock+period write.
-      if (game && localClock !== game.clockSeconds && !transitioningRef.current) {
+      if (wasRunningRef.current && game && localClock !== game.clockSeconds && !transitioningRef.current) {
         updateClock.mutate({ 
           gameId, 
           data: { clockSeconds: localClock, currentPeriod: game.currentPeriod } 
         });
       }
+      wasRunningRef.current = false;
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -274,7 +280,21 @@ export default function GameCapture() {
   // Click handler for the 2PT/3PT/etc stat buttons. FG buttons are "armed"
   // rather than fired immediately when no zone is selected yet, so the
   // court diagram can filter to matching zones (see handleZoneSelect).
-  const handleStatButtonClick = (eventType: StatEventType, value?: number) => {
+  const handleStatButtonClick = (eventType: StatEventType | 'reb', value?: number) => {
+    if (eventType === 'reb') {
+      // A missed shot leaves possession with the shooting team until the
+      // rebound, so a board by the team in possession is offensive.
+      const possessionTeamId = possessions?.currentPossessionTeamId ?? null;
+      handleStat(possessionTeamId != null && possessionTeamId === selectedTeamId ? 'oreb' : 'dreb', value);
+      return;
+    }
+
+    if (game.captureMode === 'simple') {
+      // Lite has no court, so shots never wait for a location.
+      handleStat(eventType, value, undefined, null);
+      return;
+    }
+
     if (!FG_SHOT_TYPES.has(eventType)) {
       handleStat(eventType, value);
       return;
@@ -569,7 +589,7 @@ export default function GameCapture() {
     { type: '3pta', label: '3PT MISS', color: 'bg-red-600 hover:bg-red-700' },
     { type: 'ftm', label: 'FT MAKE', color: 'bg-green-700 hover:bg-green-800', val: 1 },
     { type: 'fta', label: 'FT MISS', color: 'bg-red-700 hover:bg-red-800' },
-    { type: 'dreb', label: 'REBOUND', color: 'bg-blue-600 hover:bg-blue-700' },
+    { type: 'reb', label: 'REBOUND', color: 'bg-blue-600 hover:bg-blue-700' },
     { type: 'ast', label: 'ASSIST', color: 'bg-sky-600 hover:bg-sky-700' },
     { type: 'tov', label: 'TOV', color: 'bg-orange-600 hover:bg-orange-700' },
     { type: 'stl', label: 'STEAL', color: 'bg-cyan-600 hover:bg-cyan-700' },
@@ -578,7 +598,8 @@ export default function GameCapture() {
     { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
-  const statButtons = activeMode === 'complex' ? complexStats : simpleStats;
+  const isLite = activeMode === 'simple';
+  const statButtons = isLite ? simpleStats : complexStats;
 
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
@@ -648,7 +669,7 @@ export default function GameCapture() {
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           
           {/* Team Panels + Court */}
-          <div className="flex-1 grid grid-rows-1 grid-cols-[0.9fr_1.4fr_0.9fr] xl:grid-cols-[0.7fr_1.6fr_0.7fr] gap-3 xl:gap-4 min-h-0">
+          <div className={`flex-1 grid grid-rows-1 gap-3 xl:gap-4 min-h-0 ${isLite ? 'grid-cols-2' : 'grid-cols-[0.9fr_1.4fr_0.9fr] xl:grid-cols-[0.7fr_1.6fr_0.7fr]'}`}>
             {[awayTeam].map(team => (
               <TeamPanel
                 key={team.id}
@@ -664,10 +685,12 @@ export default function GameCapture() {
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
                 onSelectBenchPlayer={(id) => handleBenchPlayerClick(team.id, id)}
+                benchBeside={isLite}
               />
             ))}
 
-            {/* Court zone picker */}
+            {/* Court zone picker (Pro only) */}
+            {!isLite && (
             <div className="flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm p-3 min-h-0">
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center shrink-0">
                 {pendingFgEvent ? (
@@ -702,6 +725,7 @@ export default function GameCapture() {
                 </Button>
               )}
             </div>
+            )}
 
             {[homeTeam].map(team => (
               <TeamPanel
@@ -718,13 +742,14 @@ export default function GameCapture() {
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
                 onSelectBenchPlayer={(id) => handleBenchPlayerClick(team.id, id)}
+                benchBeside={isLite}
               />
             ))}
           </div>
 
           {/* Stat Buttons Matrix */}
-          <div className="h-64 bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 shrink-0">
-            <div className="grid grid-cols-6 gap-2 flex-1">
+          <div className={`${isLite ? 'h-72 xl:h-80' : 'h-64'} bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
+            <div className={`grid gap-2 flex-1 ${isLite ? 'grid-cols-6 xl:gap-3' : 'grid-cols-6'}`}>
               {statButtons.map(btn => {
                 const btnType = btn.type as StatEventType;
                 const btnShotValue = fgShotValue(btnType);
@@ -740,8 +765,8 @@ export default function GameCapture() {
                   <button
                     key={btn.type}
                     disabled={isDisabled}
-                    onClick={() => handleStatButtonClick(btnType, btn.val)}
-                    className={`rounded-lg font-black text-lg tracking-tighter uppercase text-white transition-all
+                    onClick={() => handleStatButtonClick(btn.type as StatEventType | 'reb', btn.val)}
+                    className={`rounded-lg font-black ${isLite ? 'text-xl xl:text-2xl' : 'text-lg'} tracking-tighter uppercase text-white transition-all
                       ${btn.color} 
                       ${isDisabled ? 'opacity-20 cursor-not-allowed grayscale' : 'shadow-md active:scale-95'}
                       ${isArmed ? 'ring-4 ring-amber-400 ring-offset-1' : ''}
@@ -879,9 +904,9 @@ export default function GameCapture() {
             </DialogDescription>
           </DialogHeader>
           {editPbp && (() => {
-            const allEventTypes: StatEventType[] = (game.captureMode === 'complex' ? complexStats : simpleStats).map(s => s.type as StatEventType);
+            const allEventTypes: StatEventType[] = complexStats.map(s => s.type as StatEventType);
             const eventTypeOptions: { value: StatEventType; label: string }[] = [
-              ...allEventTypes.map(t => ({ value: t, label: (statButtons.find(b => b.type === t)?.label ?? t) })),
+              ...allEventTypes.map(t => ({ value: t, label: (complexStats.find(b => b.type === t)?.label ?? t) })),
               { value: 'flagrant' as StatEventType, label: 'FLAGRANT' },
               { value: 'sub_in' as StatEventType, label: 'SUB IN' },
               { value: 'sub_out' as StatEventType, label: 'SUB OUT' },
@@ -979,7 +1004,7 @@ export default function GameCapture() {
                   </Select>
                 </div>
 
-                {isFgShot && (() => {
+                {isFgShot && !isLite && (() => {
                   const editShotValue = fgShotValue(editForm.eventType);
                   const eligibleZones = SHOT_ZONES.filter(
                     (z) => editShotValue == null || ZONE_SHOT_VALUE[z.id] === editShotValue,
@@ -1202,6 +1227,7 @@ function TeamPanel({
   onTeamFoul,
   subModeBenchPlayerId,
   onSelectBenchPlayer,
+  benchBeside = false,
 }: {
   team: { id: number; abbreviation: string; colorPrimary: string };
   onCourt: { id: number; jerseyNumber: string | number; lastName: string }[];
@@ -1215,12 +1241,16 @@ function TeamPanel({
   // targets to complete the swap.
   subModeBenchPlayerId: number | null;
   onSelectBenchPlayer: (id: number) => void;
+  // Wide panels (Lite has no court) put the bench beside the on-court five
+  // instead of underneath, so it stays visible without scrolling.
+  benchBeside?: boolean;
 }) {
   const subActive = subModeBenchPlayerId != null;
   return (
     <div className="flex flex-col min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm relative overflow-y-auto overflow-x-hidden">
       <div className="sticky top-0 left-0 w-full h-1 z-10" style={{ backgroundColor: team.colorPrimary }} />
 
+      <div className={benchBeside ? "flex-1 min-h-0 grid grid-cols-[3fr_2fr]" : "contents"}>
       <div className="p-2 grid grid-rows-5 gap-2 shrink-0">
         {onCourt.map(p => {
           const isSelected = selectedPlayerId === p.id;
@@ -1254,7 +1284,7 @@ function TeamPanel({
       {/* Bench — tap a bench player, then tap an on-court player to swap them in.
           min-h floor keeps this from collapsing to invisible on short viewports;
           the panel as a whole scrolls (see overflow-y-auto above) if space is tight. */}
-      <div className="flex-1 min-h-[72px] flex flex-col border-t border-slate-200 px-2 pt-2">
+      <div className={`flex-1 min-h-[72px] flex flex-col border-slate-200 px-2 pt-2 ${benchBeside ? 'border-l min-h-0' : 'border-t'}`}>
         <div className="flex items-center justify-between px-1 shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bench</span>
           <span className="text-[10px] font-mono text-slate-300">{bench.length}</span>
@@ -1295,6 +1325,7 @@ function TeamPanel({
             Tap an on-court player to sub in
           </div>
         )}
+      </div>
       </div>
 
       {/* Team Actions */}

@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { CAPTURE_MODES } from "@/lib/app-settings";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, getGetGameQueryKey } from "@workspace/api-client-react";
@@ -141,8 +142,11 @@ export default function SetupInfo() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="simple">Simple (Basic Stats)</SelectItem>
-                        <SelectItem value="complex">Complex (Full FIBA Stats)</SelectItem>
+                        {(["complex", "simple"] as const).map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {CAPTURE_MODES[m].name} — {CAPTURE_MODES[m].description}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
