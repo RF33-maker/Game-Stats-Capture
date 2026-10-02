@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, getGetGameQueryKey } from "@workspace/api-client-react";
@@ -48,7 +49,7 @@ export default function SetupInfo() {
     defaultValues: {
       competition: "",
       venue: "",
-      date: new Date().toISOString().split("T")[0],
+      date: format(new Date(), "yyyy-MM-dd"), // local date, not UTC
       captureMode: "complex",
       periodCount: 4,
       periodDurationMins: 10,

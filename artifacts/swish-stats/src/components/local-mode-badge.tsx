@@ -21,15 +21,20 @@ function formatRelative(ts: string | null): string {
   return new Date(ts).toLocaleDateString();
 }
 
-export function LocalModeBadge() {
+// `inline` renders the pill in normal flow (used in the capture header, where a
+// floating pill would sit on top of the stat buttons).
+export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
   const status = useSyncStatus();
+  // With no remote configured nothing is ever going to sync, so a growing
+  // "pending" count is just noise.
+  const showPending = status.remoteEnabled && status.pending > 0;
 
   // Pick a "primary" pill color based on current sync state
   const stateClass = !status.online
     ? "bg-zinc-700/95 text-zinc-100 border-zinc-500/50"
     : status.syncing
       ? "bg-sky-500/95 text-white border-sky-400/50"
-      : status.pending > 0
+      : showPending
         ? "bg-amber-500/95 text-amber-950 border-amber-400/50"
         : status.remoteEnabled
           ? "bg-emerald-500/95 text-emerald-950 border-emerald-400/50"
@@ -39,7 +44,7 @@ export function LocalModeBadge() {
     ? WifiOff
     : status.syncing
       ? RefreshCw
-      : status.pending > 0
+      : showPending
         ? CloudUpload
         : status.remoteEnabled
           ? CheckCircle2
@@ -49,7 +54,7 @@ export function LocalModeBadge() {
     ? "OFFLINE"
     : status.syncing
       ? "SYNCING…"
-      : status.pending > 0
+      : showPending
         ? `${status.pending} PENDING`
         : status.remoteEnabled
           ? "ALL SYNCED"
@@ -64,7 +69,6 @@ export function LocalModeBadge() {
             All data stays in this browser. Set <code>VITE_SYNC_REMOTE_URL</code> to
             sync to a real API server.
           </div>
-          <div className="mt-1">{status.pending} change{status.pending === 1 ? "" : "s"} would be queued for sync.</div>
         </div>
       );
     }
@@ -88,7 +92,7 @@ export function LocalModeBadge() {
 
   return (
     <div
-      className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border ${stateClass}`}
+      className={`${inline ? "shrink-0" : "fixed bottom-4 left-4 z-50"} flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border ${stateClass}`}
       data-testid="local-mode-badge"
     >
       <Tooltip>

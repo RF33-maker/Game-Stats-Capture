@@ -12,6 +12,7 @@ import { Loader2, Plus, Trash2, UserCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { textOnColor } from "@/lib/team-colors";
 
 const playerSchema = z.object({
   jerseyNumber: z.string().min(1, "Req"),
@@ -28,6 +29,7 @@ function TeamRoster({ team, players, gameId }: { team: Team, players: Player[], 
   const deletePlayer = useDeletePlayer();
   
   const startersCount = players.filter(p => p.isStarter).length;
+  const headerText = textOnColor(team.colorPrimary);
 
   const form = useForm<z.infer<typeof playerSchema>>({
     resolver: zodResolver(playerSchema),
@@ -74,14 +76,14 @@ function TeamRoster({ team, players, gameId }: { team: Team, players: Player[], 
   return (
     <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden flex flex-col h-[600px]">
       <div 
-        className="p-4 flex items-center justify-between text-white"
-        style={{ backgroundColor: team.colorPrimary }}
+        className="p-4 flex items-center justify-between"
+        style={{ backgroundColor: team.colorPrimary, color: headerText }}
       >
         <div>
           <h3 className="font-bold text-lg">{team.name}</h3>
           <p className="text-xs opacity-90">{team.abbreviation} • {players.length} Players</p>
         </div>
-        <div className={`px-3 py-1 rounded-full text-xs font-bold ${startersCount === 5 ? 'bg-green-500/20 text-green-100' : 'bg-white/20 text-white'}`}>
+        <div className={`px-3 py-1 rounded-full text-xs font-bold ${headerText === '#ffffff' ? 'bg-white/20' : 'bg-black/10'}`}>
           {startersCount}/5 Starters
         </div>
       </div>

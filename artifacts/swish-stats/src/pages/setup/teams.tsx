@@ -43,8 +43,8 @@ export default function SetupTeams() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      home: { name: "", abbreviation: "", colorPrimary: "#ffffff", colorSecondary: "#000000" },
-      away: { name: "", abbreviation: "", colorPrimary: "#000000", colorSecondary: "#ffffff" },
+      home: { name: "", abbreviation: "", colorPrimary: "#ea580c", colorSecondary: "#ffffff" },
+      away: { name: "", abbreviation: "", colorPrimary: "#2563eb", colorSecondary: "#ffffff" },
     }
   });
 

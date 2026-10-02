@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Play, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { teamTextColor } from "@/lib/team-colors";
 
 export default function SetupExtras() {
   const [, params] = useRoute("/setup/:gameId/extras");
@@ -64,9 +65,9 @@ export default function SetupExtras() {
               <div>
                 <p className="text-sm text-muted-foreground">Matchup</p>
                 <div className="text-xl font-bold flex items-center gap-2 mt-1">
-                  <span style={{ color: awayTeam?.colorPrimary }}>{awayTeam?.abbreviation || 'AWAY'}</span>
+                  <span style={{ color: teamTextColor(awayTeam?.colorPrimary, "dark") }}>{awayTeam?.abbreviation || 'AWAY'}</span>
                   <span className="text-muted-foreground text-sm font-normal">@</span>
-                  <span style={{ color: homeTeam?.colorPrimary }}>{homeTeam?.abbreviation || 'HOME'}</span>
+                  <span style={{ color: teamTextColor(homeTeam?.colorPrimary, "dark") }}>{homeTeam?.abbreviation || 'HOME'}</span>
                 </div>
               </div>
               <div>

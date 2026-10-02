@@ -10,6 +10,7 @@ import {
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
+import { teamTextColor, textOnColor } from "@/lib/team-colors";
 
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
@@ -68,13 +69,13 @@ export default function BoxScore() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-8 text-3xl font-black font-mono">
               <div className="flex items-center gap-4">
-                <span style={{ color: awayTeam.colorPrimary }}>{awayTeam.abbreviation}</span>
+                <span style={{ color: teamTextColor(awayTeam.colorPrimary, "dark") }}>{awayTeam.abbreviation}</span>
                 <span>{boxScore.away.totalPoints}</span>
               </div>
               <span className="text-muted-foreground">-</span>
               <div className="flex items-center gap-4">
                 <span>{boxScore.home.totalPoints}</span>
-                <span style={{ color: homeTeam.colorPrimary }}>{homeTeam.abbreviation}</span>
+                <span style={{ color: teamTextColor(homeTeam.colorPrimary, "dark") }}>{homeTeam.abbreviation}</span>
               </div>
             </div>
             <AppMenu />
@@ -88,8 +89,8 @@ export default function BoxScore() {
           ].map(({ team, stats }) => (
             <div key={team.id} className="bg-card border rounded-xl overflow-hidden shadow-sm">
               <div 
-                className="px-4 py-3 font-bold text-lg text-white" 
-                style={{ backgroundColor: team.colorPrimary }}
+                className="px-4 py-3 font-bold text-lg"
+                style={{ backgroundColor: team.colorPrimary, color: textOnColor(team.colorPrimary) }}
               >
                 {team.name}
               </div>

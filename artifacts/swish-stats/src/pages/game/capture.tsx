@@ -28,12 +28,15 @@ import {
 import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
+import { LocalModeBadge } from "@/components/local-mode-badge";
+import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import { loadSettings } from "@/lib/app-settings";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CourtZones, SHOT_ZONES, ZONE_SHOT_VALUE, shotZoneLabel, type ShotZoneId } from "@/components/court-zones";
+import { teamTextColor } from "@/lib/team-colors";
 
 // Field-goal make/miss event types — the only ones a shot zone applies to.
 const FG_SHOT_TYPES = new Set<StatEventType>(['2ptm', '2pta', '3ptm', '3pta']);
@@ -596,7 +599,7 @@ export default function GameCapture() {
             </Button>
           </Link>
           <AppMenu triggerClassName="text-slate-400 hover:text-slate-900 hover:bg-slate-100" />
-          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: awayTeam.colorPrimary }}>
+          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: teamTextColor(awayTeam.colorPrimary, "light") }}>
             {awayTeam.abbreviation}
           </div>
           <div className="text-4xl font-black font-mono tracking-tighter text-slate-900">
@@ -624,6 +627,7 @@ export default function GameCapture() {
               {isRunning ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
             </Button>
           </div>
+          {LOCAL_MODE_ENABLED && <LocalModeBadge inline />}
         </div>
 
         <div className="flex items-center justify-end w-1/3 gap-4">
@@ -631,7 +635,7 @@ export default function GameCapture() {
           <div className="text-4xl font-black font-mono tracking-tighter text-slate-900">
             {boxScore?.home.totalPoints || 0}
           </div>
-          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: homeTeam.colorPrimary }}>
+          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: teamTextColor(homeTeam.colorPrimary, "light") }}>
             {homeTeam.abbreviation}
           </div>
         </div>
@@ -644,7 +648,7 @@ export default function GameCapture() {
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           
           {/* Team Panels + Court */}
-          <div className="flex-1 grid grid-rows-1 grid-cols-[0.7fr_1.6fr_0.7fr] gap-4 min-h-0">
+          <div className="flex-1 grid grid-rows-1 grid-cols-[0.9fr_1.4fr_0.9fr] xl:grid-cols-[0.7fr_1.6fr_0.7fr] gap-3 xl:gap-4 min-h-0">
             {[awayTeam].map(team => (
               <TeamPanel
                 key={team.id}
@@ -776,7 +780,7 @@ export default function GameCapture() {
         </div>
 
         {/* Right Rail - PBP */}
-        <div className="w-80 bg-white border-l border-slate-200 flex flex-col shrink-0">
+        <div className="w-64 xl:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0">
           <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
             <h2 className="font-bold text-slate-500 text-sm tracking-wide">PLAY BY PLAY</h2>
             <div className="flex gap-2">
@@ -933,8 +937,8 @@ export default function GameCapture() {
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { id: null, label: 'NONE', color: '#94a3b8' },
-                      { id: awayTeam.id, label: awayTeam.abbreviation, color: awayTeam.colorPrimary },
-                      { id: homeTeam.id, label: homeTeam.abbreviation, color: homeTeam.colorPrimary },
+                      { id: awayTeam.id, label: awayTeam.abbreviation, color: teamTextColor(awayTeam.colorPrimary, "light") },
+                      { id: homeTeam.id, label: homeTeam.abbreviation, color: teamTextColor(homeTeam.colorPrimary, "light") },
                     ].map(opt => {
                       const selected = editForm.teamId === opt.id;
                       return (
@@ -1225,7 +1229,7 @@ function TeamPanel({
               key={p.id}
               onClick={() => onSelectPlayer(p.id)}
               title={subActive ? "Tap to sub this player out" : undefined}
-              className={`flex items-center gap-4 px-4 py-2 rounded-lg border-2 transition-all font-bold ${
+              className={`flex items-center gap-2 px-2 xl:gap-4 xl:px-4 py-2 rounded-lg border-2 transition-all font-bold ${
                 subActive
                   ? 'border-amber-400 bg-amber-50 hover:bg-amber-100 ring-2 ring-amber-200'
                   : isSelected
@@ -1234,12 +1238,12 @@ function TeamPanel({
               }`}
             >
               <div
-                className="text-2xl font-black font-mono w-12 text-center"
-                style={{ color: team.colorPrimary }}
+                className="text-xl xl:text-2xl font-black font-mono w-9 xl:w-12 shrink-0 text-center"
+                style={{ color: teamTextColor(team.colorPrimary, "light") }}
               >
                 {p.jerseyNumber}
               </div>
-              <div className="text-left flex-1 min-w-0 truncate text-xl tracking-tight uppercase text-slate-900">
+              <div className="text-left flex-1 min-w-0 truncate text-base xl:text-xl tracking-tight uppercase text-slate-900">
                 {p.lastName}
               </div>
             </button>
@@ -1294,15 +1298,15 @@ function TeamPanel({
       </div>
 
       {/* Team Actions */}
-      <div className="h-16 border-t border-slate-200 bg-slate-50 flex p-2 gap-2">
+      <div className="sticky bottom-0 mt-auto h-14 xl:h-16 shrink-0 border-t border-slate-200 bg-slate-50 flex p-2 gap-2">
         <Button
-          className="flex-1 h-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold"
+          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold"
           onClick={onTimeout}
         >
           TIMEOUT
         </Button>
         <Button
-          className="flex-1 h-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold"
+          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold"
           onClick={onTeamFoul}
         >
           TEAM FOUL

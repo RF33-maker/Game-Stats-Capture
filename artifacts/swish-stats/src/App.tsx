@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
@@ -105,12 +105,19 @@ function Router() {
   );
 }
 
+// The capture screen shows the badge inline in its header instead.
+function FloatingLocalModeBadge() {
+  const [onCapture] = useRoute("/game/:gameId");
+  if (!LOCAL_MODE_ENABLED || onCapture) return null;
+  return <LocalModeBadge />;
+}
+
 function App() {
   return (
     <TooltipProvider>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
-        {LOCAL_MODE_ENABLED && <LocalModeBadge />}
+        <FloatingLocalModeBadge />
       </WouterRouter>
     </TooltipProvider>
   );
