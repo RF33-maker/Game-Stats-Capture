@@ -158,6 +158,8 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
         event_type: e.eventType,
         value: e.value,
         shot_zone: e.shotZone,
+        shot_x: e.shotX,
+        shot_y: e.shotY,
         ft_sequence_index: e.ftSequenceIndex,
         ft_sequence_total: e.ftSequenceTotal,
         pair_event_uid: eventUid(e.pairEventId),

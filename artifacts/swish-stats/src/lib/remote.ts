@@ -185,6 +185,8 @@ async function pullGame(g: Row) {
         eventType: e.event_type,
         value: e.value,
         shotZone: e.shot_zone,
+        shotX: e.shot_x,
+        shotY: e.shot_y,
         ftSequenceIndex: e.ft_sequence_index,
         ftSequenceTotal: e.ft_sequence_total,
         possessionTeamId: null,

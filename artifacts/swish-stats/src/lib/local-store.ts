@@ -93,6 +93,10 @@ export type LSStatEvent = {
   eventType: string;
   value: number;
   shotZone: string | null;
+  // Exact location in the site's shot_chart space (x 0-50 along the court,
+  // y 0-100 across it). Null for shots recorded without a location.
+  shotX: number | null;
+  shotY: number | null;
   ftSequenceIndex: number | null;
   ftSequenceTotal: number | null;
   possessionTeamId: number | null;
@@ -230,8 +234,8 @@ export function byOrder(a: LSStatEvent, b: LSStatEvent) {
 type CreateGameInput = Partial<Omit<LSGame, "id" | "createdAt" | "updatedAt">>;
 type CreateStatEventInput = Omit<
   LSStatEvent,
-  "id" | "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone"
-> & Partial<Pick<LSStatEvent, "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone">>;
+  "id" | "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone" | "shotX" | "shotY"
+> & Partial<Pick<LSStatEvent, "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone" | "shotX" | "shotY">>;
 type CreatePbpInput = Omit<LSPlayByPlay, "id" | "createdAt">;
 type CreatePlayerInput = Omit<LSPlayer, "id" | "uid" | "createdAt"> & Partial<Pick<LSPlayer, "uid">>;
 type CreateTeamInput = Omit<LSTeam, "id" | "uid" | "createdAt"> & Partial<Pick<LSTeam, "uid">>;
@@ -495,6 +499,8 @@ export const store = {
       const id = nextId("statEvent");
       const event: LSStatEvent = {
         shotZone: null,
+        shotX: null,
+        shotY: null,
         replacesId: null,
         voidedAt: null,
         voidReason: null,
@@ -536,7 +542,7 @@ export const store = {
       return events[idx];
     },
     /** Void `id` and record a corrected copy in its place. */
-    replace(id: number, changes: Partial<Pick<LSStatEvent, "teamId" | "playerId" | "eventType" | "period" | "clockSeconds" | "value" | "shotZone" | "needsReview">>): LSStatEvent | null {
+    replace(id: number, changes: Partial<Pick<LSStatEvent, "teamId" | "playerId" | "eventType" | "period" | "clockSeconds" | "value" | "shotZone" | "shotX" | "shotY" | "needsReview">>): LSStatEvent | null {
       const target = this.get(id);
       if (!target || target.voidedAt) return null;
       this.void(id, "corrected");
@@ -549,6 +555,8 @@ export const store = {
         eventType: target.eventType,
         value: target.value,
         shotZone: target.shotZone,
+        shotX: target.shotX,
+        shotY: target.shotY,
         ftSequenceIndex: target.ftSequenceIndex,
         ftSequenceTotal: target.ftSequenceTotal,
         possessionTeamId: target.possessionTeamId,
@@ -637,6 +645,8 @@ function backfill() {
   fix<LSStatEvent>("statEvents", r => {
     if (r.orderKey == null) r.orderKey = r.id;
     if (r.shotZone === undefined) r.shotZone = null;
+    if (r.shotX === undefined) r.shotX = null;
+    if (r.shotY === undefined) r.shotY = null;
     if (r.replacesId === undefined) r.replacesId = null;
     if (r.voidedAt === undefined) r.voidedAt = null;
     if (r.voidReason === undefined) r.voidReason = null;

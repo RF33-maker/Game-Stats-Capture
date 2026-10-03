@@ -635,6 +635,8 @@ export async function handleLocalRequest(
       ftSequenceIndex?: number | null;
       ftSequenceTotal?: number | null;
       shotZone?: string | null;
+      shotX?: number | null;
+      shotY?: number | null;
     };
 
     // Substitutions are an indivisible pair validated against the live
@@ -671,6 +673,7 @@ export async function handleLocalRequest(
     const prevAway = lastPbp?.awayScore ?? 0;
     const { homeScore, awayScore } = applyScoreDelta(effect.scoreDelta, data.teamId ?? null, home.id, prevHome, prevAway);
 
+    const hasXY = typeof data.shotX === "number" && typeof data.shotY === "number";
     const statEvent = store.statEvents.create({
       gameId,
       teamId: data.teamId ?? null,
@@ -680,6 +683,8 @@ export async function handleLocalRequest(
       eventType: data.eventType,
       value: data.value ?? 0,
       shotZone: data.shotZone ?? null,
+      shotX: hasXY ? data.shotX! : null,
+      shotY: hasXY ? data.shotY! : null,
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
       possessionTeamId: game.possessionTeamId,
@@ -742,6 +747,8 @@ export async function handleLocalRequest(
       clockSeconds: number;
       value: number;
       shotZone: string | null;
+      shotX: number | null;
+      shotY: number | null;
       needsReview: boolean;
     }>;
 
@@ -809,6 +816,17 @@ export async function handleLocalRequest(
       if (data.clockSeconds !== undefined) changes.clockSeconds = data.clockSeconds;
       if (data.value !== undefined) changes.value = data.value;
       if (data.shotZone !== undefined) changes.shotZone = data.shotZone;
+      if (data.shotX !== undefined && data.shotY !== undefined) {
+        changes.shotX = data.shotX;
+        changes.shotY = data.shotY;
+      }
+      // A shot location only belongs on a field-goal attempt.
+      const finalType = changes.eventType ?? target.eventType;
+      if (!["2ptm", "2pta", "3ptm", "3pta"].includes(finalType)) {
+        changes.shotZone = null;
+        changes.shotX = null;
+        changes.shotY = null;
+      }
       if (data.needsReview !== undefined) changes.needsReview = data.needsReview;
       updated = store.statEvents.replace(statEventId, changes);
     }

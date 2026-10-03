@@ -36,7 +36,8 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CourtZones, SHOT_ZONES, ZONE_SHOT_VALUE, shotZoneLabel, type ShotZoneId } from "@/components/court-zones";
+import { ShotCourt, type CourtShot } from "@/components/shot-court";
+import { classifyShot, distanceMetres, fromStored, toStored, zoneLabel, type CourtPoint, type ShotZoneKey } from "@/lib/shot-geometry";
 import { teamTextColor, appSurface } from "@/lib/team-colors";
 
 // Field-goal make/miss event types — the only ones a shot zone applies to.
@@ -49,6 +50,20 @@ function fgShotValue(type: StatEventType): 2 | 3 | null {
   return null;
 }
 
+// A shot the scorer has started in Pro: where it was taken (null if recorded
+// without a location), what the lines say it's worth, and — once chosen —
+// whether it went in. It completes as soon as both a result and a shooter
+// are known, in whichever order the scorer gives them.
+type PendingShot = {
+  point: CourtPoint | null;
+  value: 2 | 3;
+  zone: ShotZoneKey | null;
+  label: string;
+  made: boolean | null;
+};
+
+type ShotEvent = { id: number; eventType: string; teamId: number | null; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
+
 export default function GameCapture() {
   const [, params] = useRoute("/game/:gameId");
   const gameId = Number(params?.gameId);
@@ -59,11 +74,7 @@ export default function GameCapture() {
 
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
-  const [selectedZone, setSelectedZone] = useState<ShotZoneId | null>(null);
-  // When an operator taps a 2PT/3PT button before picking a zone, we "arm"
-  // that shot type: the court diagram filters to matching zones, and a
-  // second tap on the same button (or an edit/undo) confirms without a zone.
-  const [pendingFgEvent, setPendingFgEvent] = useState<StatEventType | null>(null);
+  const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
   const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
@@ -71,7 +82,7 @@ export default function GameCapture() {
   // Substitution flow: tapping a bench player arms it, then tapping an
   // on-court player on the same team completes the swap.
   const [subMode, setSubMode] = useState<{ teamId: number; benchPlayerId: number } | null>(null);
-  const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null; shotZone: ShotZoneId | null }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null, shotZone: null });
+  const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null; shotZone: string | null; shotX: number | null; shotY: number | null }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null, shotZone: null, shotX: null, shotY: null });
   const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false);
   // Non-blocking prompt shown after a period ends or a timeout is called,
   // listing plays flagged "needs review" in the relevant period so the
@@ -228,8 +239,10 @@ export default function GameCapture() {
     queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
   };
 
-  const handleStat = async (eventType: StatEventType, value: number = 0, ftData?: any, zoneOverride?: ShotZoneId | null) => {
-    if (!selectedTeamId && !['timeout', 'period_start', 'period_end', 'jump_ball'].includes(eventType)) {
+  // `extra` overrides the defaults below: free-throw sequence data, a team
+  // for team events, or the shooter + location for a shot.
+  const handleStat = async (eventType: StatEventType, value: number = 0, ftData?: any) => {
+    if (!(ftData?.teamId ?? selectedTeamId) && !['timeout', 'period_start', 'period_end', 'jump_ball'].includes(eventType)) {
       toast.error("Select a player first");
       return;
     }
@@ -241,7 +254,6 @@ export default function GameCapture() {
     }
 
     const isFgShot = FG_SHOT_TYPES.has(eventType);
-    const shotZone = zoneOverride !== undefined ? zoneOverride : selectedZone;
 
     try {
       await recordStat.mutateAsync({
@@ -253,7 +265,7 @@ export default function GameCapture() {
           clockSeconds: localClock,
           eventType,
           value,
-          shotZone: isFgShot ? shotZone : null,
+          shotZone: null,
           ...ftData
         }
       });
@@ -262,10 +274,7 @@ export default function GameCapture() {
         setSelectedPlayerId(null);
         setSelectedTeamId(null);
       }
-      if (isFgShot) {
-        setSelectedZone(null);
-        setPendingFgEvent(null);
-      }
+      if (isFgShot) setPendingShot(null);
       if (eventType === 'timeout') {
         const flaggedThisPeriod = (pbp ?? []).filter(
           p => p.period === game.currentPeriod && p.needsReview,
@@ -279,9 +288,6 @@ export default function GameCapture() {
     }
   };
 
-  // Click handler for the 2PT/3PT/etc stat buttons. FG buttons are "armed"
-  // rather than fired immediately when no zone is selected yet, so the
-  // court diagram can filter to matching zones (see handleZoneSelect).
   const handleStatButtonClick = (eventType: StatEventType | 'reb', value?: number) => {
     if (eventType === 'reb') {
       // A missed shot leaves possession with the shooting team until the
@@ -290,47 +296,44 @@ export default function GameCapture() {
       handleStat(possessionTeamId != null && possessionTeamId === selectedTeamId ? 'oreb' : 'dreb', value);
       return;
     }
-
-    if (game.captureMode === 'simple') {
-      // Lite has no court, so shots never wait for a location.
-      handleStat(eventType, value, undefined, null);
-      return;
-    }
-
-    if (!FG_SHOT_TYPES.has(eventType)) {
-      handleStat(eventType, value);
-      return;
-    }
-
-    const btnValue = fgShotValue(eventType);
-    if (selectedZone) {
-      // A zone is already chosen — only a matching type may fire (the
-      // button is disabled otherwise, this is just a safety net).
-      if (ZONE_SHOT_VALUE[selectedZone] !== btnValue) return;
-      handleStat(eventType, value);
-      return;
-    }
-
-    if (pendingFgEvent === eventType) {
-      // Second tap on the same armed button — confirm without a zone.
-      handleStat(eventType, value);
-      setPendingFgEvent(null);
-      return;
-    }
-
-    // Arm this shot type and wait for a matching zone (or a repeat tap).
-    setPendingFgEvent(eventType);
+    handleStat(eventType, value);
   };
 
-  // Click handler passed to the court diagram. When a shot type is armed,
-  // tapping a (matching) zone completes the recording in one step.
-  const handleZoneSelect = (zone: ShotZoneId | null) => {
-    if (zone && pendingFgEvent) {
-      const btn = statButtons.find(b => b.type === pendingFgEvent);
-      handleStat(pendingFgEvent, btn?.val, undefined, zone);
+  // ---- Pro shots: tap the court, then Made / Missed, then (or first) the shooter.
+  const recordShot = (shot: PendingShot, made: boolean, who: { teamId: number; playerId: number }) => {
+    const type = `${shot.value}pt${made ? 'm' : 'a'}` as StatEventType;
+    const location = shot.point ? { ...toStored(shot.point), shotZone: shot.zone } : {};
+    void handleStat(type, made ? shot.value : 0, { teamId: who.teamId, playerId: who.playerId, ...location });
+  };
+
+  const handleCourtTap = (point: CourtPoint) => {
+    const call = classifyShot(point);
+    // Re-tapping just moves the spot; keep a result that was already chosen.
+    setPendingShot(prev => ({ point, value: call.value, zone: call.zone, label: call.label, made: prev?.made ?? null }));
+  };
+
+  const handleShotWithoutLocation = (value: 2 | 3) => {
+    setPendingShot({ point: null, value, zone: null, label: 'No location', made: null });
+  };
+
+  const handleShotResult = (made: boolean) => {
+    if (!pendingShot) return;
+    if (selectedPlayerId != null && selectedTeamId != null) {
+      recordShot(pendingShot, made, { teamId: selectedTeamId, playerId: selectedPlayerId });
+    } else {
+      setPendingShot({ ...pendingShot, made });
+    }
+  };
+
+  const handlePlayerTap = (teamId: number, playerId: number) => {
+    if (subMode && subMode.teamId === teamId) { handleSubstitute(teamId, playerId); return; }
+    if (pendingShot && pendingShot.made != null) {
+      // The shot was only waiting for its shooter.
+      recordShot(pendingShot, pendingShot.made, { teamId, playerId });
       return;
     }
-    setSelectedZone(zone);
+    setSelectedPlayerId(playerId);
+    setSelectedTeamId(teamId);
   };
 
   const handleBenchPlayerClick = (teamId: number, benchPlayerId: number) => {
@@ -421,8 +424,7 @@ export default function GameCapture() {
       setLocalClock(nextDurationSec);
       setSelectedPlayerId(null);
       setSelectedTeamId(null);
-      setSelectedZone(null);
-      setPendingFgEvent(null);
+      setPendingShot(null);
       invalidateData();
 
       const label = isLastRegPeriod
@@ -479,7 +481,9 @@ export default function GameCapture() {
       eventType: ev.eventType as StatEventType,
       teamId: ev.teamId ?? null,
       playerId: ev.playerId ?? null,
-      shotZone: (ev.shotZone as ShotZoneId | null) ?? null,
+      shotZone: (ev as unknown as ShotEvent).shotZone ?? null,
+      shotX: (ev as unknown as ShotEvent).shotX ?? null,
+      shotY: (ev as unknown as ShotEvent).shotY ?? null,
     });
   };
 
@@ -504,7 +508,15 @@ export default function GameCapture() {
           eventType: editForm.eventType,
           teamId: isStructural ? null : editForm.teamId,
           playerId: isStructural ? null : editForm.playerId,
-          shotZone: isFgShot ? editForm.shotZone : null,
+          // Keep the points in step with the (possibly changed) event type.
+          ...(editForm.eventType === '2ptm' ? { value: 2 } : editForm.eventType === '3ptm' ? { value: 3 }
+            : editForm.eventType === 'ftm' ? { value: 1 }
+            : ['2pta', '3pta', 'fta'].includes(editForm.eventType) ? { value: 0 } : {}),
+          ...({
+            shotZone: isFgShot ? editForm.shotZone : null,
+            shotX: isFgShot ? editForm.shotX : null,
+            shotY: isFgShot ? editForm.shotY : null,
+          } as object),
         },
       });
       invalidateData();
@@ -601,7 +613,23 @@ export default function GameCapture() {
   ];
 
   const isLite = activeMode === 'simple';
-  const statButtons = isLite ? simpleStats : complexStats;
+  // In Pro, field goals are recorded by tapping the court, so the grid only
+  // carries everything else.
+  const statButtons = isLite ? simpleStats : complexStats.filter(b => !FG_SHOT_TYPES.has(b.type as StatEventType));
+
+  // Shots already recorded, for the court. The newest few are drawn brighter.
+  const courtShots: CourtShot[] = ((statEvents ?? []) as unknown as ShotEvent[])
+    .filter(e => FG_SHOT_TYPES.has(e.eventType as StatEventType) && e.shotX != null && e.shotY != null)
+    .map((e, i) => {
+      const team = e.teamId === homeTeam.id ? homeTeam : awayTeam;
+      return {
+        id: e.id,
+        ...fromStored(e.shotX!, e.shotY!),
+        made: e.eventType.endsWith('m'),
+        color: teamTextColor(team.colorPrimary, appSurface()),
+        recent: i < 6, // statEvents is newest-first
+      };
+    });
 
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
@@ -665,7 +693,7 @@ export default function GameCapture() {
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           
           {/* Team Panels + Court */}
-          <div className={`flex-1 grid grid-rows-1 gap-3 xl:gap-4 min-h-0 ${isLite ? 'grid-cols-2' : 'grid-cols-[0.9fr_1.4fr_0.9fr] xl:grid-cols-[0.7fr_1.6fr_0.7fr]'}`}>
+          <div className={`flex-1 grid grid-rows-1 gap-3 xl:gap-4 min-h-0 ${isLite ? 'grid-cols-2' : 'grid-cols-[minmax(150px,0.75fr)_minmax(0,1.9fr)_minmax(150px,0.75fr)] xl:grid-cols-[minmax(190px,0.7fr)_minmax(0,1.8fr)_minmax(190px,0.7fr)]'}`}>
             {[awayTeam].map(team => (
               <TeamPanel
                 key={team.id}
@@ -673,10 +701,8 @@ export default function GameCapture() {
                 onCourt={awayOnCourt}
                 bench={awayBench}
                 selectedPlayerId={selectedPlayerId}
-                onSelectPlayer={(id) => {
-                  if (subMode && subMode.teamId === team.id) { handleSubstitute(team.id, id); return; }
-                  setSelectedPlayerId(id); setSelectedTeamId(team.id); setPendingFgEvent(null);
-                }}
+                onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
+                awaitingShooter={!isLite && pendingShot?.made != null}
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
@@ -685,41 +711,71 @@ export default function GameCapture() {
               />
             ))}
 
-            {/* Court zone picker (Pro only) */}
+            {/* Shot court (Pro only) — tap where the shot was taken */}
             {!isLite && (
-            <div className="flex flex-col bg-card rounded-xl border border-border shadow-sm p-3 min-h-0">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2 text-center shrink-0">
-                {pendingFgEvent ? (
-                  <span className="text-amber-600">
-                    Tap a {fgShotValue(pendingFgEvent)}PT zone, or press the button again to skip
-                  </span>
+            <div className="flex flex-col bg-card rounded-xl border border-border shadow-sm p-3 min-h-0" data-testid="shot-panel">
+              <div className="flex items-center justify-between gap-2 mb-2 shrink-0 min-h-[20px]">
+                {pendingShot ? (
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="sa-display font-bold text-xl leading-none text-primary">{pendingShot.value}PT</span>
+                    <span className="text-xs font-semibold text-foreground truncate">{pendingShot.label}</span>
+                    {pendingShot.point && (
+                      <span className="text-[11px] text-muted-foreground tabular-nums">{distanceMetres(pendingShot.point)}m</span>
+                    )}
+                  </div>
                 ) : (
-                  <>Shot Location <span className="font-normal normal-case text-muted-foreground/60">(optional)</span></>
+                  <span className="sa-eyebrow-muted whitespace-nowrap">Tap the court to record a shot</span>
                 )}
               </div>
-              <CourtZones
-                selectedZone={selectedZone}
-                onSelectZone={handleZoneSelect}
-                accentColor={shootingTeam?.colorPrimary ?? '#f97316'}
-                allowedShotValue={
-                  selectedZone
-                    ? null
-                    : pendingFgEvent
-                    ? fgShotValue(pendingFgEvent)
-                    : null
-                }
-                className="flex-1 min-h-0"
+
+              <ShotCourt
+                shots={courtShots}
+                pending={pendingShot?.point ?? null}
+                accentColor={shootingTeam ? teamTextColor(shootingTeam.colorPrimary, appSurface()) : '#f97316'}
+                onTap={handleCourtTap}
+                className="flex-1"
               />
-              {(selectedZone || pendingFgEvent) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => { setSelectedZone(null); setPendingFgEvent(null); }}
-                >
-                  <X className="w-3 h-3 mr-1" /> Clear zone
-                </Button>
-              )}
+
+              {/* Made / Missed — appears once a spot (or a no-location shot) is chosen */}
+              <div className="mt-2 shrink-0 h-14">
+                {pendingShot ? (
+                  pendingShot.made == null ? (
+                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 h-full">
+                      <button type="button" onClick={() => handleShotResult(true)} data-testid="shot-made"
+                        className="rounded-[10px] bg-green-600 hover:bg-green-700 text-white sa-display font-bold text-2xl shadow-md active:scale-95 transition-all">
+                        MADE
+                      </button>
+                      <button type="button" onClick={() => handleShotResult(false)} data-testid="shot-missed"
+                        className="rounded-[10px] bg-red-600 hover:bg-red-700 text-white sa-display font-bold text-2xl shadow-md active:scale-95 transition-all">
+                        MISSED
+                      </button>
+                      <Button variant="outline" className="h-full px-3" onClick={() => setPendingShot(null)} title="Cancel this shot">
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="h-full flex items-center justify-between gap-2 rounded-[10px] border border-amber-500/40 bg-amber-500/10 px-3" data-testid="shot-needs-shooter">
+                      <span className="text-sm font-semibold text-amber-500">
+                        {pendingShot.value}PT {pendingShot.made ? 'made' : 'missed'} — now tap the shooter
+                      </span>
+                      <Button variant="ghost" size="sm" onClick={() => setPendingShot(null)}>Cancel</Button>
+                    </div>
+                  )
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground text-center px-2">
+                    <span>
+                      {selectedPlayerId
+                        ? "Tap where the shot was taken — the app works out 2 or 3."
+                        : "Pick the shooter first or after — either order works."}
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[11px]">
+                      Didn't see where?
+                      <button type="button" className="px-2 py-0.5 rounded-md border border-border hover:bg-accent font-semibold text-foreground" onClick={() => handleShotWithoutLocation(2)} data-testid="shot-noloc-2">2PT</button>
+                      <button type="button" className="px-2 py-0.5 rounded-md border border-border hover:bg-accent font-semibold text-foreground" onClick={() => handleShotWithoutLocation(3)} data-testid="shot-noloc-3">3PT</button>
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             )}
 
@@ -730,10 +786,8 @@ export default function GameCapture() {
                 onCourt={homeOnCourt}
                 bench={homeBench}
                 selectedPlayerId={selectedPlayerId}
-                onSelectPlayer={(id) => {
-                  if (subMode && subMode.teamId === team.id) { handleSubstitute(team.id, id); return; }
-                  setSelectedPlayerId(id); setSelectedTeamId(team.id); setPendingFgEvent(null);
-                }}
+                onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
+                awaitingShooter={!isLite && pendingShot?.made != null}
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
@@ -744,19 +798,10 @@ export default function GameCapture() {
           </div>
 
           {/* Stat Buttons Matrix */}
-          <div className={`${isLite ? 'h-72 xl:h-80' : 'h-64'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
+          <div className={`${isLite ? 'h-72 xl:h-80' : 'h-52 xl:h-56'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
             <div className={`grid gap-2 flex-1 ${isLite ? 'grid-cols-6 xl:gap-3' : 'grid-cols-6'}`}>
               {statButtons.map(btn => {
-                const btnType = btn.type as StatEventType;
-                const btnShotValue = fgShotValue(btnType);
-                const enforcedShotValue = selectedZone
-                  ? ZONE_SHOT_VALUE[selectedZone]
-                  : pendingFgEvent
-                  ? fgShotValue(pendingFgEvent)
-                  : null;
-                const isMismatched = btnShotValue != null && enforcedShotValue != null && btnShotValue !== enforcedShotValue;
-                const isArmed = pendingFgEvent === btnType;
-                const isDisabled = !selectedPlayerId || isMismatched;
+                const isDisabled = !selectedPlayerId;
                 return (
                   <button
                     key={btn.type}
@@ -765,7 +810,6 @@ export default function GameCapture() {
                     className={`rounded-[10px] sa-display font-bold leading-none ${isLite ? 'text-2xl xl:text-3xl' : 'text-xl xl:text-2xl'} text-white transition-all
                       ${btn.color} 
                       ${isDisabled ? 'opacity-20 cursor-not-allowed grayscale' : 'shadow-md active:scale-95'}
-                      ${isArmed ? 'ring-4 ring-amber-400 ring-offset-1' : ''}
                     `}
                   >
                     {btn.label}
@@ -933,11 +977,13 @@ export default function GameCapture() {
                     onValueChange={(v) => {
                       const nextType = v as StatEventType;
                       const nextShotValue = fgShotValue(nextType);
-                      // Clear a shot zone that no longer matches the new event type's
-                      // point value, mirroring the capture screen's zone/type guard.
-                      const keepZone =
-                        editForm.shotZone && (nextShotValue == null || ZONE_SHOT_VALUE[editForm.shotZone] === nextShotValue);
-                      setEditForm({ ...editForm, eventType: nextType, shotZone: keepZone ? editForm.shotZone : null });
+                      // A location on the wrong side of the arc for the new
+                      // type can't be right any more — drop it.
+                      const keepLocation = nextShotValue != null && editForm.shotX != null && editForm.shotY != null
+                        && classifyShot(fromStored(editForm.shotX, editForm.shotY)).value === nextShotValue;
+                      setEditForm(keepLocation
+                        ? { ...editForm, eventType: nextType }
+                        : { ...editForm, eventType: nextType, shotZone: null, shotX: null, shotY: null });
                     }}
                   >
                     <SelectTrigger className="bg-card border-[hsl(var(--border-strong))] text-foreground h-10">
@@ -1001,31 +1047,40 @@ export default function GameCapture() {
                 </div>
 
                 {isFgShot && !isLite && (() => {
-                  const editShotValue = fgShotValue(editForm.eventType);
-                  const eligibleZones = SHOT_ZONES.filter(
-                    (z) => editShotValue == null || ZONE_SHOT_VALUE[z.id] === editShotValue,
-                  );
+                  const here = editForm.shotX != null && editForm.shotY != null ? fromStored(editForm.shotX, editForm.shotY) : null;
+                  const made = editForm.eventType.endsWith('m');
                   return (
                     <div>
-                      <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                        Shot location <span className="font-normal normal-case text-muted-foreground/60">(optional)</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                          Shot location
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {here ? (
+                            <>
+                              {classifyShot(here).label}
+                              <button type="button" className="ml-2 underline underline-offset-2 hover:text-foreground"
+                                onClick={() => setEditForm({ ...editForm, shotZone: null, shotX: null, shotY: null })}>
+                                Clear
+                              </button>
+                            </>
+                          ) : 'None — tap the court to add one'}
+                        </div>
                       </div>
-                      <Select
-                        value={editForm.shotZone ?? 'none'}
-                        onValueChange={(v) => setEditForm({ ...editForm, shotZone: v === 'none' ? null : v as ShotZoneId })}
-                      >
-                        <SelectTrigger className="bg-card border-[hsl(var(--border-strong))] text-foreground h-10">
-                          <SelectValue placeholder="No zone" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-card border-[hsl(var(--border-strong))] text-foreground">
-                          <SelectItem value="none" className="focus:bg-accent focus:text-foreground">No zone</SelectItem>
-                          {eligibleZones.map(z => (
-                            <SelectItem key={z.id} value={z.id} className="focus:bg-accent focus:text-foreground">
-                              {z.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <ShotCourt
+                        className="h-56"
+                        pending={here}
+                        onTap={(point) => {
+                          // Moving a shot across the arc changes what it's worth.
+                          const call = classifyShot(point);
+                          setEditForm({
+                            ...editForm,
+                            eventType: `${call.value}pt${made ? 'm' : 'a'}` as StatEventType,
+                            shotZone: call.zone,
+                            ...toStored(point),
+                          });
+                        }}
+                      />
                     </div>
                   );
                 })()}
@@ -1035,7 +1090,7 @@ export default function GameCapture() {
           <DialogFooter className="gap-2 sm:gap-2 mt-4">
             <Button
               variant="outline"
-              className="bg-red-50 border-red-200 hover:bg-red-100 hover:text-red-700 text-red-600"
+              className="bg-destructive/10 border-destructive/40 text-destructive hover:bg-destructive/20"
               onClick={handleDeletePbp}
               disabled={updateStat.isPending || deleteStat.isPending}
             >
@@ -1051,7 +1106,7 @@ export default function GameCapture() {
               Cancel
             </Button>
             <Button
-              className="bg-amber-500 hover:bg-amber-600 text-white font-bold"
+              className="font-bold"
               onClick={handleSaveEdit}
               disabled={updateStat.isPending || deleteStat.isPending}
             >
@@ -1224,6 +1279,7 @@ function TeamPanel({
   subModeBenchPlayerId,
   onSelectBenchPlayer,
   benchBeside = false,
+  awaitingShooter = false,
 }: {
   team: { id: number; abbreviation: string; colorPrimary: string };
   onCourt: { id: number; jerseyNumber: string | number; lastName: string }[];
@@ -1240,6 +1296,8 @@ function TeamPanel({
   // Wide panels (Lite has no court) put the bench beside the on-court five
   // instead of underneath, so it stays visible without scrolling.
   benchBeside?: boolean;
+  // A shot's result is in and it only needs its shooter: on-court rows glow.
+  awaitingShooter?: boolean;
 }) {
   const subActive = subModeBenchPlayerId != null;
   return (
@@ -1260,6 +1318,8 @@ function TeamPanel({
                   ? 'border-amber-400 bg-amber-50 hover:bg-amber-100 ring-2 ring-amber-200'
                   : isSelected
                   ? 'border-primary bg-primary/10'
+                  : awaitingShooter
+                  ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20'
                   : 'border-transparent bg-secondary/60 hover:bg-accent'
               }`}
             >
