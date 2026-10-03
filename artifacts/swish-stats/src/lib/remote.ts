@@ -104,6 +104,7 @@ async function pullGame(g: Row) {
       periodDurationMins: g.period_duration_mins,
       currentPeriod: g.current_period,
       clockSeconds: g.clock_seconds,
+      homeAttacksLeftFirstHalf: g.home_attacks_left_first_half ?? false,
     };
     let gameId: number;
     if (!local) {

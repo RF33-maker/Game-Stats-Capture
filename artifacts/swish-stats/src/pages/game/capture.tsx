@@ -25,7 +25,7 @@ import {
   PlayByPlayEntry,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
+import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, ArrowLeftRight, BarChart2, ListOrdered, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { BrandMark } from "@/components/brand";
@@ -36,8 +36,12 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ShotCourt, type CourtShot } from "@/components/shot-court";
-import { classifyShot, distanceMetres, fromStored, toStored, zoneLabel, type CourtPoint, type ShotZoneKey } from "@/lib/shot-geometry";
+import { ShotCourt, FullCourt, type CourtShot, type FullCourtShot } from "@/components/shot-court";
+import {
+  attacksLeft, classifyShot, classifyStored, distanceMetres, distanceMetresStored, fullToStored,
+  halfPointFor, halfPointToStored, storedToFull,
+  type CourtPoint, type FullPoint, type ShotZoneKey, type StoredShot,
+} from "@/lib/shot-geometry";
 import { teamTextColor, appSurface } from "@/lib/team-colors";
 
 // Field-goal make/miss event types — the only ones a shot zone applies to.
@@ -50,15 +54,20 @@ function fgShotValue(type: StatEventType): 2 | 3 | null {
   return null;
 }
 
-// A shot the scorer has started in Pro: where it was taken (null if recorded
-// without a location), what the lines say it's worth, and — once chosen —
-// whether it went in. It completes as soon as both a result and a shooter
-// are known, in whichever order the scorer gives them.
+// A shot the scorer has started in Pro. It completes as soon as both a result
+// and a shooter are known, in whichever order the scorer gives them.
 type PendingShot = {
-  point: CourtPoint | null;
+  // Where it was taken: a real floor position (full court), a spot on the
+  // half-court diagram (which basket depends on the shooter's team), or null
+  // when recorded without a location.
+  tap: { kind: 'full'; stored: StoredShot } | { kind: 'half'; point: CourtPoint } | null;
+  // Full court: the team attacking the basket that was tapped (or the team of
+  // a player picked first). Only that team can be the shooter.
+  teamId: number | null;
   value: 2 | 3;
   zone: ShotZoneKey | null;
   label: string;
+  metres: number | null;
   made: boolean | null;
 };
 
@@ -66,7 +75,7 @@ type PendingShot = {
 // The prompt never blocks — any other action simply dismisses it.
 type FollowUp = { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null };
 
-type ShotEvent = { id: number; eventType: string; teamId: number | null; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
+type ShotEvent = { id: number; eventType: string; teamId: number | null; period: number; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
 export default function GameCapture() {
   const [, params] = useRoute("/game/:gameId");
@@ -80,6 +89,8 @@ export default function GameCapture() {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
   const [followUp, setFollowUp] = useState<FollowUp | null>(null);
+  // Full-court Pro tucks the play-by-play into a slide-in panel.
+  const [playsOpen, setPlaysOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
   const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
@@ -316,10 +327,46 @@ export default function GameCapture() {
   };
 
   // ---- Pro shots: tap the court, then Made / Missed, then (or first) the shooter.
+
+  // Which basket a team attacks (they swap at half-time).
+  const homeLeftFirst = (game as unknown as { homeAttacksLeftFirstHalf?: boolean }).homeAttacksLeftFirstHalf ?? false;
+  const teamAttacksLeft = (teamId: number | null, period: number = game.currentPeriod) =>
+    attacksLeft({ isHome: teamId === homeTeam.id, period, periodCount: game.periodCount, homeAttacksLeftFirstHalf: homeLeftFirst });
+  const leftTeam = teamAttacksLeft(homeTeam.id) ? homeTeam : awayTeam;
+  const rightTeam = leftTeam.id === homeTeam.id ? awayTeam : homeTeam;
+  const fullCourt = game.captureMode !== 'simple' && loadSettings().courtView === 'full';
+
+  const handleSwapEnds = async () => {
+    try {
+      await updateGame.mutateAsync({ gameId, data: { homeAttacksLeftFirstHalf: !homeLeftFirst } as never });
+      setPendingShot(null);
+      invalidateData();
+    } catch {
+      toast.error("Couldn't swap ends");
+    }
+  };
+
+  // A full-court tap read for a given team: what it's worth and from where.
+  const readFullTap = (stored: StoredShot, teamId: number) => {
+    const left = teamAttacksLeft(teamId);
+    const call = classifyStored(stored, left);
+    return { value: call.value, zone: call.zone, label: call.label, metres: distanceMetresStored(stored, left) };
+  };
+
   const recordShot = (shot: PendingShot, made: boolean, who: { teamId: number; playerId: number }) => {
-    const type = `${shot.value}pt${made ? 'm' : 'a'}` as StatEventType;
-    const location = shot.point ? { ...toStored(shot.point), shotZone: shot.zone } : {};
-    void handleStat(type, made ? shot.value : 0, { teamId: who.teamId, playerId: who.playerId, ...location });
+    const left = teamAttacksLeft(who.teamId);
+    let value = shot.value;
+    let location: Record<string, unknown> = {};
+    if (shot.tap?.kind === 'full') {
+      const call = classifyStored(shot.tap.stored, left);
+      value = call.value;
+      location = { ...shot.tap.stored, shotZone: call.zone };
+    } else if (shot.tap?.kind === 'half') {
+      // The diagram shows one basket; put the shot at the end this team attacks.
+      location = { ...halfPointToStored(shot.tap.point, left), shotZone: classifyShot(shot.tap.point).zone };
+    }
+    const type = `${value}pt${made ? 'm' : 'a'}` as StatEventType;
+    void handleStat(type, made ? value : 0, { teamId: who.teamId, playerId: who.playerId, ...location });
   };
 
   // A rebound nobody secured (out of bounds, a foul on the rebound, the ball
@@ -330,16 +377,29 @@ export default function GameCapture() {
     void handleStat((teamId === shootingTeamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId: null });
   };
 
+  const handleFullCourtTap = (point: FullPoint) => {
+    setFollowUp(null);
+    const stored = fullToStored(point);
+    // The basket tapped says which team shot — unless a player is already
+    // picked, in which case it's theirs (a backcourt heave if it's the far end).
+    const teamId = selectedTeamId ?? (stored.shotX <= 50 ? leftTeam.id : rightTeam.id);
+    setPendingShot(prev => ({ tap: { kind: 'full', stored }, teamId, ...readFullTap(stored, teamId), made: prev?.made ?? null }));
+  };
+
   const handleCourtTap = (point: CourtPoint) => {
     setFollowUp(null);
     const call = classifyShot(point);
     // Re-tapping just moves the spot; keep a result that was already chosen.
-    setPendingShot(prev => ({ point, value: call.value, zone: call.zone, label: call.label, made: prev?.made ?? null }));
+    setPendingShot(prev => ({
+      tap: { kind: 'half', point }, teamId: null,
+      value: call.value, zone: call.zone, label: call.label, metres: distanceMetres(point),
+      made: prev?.made ?? null,
+    }));
   };
 
   const handleShotWithoutLocation = (value: 2 | 3) => {
     setFollowUp(null);
-    setPendingShot({ point: null, value, zone: null, label: 'No location', made: null });
+    setPendingShot({ tap: null, teamId: null, value, zone: null, label: 'No location', metres: null, made: null });
   };
 
   const handleShotResult = (made: boolean) => {
@@ -355,8 +415,18 @@ export default function GameCapture() {
     if (subMode && subMode.teamId === teamId) { handleSubstitute(teamId, playerId); return; }
     if (pendingShot && pendingShot.made != null) {
       // The shot was only waiting for its shooter.
+      if (pendingShot.teamId != null && pendingShot.teamId !== teamId) {
+        const owner = pendingShot.teamId === homeTeam.id ? homeTeam : awayTeam;
+        toast.error(`That's ${owner.abbreviation}'s basket — tap a ${owner.abbreviation} player, or swap ends if they're the wrong way round.`);
+        return;
+      }
       recordShot(pendingShot, pendingShot.made, { teamId, playerId });
       return;
+    }
+    if (pendingShot?.tap?.kind === 'full' && pendingShot.teamId !== teamId) {
+      // Shooter picked after the tap and they attack the other basket: it's
+      // their shot, from the backcourt.
+      setPendingShot({ ...pendingShot, teamId, ...readFullTap(pendingShot.tap.stored, teamId) });
     }
     if (followUp && !pendingShot) {
       if (followUp.kind === 'rebound') {
@@ -659,18 +729,22 @@ export default function GameCapture() {
   const statButtons = isLite ? simpleStats : complexStats.filter(b => !FG_SHOT_TYPES.has(b.type as StatEventType));
 
   // Shots already recorded, for the court. The newest few are drawn brighter.
-  const courtShots: CourtShot[] = ((statEvents ?? []) as unknown as ShotEvent[])
+  const locatedShots = ((statEvents ?? []) as unknown as ShotEvent[])
     .filter(e => FG_SHOT_TYPES.has(e.eventType as StatEventType) && e.shotX != null && e.shotY != null)
     .map((e, i) => {
       const team = e.teamId === homeTeam.id ? homeTeam : awayTeam;
       return {
         id: e.id,
-        ...fromStored(e.shotX!, e.shotY!),
+        stored: { shotX: e.shotX!, shotY: e.shotY! },
+        left: teamAttacksLeft(team.id, e.period),
         made: e.eventType.endsWith('m'),
         color: teamTextColor(team.colorPrimary, appSurface()),
         recent: i < 6, // statEvents is newest-first
       };
     });
+  const fullShots: FullCourtShot[] = locatedShots.map(s => ({ id: s.id, ...storedToFull(s.stored.shotX, s.stored.shotY), made: s.made, color: s.color, recent: s.recent }));
+  const courtShots: CourtShot[] = locatedShots.map(s => ({ id: s.id, ...halfPointFor(s.stored, s.left), made: s.made, color: s.color, recent: s.recent }));
+  const endOf = (t: typeof homeTeam) => ({ label: t.abbreviation, color: teamTextColor(t.colorPrimary, appSurface()) });
 
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
@@ -756,8 +830,41 @@ export default function GameCapture() {
         {/* Play Capture Area */}
         <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
           
+          {/* Full-court Pro: the latest plays in a slim strip; the full list slides in */}
+          {fullCourt && (
+            <div className="h-10 shrink-0 flex items-center gap-2 rounded-xl border border-border bg-card pl-1.5 pr-1.5" data-testid="plays-strip">
+              <Button size="sm" variant="ghost" className="h-7 px-2 gap-1.5" onClick={handleUndo} disabled={!statEvents?.length}>
+                <Undo2 className="w-4 h-4" /> Undo
+              </Button>
+              <button type="button" className="flex-1 min-w-0 flex items-center gap-3 text-left text-sm" onClick={() => setPlaysOpen(true)} title="Open the play-by-play">
+                {pbp?.[0] ? (
+                  <>
+                    <span className="truncate text-foreground">{pbp[0].eventText}</span>
+                    {pbp[1] && <span className="hidden lg:block truncate text-muted-foreground/70 text-xs">{pbp[1].eventText}</span>}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">No plays yet</span>
+                )}
+              </button>
+              {/* Game flow lives up here in full-court Pro, so the court gets the height */}
+              <div className="flex items-center gap-1 shrink-0">
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={() => handleStat('jump_ball' as StatEventType)}>JUMP BALL</Button>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleEndPeriod}>END PERIOD</Button>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleStartPeriod}>START PERIOD</Button>
+              </div>
+              <Button size="sm" variant="outline" className="h-7 px-2.5 gap-1.5" onClick={() => setPlaysOpen(true)} data-testid="open-plays">
+                <ListOrdered className="w-4 h-4" /> Plays
+                {(pbp?.length ?? 0) > 0 && <span className="sa-num text-muted-foreground">{pbp!.length}</span>}
+              </Button>
+            </div>
+          )}
+
           {/* Team Panels + Court */}
-          <div className={`flex-1 grid grid-rows-1 gap-3 xl:gap-4 min-h-0 ${isLite ? 'grid-cols-2' : 'grid-cols-[minmax(150px,0.75fr)_minmax(0,1.9fr)_minmax(150px,0.75fr)] xl:grid-cols-[minmax(190px,0.7fr)_minmax(0,1.8fr)_minmax(190px,0.7fr)]'}`}>
+          <div className={`flex-1 grid grid-rows-1 gap-3 xl:gap-4 min-h-0 ${
+            isLite ? 'grid-cols-2'
+            : fullCourt ? 'grid-cols-[minmax(150px,168px)_minmax(0,1fr)_minmax(150px,168px)] xl:grid-cols-[200px_minmax(0,1fr)_200px]'
+            : 'grid-cols-[minmax(150px,0.75fr)_minmax(0,1.9fr)_minmax(150px,0.75fr)] xl:grid-cols-[minmax(190px,0.7fr)_minmax(0,1.8fr)_minmax(190px,0.7fr)]'
+          }`}>
             {[awayTeam].map(team => (
               <TeamPanel
                 key={team.id}
@@ -767,7 +874,7 @@ export default function GameCapture() {
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
                 awaitingShooter={
-                  (!isLite && pendingShot?.made != null)
+                  (!isLite && pendingShot?.made != null && (pendingShot.teamId == null || pendingShot.teamId === team.id))
                   || (!pendingShot && followUp?.kind === 'rebound')
                   || (!pendingShot && followUp?.kind === 'assist' && followUp.teamId === team.id)
                 }
@@ -783,27 +890,46 @@ export default function GameCapture() {
             {/* Shot court (Pro only) — tap where the shot was taken */}
             {!isLite && (
             <div className="flex flex-col bg-card rounded-xl border border-border shadow-sm p-3 min-h-0" data-testid="shot-panel">
-              <div className="flex items-center justify-between gap-2 mb-2 shrink-0 min-h-[20px]">
+              <div className="flex items-center justify-between gap-2 mb-2 shrink-0 min-h-[24px]">
                 {pendingShot ? (
                   <div className="flex items-baseline gap-2 min-w-0">
                     <span className="sa-display font-bold text-xl leading-none text-primary">{pendingShot.value}PT</span>
-                    <span className="text-xs font-semibold text-foreground truncate">{pendingShot.label}</span>
-                    {pendingShot.point && (
-                      <span className="text-[11px] text-muted-foreground tabular-nums">{distanceMetres(pendingShot.point)}m</span>
+                    <span className="text-xs font-semibold text-foreground truncate">
+                      {pendingShot.teamId != null && `${pendingShot.teamId === homeTeam.id ? homeTeam.abbreviation : awayTeam.abbreviation} · `}{pendingShot.label}
+                    </span>
+                    {pendingShot.metres != null && (
+                      <span className="text-[11px] text-muted-foreground tabular-nums">{pendingShot.metres}m</span>
                     )}
                   </div>
                 ) : (
                   <span className="sa-eyebrow-muted whitespace-nowrap">Tap the court to record a shot</span>
                 )}
+                {fullCourt && (
+                  <Button variant="ghost" size="sm" className="h-6 px-2 gap-1 text-[11px] text-muted-foreground shrink-0" onClick={handleSwapEnds}
+                    disabled={updateGame.isPending} title="The teams are shown attacking the wrong baskets" data-testid="swap-ends">
+                    <ArrowLeftRight className="w-3.5 h-3.5" /> Swap ends
+                  </Button>
+                )}
               </div>
 
-              <ShotCourt
-                shots={courtShots}
-                pending={pendingShot?.point ?? null}
-                accentColor={shootingTeam ? teamTextColor(shootingTeam.colorPrimary, appSurface()) : '#f97316'}
-                onTap={handleCourtTap}
-                className="flex-1"
-              />
+              {fullCourt ? (
+                <FullCourt
+                  shots={fullShots}
+                  pending={pendingShot?.tap?.kind === 'full' ? storedToFull(pendingShot.tap.stored.shotX, pendingShot.tap.stored.shotY) : null}
+                  left={endOf(leftTeam)}
+                  right={endOf(rightTeam)}
+                  onTap={handleFullCourtTap}
+                  className="flex-1"
+                />
+              ) : (
+                <ShotCourt
+                  shots={courtShots}
+                  pending={pendingShot?.tap?.kind === 'half' ? pendingShot.tap.point : null}
+                  accentColor={shootingTeam ? teamTextColor(shootingTeam.colorPrimary, appSurface()) : '#f97316'}
+                  onTap={handleCourtTap}
+                  className="flex-1"
+                />
+              )}
 
               {/* Made / Missed — appears once a spot (or a no-location shot) is chosen */}
               <div className="mt-2 shrink-0 h-14">
@@ -825,7 +951,8 @@ export default function GameCapture() {
                   ) : (
                     <div className="h-full flex items-center justify-between gap-2 rounded-[10px] border border-amber-500/40 bg-amber-500/10 px-3" data-testid="shot-needs-shooter">
                       <span className="text-sm font-semibold text-amber-500">
-                        {pendingShot.value}PT {pendingShot.made ? 'made' : 'missed'} — now tap the shooter
+                        {pendingShot.value}PT {pendingShot.made ? 'made' : 'missed'} — now tap the{' '}
+                        {pendingShot.teamId != null ? `${pendingShot.teamId === homeTeam.id ? homeTeam.abbreviation : awayTeam.abbreviation} shooter` : 'shooter'}
                       </span>
                       <Button variant="ghost" size="sm" onClick={() => setPendingShot(null)}>Cancel</Button>
                     </div>
@@ -835,7 +962,9 @@ export default function GameCapture() {
                     <span>
                       {selectedPlayerId
                         ? "Tap where the shot was taken — the app works out 2 or 3."
-                        : "Pick the shooter first or after — either order works."}
+                        : fullCourt
+                          ? "Tap the spot: the basket tells the app which team shot."
+                          : "Pick the shooter first or after — either order works."}
                     </span>
                     <span className="flex items-center gap-1.5 text-[11px]">
                       Didn't see where?
@@ -857,7 +986,7 @@ export default function GameCapture() {
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
                 awaitingShooter={
-                  (!isLite && pendingShot?.made != null)
+                  (!isLite && pendingShot?.made != null && (pendingShot.teamId == null || pendingShot.teamId === team.id))
                   || (!pendingShot && followUp?.kind === 'rebound')
                   || (!pendingShot && followUp?.kind === 'assist' && followUp.teamId === team.id)
                 }
@@ -875,7 +1004,7 @@ export default function GameCapture() {
           {isLite && followUpBar && <div className="h-12 shrink-0">{followUpBar}</div>}
 
           {/* Stat Buttons Matrix */}
-          <div className={`${isLite ? 'h-72 xl:h-80' : 'h-52 xl:h-56'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
+          <div className={`${isLite ? 'h-72 xl:h-80' : fullCourt ? 'h-36 xl:h-40' : 'h-52 xl:h-56'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
             <div className={`grid gap-2 flex-1 ${isLite ? 'grid-cols-6 xl:gap-3' : 'grid-cols-6'}`}>
               {statButtons.map(btn => {
                 const isDisabled = !selectedPlayerId;
@@ -894,7 +1023,7 @@ export default function GameCapture() {
                 );
               })}
             </div>
-            <div className="flex gap-2 h-12">
+            {!fullCourt && <div className="flex gap-2 h-12">
               <Button 
                 variant="outline" 
                 className="flex-1 bg-card hover:bg-accent border-[hsl(var(--border-strong))] text-foreground font-bold"
@@ -916,16 +1045,30 @@ export default function GameCapture() {
               >
                 START PERIOD
               </Button>
-            </div>
+            </div>}
           </div>
 
         </div>
 
-        {/* Right Rail - PBP */}
-        <div className="w-64 xl:w-80 bg-card border-l border-border flex flex-col shrink-0">
+        {/* Play-by-play: a fixed column, or a slide-in panel when the full court needs the width */}
+        {fullCourt && playsOpen && (
+          <button type="button" aria-label="Close the play-by-play" className="fixed inset-0 z-30 bg-black/50" onClick={() => setPlaysOpen(false)} />
+        )}
+        <div
+          className={fullCourt
+            ? `fixed inset-y-0 right-0 z-40 w-[22rem] max-w-[92vw] bg-card border-l border-border flex flex-col shadow-2xl transition-transform duration-200 ${playsOpen ? 'translate-x-0' : 'translate-x-full'}`
+            : "w-64 xl:w-80 bg-card border-l border-border flex flex-col shrink-0"}
+          aria-hidden={fullCourt && !playsOpen}
+          data-testid="plays-panel"
+        >
           <div className="p-4 border-b border-border flex justify-between items-center bg-secondary/60">
             <h2 className="font-bold text-muted-foreground text-sm tracking-wide">PLAY BY PLAY</h2>
             <div className="flex gap-2">
+              {fullCourt && (
+                <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setPlaysOpen(false)} title="Close">
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
               <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={handleUndo}>
                 <Undo2 className="w-4 h-4 mr-2" /> Undo
               </Button>
@@ -1057,7 +1200,7 @@ export default function GameCapture() {
                       // A location on the wrong side of the arc for the new
                       // type can't be right any more — drop it.
                       const keepLocation = nextShotValue != null && editForm.shotX != null && editForm.shotY != null
-                        && classifyShot(fromStored(editForm.shotX, editForm.shotY)).value === nextShotValue;
+                        && classifyStored({ shotX: editForm.shotX, shotY: editForm.shotY }, teamAttacksLeft(editForm.teamId, editPbp.period)).value === nextShotValue;
                       setEditForm(keepLocation
                         ? { ...editForm, eventType: nextType }
                         : { ...editForm, eventType: nextType, shotZone: null, shotX: null, shotY: null });
@@ -1124,8 +1267,17 @@ export default function GameCapture() {
                 </div>
 
                 {isFgShot && !isLite && (() => {
-                  const here = editForm.shotX != null && editForm.shotY != null ? fromStored(editForm.shotX, editForm.shotY) : null;
+                  // The shot belongs to this team, in the period it was taken.
+                  const left = teamAttacksLeft(editForm.teamId, editPbp.period);
+                  const stored = editForm.shotX != null && editForm.shotY != null ? { shotX: editForm.shotX, shotY: editForm.shotY } : null;
                   const made = editForm.eventType.endsWith('m');
+                  // Moving a shot across the arc changes what it's worth.
+                  const moveTo = (next: StoredShot) => {
+                    const call = classifyStored(next, left);
+                    setEditForm({ ...editForm, eventType: `${call.value}pt${made ? 'm' : 'a'}` as StatEventType, shotZone: call.zone, ...next });
+                  };
+                  const editLeft = left ? (editForm.teamId === homeTeam.id ? homeTeam : awayTeam) : (editForm.teamId === homeTeam.id ? awayTeam : homeTeam);
+                  const editRight = editLeft.id === homeTeam.id ? awayTeam : homeTeam;
                   return (
                     <div>
                       <div className="flex items-center justify-between mb-2">
@@ -1133,9 +1285,9 @@ export default function GameCapture() {
                           Shot location
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {here ? (
+                          {stored ? (
                             <>
-                              {classifyShot(here).label}
+                              {classifyStored(stored, left).label}
                               <button type="button" className="ml-2 underline underline-offset-2 hover:text-foreground"
                                 onClick={() => setEditForm({ ...editForm, shotZone: null, shotX: null, shotY: null })}>
                                 Clear
@@ -1144,20 +1296,21 @@ export default function GameCapture() {
                           ) : 'None — tap the court to add one'}
                         </div>
                       </div>
-                      <ShotCourt
-                        className="h-56"
-                        pending={here}
-                        onTap={(point) => {
-                          // Moving a shot across the arc changes what it's worth.
-                          const call = classifyShot(point);
-                          setEditForm({
-                            ...editForm,
-                            eventType: `${call.value}pt${made ? 'm' : 'a'}` as StatEventType,
-                            shotZone: call.zone,
-                            ...toStored(point),
-                          });
-                        }}
-                      />
+                      {fullCourt ? (
+                        <FullCourt
+                          className="h-52"
+                          left={endOf(editLeft)}
+                          right={endOf(editRight)}
+                          pending={stored ? storedToFull(stored.shotX, stored.shotY) : null}
+                          onTap={(point) => moveTo(fullToStored(point))}
+                        />
+                      ) : (
+                        <ShotCourt
+                          className="h-56"
+                          pending={stored ? halfPointFor(stored, left) : null}
+                          onTap={(point) => moveTo(halfPointToStored(point, left))}
+                        />
+                      )}
                     </div>
                   );
                 })()}

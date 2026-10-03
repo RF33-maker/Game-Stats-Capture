@@ -93,3 +93,86 @@ export function distanceMetres({ sx, sy }: CourtPoint): number {
   const units = Math.sqrt((sx - CENTER_X) ** 2 + (sy - BASKET_CY) ** 2);
   return Math.round((units / COURT_W) * 15 * 10) / 10;
 }
+
+// ---------------------------------------------------------------------------
+// Full court
+//
+// Stored shot coordinates are the real position on the whole floor, as the
+// scorer sees it: x 0-100 left to right along the length, y 0-100 top to
+// bottom across the width. That is the site's (FIBA LiveStats) space; the
+// site folds the far half onto the near one when it draws a chart.
+//
+// Which basket a team attacks comes from the game's "ends" setting; teams
+// swap at half-time and overtime keeps the second-half direction.
+// ---------------------------------------------------------------------------
+
+export const FULL_W = COURT_H * 2; // 940: two half courts end to end
+export const FULL_H = COURT_W;     // 500
+
+export type StoredShot = { shotX: number; shotY: number };
+export type FullPoint = { fx: number; fy: number };
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+export function fullToStored({ fx, fy }: FullPoint): StoredShot {
+  return {
+    shotX: round1(Math.max(0, Math.min(100, (fx / FULL_W) * 100))),
+    shotY: round1(Math.max(0, Math.min(100, (fy / FULL_H) * 100))),
+  };
+}
+
+export function storedToFull(shotX: number, shotY: number): FullPoint {
+  return { fx: (shotX / 100) * FULL_W, fy: (shotY / 100) * FULL_H };
+}
+
+/** Does this team attack the left basket in this period? */
+export function attacksLeft(args: {
+  isHome: boolean;
+  period: number;
+  periodCount: number;
+  homeAttacksLeftFirstHalf: boolean;
+}): boolean {
+  const firstHalf = args.period <= Math.ceil(args.periodCount / 2);
+  const homeLeft = firstHalf ? args.homeAttacksLeftFirstHalf : !args.homeAttacksLeftFirstHalf;
+  return args.isHome ? homeLeft : !homeLeft;
+}
+
+/** Distance along the court from the basket being attacked, 0-100. */
+function depthFromBasket(shotX: number, teamAttacksLeft: boolean): number {
+  return teamAttacksLeft ? shotX : 100 - shotX;
+}
+
+/**
+ * What a shot is worth for a team attacking the given end. Anything from
+ * beyond half-way is a backcourt heave: always a three.
+ */
+export function classifyStored(shot: StoredShot, teamAttacksLeft: boolean): ShotCall & { backcourt: boolean } {
+  const depth = depthFromBasket(shot.shotX, teamAttacksLeft);
+  if (depth > 50) {
+    return { value: 3, zone: shot.shotY < 50 ? "lw3" : "rw3", label: "Backcourt", backcourt: true };
+  }
+  return { ...classifyShot(halfPointFor(shot, teamAttacksLeft)), backcourt: false };
+}
+
+/** The same shot on the half-court diagram (basket at the top). */
+export function halfPointFor(shot: StoredShot, teamAttacksLeft: boolean): CourtPoint {
+  const depth = Math.min(50, depthFromBasket(shot.shotX, teamAttacksLeft));
+  return { sx: (shot.shotY / 100) * COURT_W, sy: (depth / 50) * COURT_H };
+}
+
+/** A tap on the half-court diagram, as a real floor position for that team. */
+export function halfPointToStored(p: CourtPoint, teamAttacksLeft: boolean): StoredShot {
+  const depth = Math.max(0, Math.min(50, (p.sy / COURT_H) * 50));
+  return {
+    shotX: round1(teamAttacksLeft ? depth : 100 - depth),
+    shotY: round1(Math.max(0, Math.min(100, (p.sx / COURT_W) * 100))),
+  };
+}
+
+/** Metres from the attacked basket (the floor is 28m x 15m). */
+export function distanceMetresStored(shot: StoredShot, teamAttacksLeft: boolean): number {
+  const basketX = teamAttacksLeft ? (BASKET_CY / COURT_H) * 50 : 100 - (BASKET_CY / COURT_H) * 50;
+  const dxM = ((shot.shotX - basketX) / 100) * 28;
+  const dyM = ((shot.shotY - 50) / 100) * 15;
+  return Math.round(Math.sqrt(dxM * dxM + dyM * dyM) * 10) / 10;
+}

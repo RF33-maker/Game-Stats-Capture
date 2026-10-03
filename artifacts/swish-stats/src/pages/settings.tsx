@@ -151,6 +151,34 @@ export default function Settings() {
                   onCheckedChange={(v) => update("confirmBeforeFinalize", v)}
                 />
               </div>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium">Shot court (Pro)</div>
+                  <p className="text-xs text-muted-foreground">
+                    Full court is drawn the way you see the floor, and the basket you tap tells the app
+                    which team shot. Half court is one larger basket, for small screens.
+                  </p>
+                </div>
+                <div className="inline-flex p-[3px] gap-0.5 rounded-[10px] bg-secondary border border-border" role="radiogroup" aria-label="Shot court">
+                  {(["full", "half"] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      role="radio"
+                      aria-checked={settings.courtView === v}
+                      onClick={() => update("courtView", v)}
+                      className={`px-3 h-8 rounded-[7px] text-sm font-medium transition-colors ${
+                        settings.courtView === v
+                          ? "bg-card text-foreground shadow-[0_1px_2px_rgba(0,0,0,.3),0_0_0_1px_hsl(var(--border))]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid={`court-${v}`}
+                    >
+                      {v === "full" ? "Full court" : "Half court"}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="followUpPrompts" className="text-sm font-medium">

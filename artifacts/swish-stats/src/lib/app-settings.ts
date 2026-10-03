@@ -18,6 +18,9 @@ export interface AppSettings {
   confirmBeforeFinalize: boolean;
   // After a made shot ask who assisted; after a miss ask who rebounded.
   followUpPrompts: boolean;
+  // Pro shot court: "full" is drawn as the scorer sees the floor; "half" is
+  // a single bigger half court for small screens.
+  courtView: "full" | "half";
 }
 
 // FIBA defaults: 4 periods x 10 minutes, 5-minute overtimes.
@@ -28,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   captureMode: "complex",
   confirmBeforeFinalize: true,
   followUpPrompts: true,
+  courtView: "full",
 };
 
 const STORAGE_KEY = "swish-stats:settings";

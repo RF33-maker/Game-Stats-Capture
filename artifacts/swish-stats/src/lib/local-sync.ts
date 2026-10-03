@@ -115,6 +115,7 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
         period_duration_mins: g.periodDurationMins,
         current_period: Math.min(g.currentPeriod, 20),
         clock_seconds: Math.max(0, Math.min(g.clockSeconds, 3600)),
+        home_attacks_left_first_half: g.homeAttacksLeftFirstHalf ?? false,
       };
     }
     case "game_teams": {

@@ -49,6 +49,9 @@ export type LSGame = {
   currentPeriod: number;
   clockSeconds: number;
   possessionTeamId: number | null;
+  // True = the home team attacks the left basket in the first half (teams
+  // swap at half-time). Drives which team a full-court tap belongs to.
+  homeAttacksLeftFirstHalf?: boolean;
   createdAt: string;
   updatedAt: string;
 };
