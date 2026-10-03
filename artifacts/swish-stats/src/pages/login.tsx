@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogIn, Loader2, BarChart3, Users, Zap } from "lucide-react";
 import { AppMenu } from "@/components/app-menu";
+import { Brand } from "@/components/brand";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 
 const FEATURES = [
@@ -21,8 +22,8 @@ const FEATURES = [
   },
   {
     icon: Users,
-    title: "Team management",
-    desc: "Organize leagues, rosters, and scorers in one place",
+    title: "Linked to Swish profiles",
+    desc: "Rosters use the players and teams already on Swish Assistant",
   },
 ];
 
@@ -48,16 +49,10 @@ export default function Login() {
   if (LOCAL_MODE_ENABLED) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground p-8">
-        <div className="max-w-md w-full text-center space-y-6">
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-primary">
-              SWISH STATS
-            </h1>
-            <p className="text-muted-foreground mt-2 text-lg">
-              Track every play. Own every game.
-            </p>
-          </div>
-          <div className="rounded-xl border bg-amber-500/10 border-amber-500/30 px-6 py-4 text-sm text-amber-500 font-medium">
+        <div className="max-w-md w-full text-center space-y-6 sa-rise">
+          <div className="flex justify-center"><Brand size="lg" /></div>
+          <p className="text-muted-foreground text-lg">Track every play. Own every game.</p>
+          <div className="sa-card border-amber-500/30 px-6 py-4 text-sm text-amber-400 font-medium">
             Running in local mode — all data stays in this browser.
           </div>
           <Button size="lg" className="w-full" onClick={() => setLocation("/leagues")}>
@@ -77,73 +72,52 @@ export default function Login() {
   }
 
   return (
-    <div className="relative min-h-[100dvh] flex flex-col md:flex-row">
-      <div className="absolute top-4 right-4 z-20">
-        <AppMenu triggerClassName="text-foreground/70 hover:text-foreground bg-background/70 backdrop-blur-sm border border-border" />
-      </div>
-      <div className="relative flex flex-col justify-between bg-primary text-primary-foreground p-10 md:w-[52%] md:min-h-[100dvh]">
-        {/* Background texture */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(45deg,currentColor 0,currentColor 1px,transparent 0,transparent 50%)",
-            backgroundSize: "20px 20px",
-          }}
-        />
+    <div className="relative min-h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
+      <div className="sa-topline" />
+      {/* Soft orange glow behind the brand side, as on the site's homepage */}
+      <div aria-hidden className="pointer-events-none absolute -top-40 -left-40 w-[640px] h-[640px] rounded-full opacity-[0.16] blur-3xl"
+        style={{ background: "radial-gradient(circle, hsl(var(--primary)) 0%, transparent 65%)" }} />
 
-        {/* Logo */}
-        <div className="relative">
-          <div className="inline-flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-primary-foreground/20 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <span className="text-2xl font-black tracking-tight">SWISH STATS</span>
-          </div>
-        </div>
+      <header className="relative px-6 h-16 flex items-center justify-between">
+        <Brand />
+        <AppMenu />
+      </header>
 
-        <div className="relative py-12 md:py-0">
-          <h2 className="text-4xl md:text-5xl font-black leading-tight tracking-tight">
+      <div className="relative flex-1 grid md:grid-cols-[1.1fr_1fr] gap-10 md:gap-16 items-center max-w-5xl w-full mx-auto px-6 py-10">
+        <div className="sa-rise">
+          <p className="sa-eyebrow">Live stat capture</p>
+          <h1 className="mt-2 text-5xl md:text-6xl font-bold leading-[0.95]">
             Track every play.
             <br />
-            Own every game.
-          </h2>
-          <p className="mt-4 text-primary-foreground/70 text-lg max-w-sm">
-            The live stats platform for basketball leagues of any size — from
-            pickup runs to organized seasons.
+            <span className="text-primary">Own every game.</span>
+          </h1>
+          <p className="mt-4 text-muted-foreground text-lg max-w-md">
+            Score games courtside and watch them appear live on Swish Assistant —
+            box scores, play-by-play and shot charts, even when the gym wifi drops.
           </p>
 
-          <ul className="mt-10 space-y-5">
+          <ul className="mt-8 space-y-4">
             {FEATURES.map(({ icon: Icon, title, desc }) => (
-              <li key={title} className="flex items-start gap-4">
-                <div className="w-9 h-9 rounded-lg bg-primary-foreground/15 flex items-center justify-center shrink-0 mt-0.5">
-                  <Icon className="w-4 h-4" />
-                </div>
+              <li key={title} className="flex items-start gap-3.5">
+                <span className="sa-icon-tile"><Icon className="w-5 h-5" /></span>
                 <div>
                   <div className="font-semibold">{title}</div>
-                  <div className="text-primary-foreground/60 text-sm">{desc}</div>
+                  <div className="text-muted-foreground text-sm">{desc}</div>
                 </div>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="relative text-primary-foreground/40 text-xs">
-          &copy; {new Date().getFullYear()} Swish Stats
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col items-center justify-center p-10 bg-background text-foreground">
-        <div className="w-full max-w-sm space-y-8">
-          <div>
-            <h3 className="text-2xl font-bold tracking-tight">Welcome back</h3>
-            <p className="text-muted-foreground mt-1">
-              Sign in with your Swish Assistant account.
-            </p>
-          </div>
+        <div className="sa-card p-6 md:p-8 sa-rise w-full max-w-md md:justify-self-end" style={{ animationDelay: "60ms" }}>
+          <p className="sa-eyebrow">Your account</p>
+          <h2 className="mt-1.5 text-4xl font-bold">Sign in</h2>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Use your Swish Assistant account — the same login as swishassistant.com.
+          </p>
 
           <form
-            className="space-y-4"
+            className="space-y-4 mt-6"
             onSubmit={async (e) => {
               e.preventDefault();
               setError(null);
@@ -184,12 +158,18 @@ export default function Login() {
               Forgot password?
             </button>
           </form>
-          <p className="text-xs text-muted-foreground">
-            No account yet? Sign up at swishassistant.com — the same login works here.
+          <p className="mt-5 text-xs text-muted-foreground">
+            No account yet?{" "}
+            <a className="font-medium text-primary hover:underline underline-offset-2" href="https://www.swishassistant.com/auth" target="_blank" rel="noreferrer">
+              Sign up at swishassistant.com
+            </a>
           </p>
-
         </div>
       </div>
+
+      <footer className="relative px-6 py-5 text-xs text-muted-foreground">
+        &copy; {new Date().getFullYear()} Swish Assistant
+      </footer>
     </div>
   );
 }

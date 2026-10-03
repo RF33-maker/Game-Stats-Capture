@@ -265,7 +265,7 @@ export default function LeagueDetail() {
       <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
         <AppHeader />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-sm w-full text-center space-y-4 border rounded-xl bg-card p-8">
+          <div className="max-w-sm w-full text-center space-y-4 sa-card p-8">
             <h1 className="text-xl font-bold">League unavailable</h1>
             <p className="text-sm text-muted-foreground">
               This league has been deleted or you no longer have access to it.
@@ -294,8 +294,9 @@ export default function LeagueDetail() {
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-3xl font-bold tracking-tight">
+              <p className="sa-eyebrow">League</p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-4xl md:text-5xl font-bold">
                   {league.name}
                 </h1>
                 {roleBadge(league.viewerRole)}
@@ -356,7 +357,7 @@ export default function LeagueDetail() {
 
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-2xl font-bold">
                 Games
                 {(games?.length ?? 0) > 0 && (
                   <span className="text-muted-foreground font-normal text-base ml-2">
@@ -367,7 +368,7 @@ export default function LeagueDetail() {
             </div>
 
             {!games || games.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-4 text-center border border-dashed rounded-xl bg-card/40 text-muted-foreground">
+              <div className="flex flex-col items-center justify-center py-16 gap-4 text-center sa-card text-muted-foreground">
                 <Play className="w-8 h-8 opacity-40" />
                 <div>
                   <p className="font-medium text-foreground">No games yet</p>
@@ -561,14 +562,14 @@ export default function LeagueDetail() {
 
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
                 <Activity className="w-4 h-4 text-muted-foreground" />
                 Recent activity
               </h2>
             </div>
 
             {!activity || activity.length === 0 ? (
-              <div className="text-center py-10 border border-dashed rounded-xl bg-card/40 text-muted-foreground text-sm">
+              <div className="text-center py-10 sa-card text-muted-foreground text-sm">
                 No activity yet. Finalize a game or add members to see updates here.
               </div>
             ) : (
@@ -659,7 +660,7 @@ export default function LeagueDetail() {
 
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-2xl font-bold">
                 Members
                 {(members?.length ?? 0) > 0 && (
                   <span className="text-muted-foreground font-normal text-base ml-2">
@@ -680,7 +681,7 @@ export default function LeagueDetail() {
             </div>
 
             {!members || members.length === 0 ? (
-              <div className="text-center py-10 border border-dashed rounded-xl bg-card/40 text-muted-foreground text-sm">
+              <div className="text-center py-10 sa-card text-muted-foreground text-sm">
                 No members found.
               </div>
             ) : (

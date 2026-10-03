@@ -29,18 +29,18 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
   const showFailed = status.remoteEnabled && status.failed > 0;
   const notSignedIn = status.remoteEnabled && !status.signedIn;
 
-  // Pick a "primary" pill color based on current sync state
+  // A quiet pill on the page surface; the state is carried by the icon colour.
   const stateClass = showFailed
-    ? "bg-red-600/95 text-white border-red-400/50"
+    ? "text-rose-400 border-rose-500/40"
     : !status.online
-      ? "bg-zinc-700/95 text-zinc-100 border-zinc-500/50"
+      ? "text-zinc-300 border-[hsl(var(--border-strong))]"
       : status.syncing
-        ? "bg-sky-500/95 text-white border-sky-400/50"
+        ? "text-sky-400 border-sky-500/30"
         : showPending || notSignedIn
-          ? "bg-amber-500/95 text-amber-950 border-amber-400/50"
+          ? "text-amber-400 border-amber-500/30"
           : status.remoteEnabled
-            ? "bg-emerald-500/95 text-emerald-950 border-emerald-400/50"
-            : "bg-amber-500/95 text-amber-950 border-amber-400/50";
+            ? "text-emerald-400 border-[hsl(var(--border-strong))]"
+            : "text-amber-400 border-amber-500/30";
 
   const StateIcon = showFailed
     ? AlertTriangle
@@ -103,14 +103,14 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
 
   return (
     <div
-      className={`${inline ? "shrink-0" : "fixed bottom-4 left-4 z-50"} flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm border ${stateClass}`}
+      className={`${inline ? "shrink-0" : "fixed bottom-4 left-4 z-50 shadow-[var(--shadow-card-lg)]"} flex items-center gap-2 text-[11px] font-semibold tracking-wide px-3 py-1.5 rounded-full border bg-card ${stateClass}`}
       data-testid="local-mode-badge"
     >
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="flex items-center gap-1.5" data-testid="sync-status">
             <StateIcon className={`w-3.5 h-3.5 ${status.syncing ? "animate-spin" : ""}`} />
-            <span>{stateLabel}</span>
+            <span className="text-foreground/90">{stateLabel}</span>
           </div>
         </TooltipTrigger>
         <TooltipContent>{tooltip}</TooltipContent>

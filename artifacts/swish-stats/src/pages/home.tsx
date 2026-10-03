@@ -20,7 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
-import logoUrl from "@assets/ChatGPT_Image_Jul_5,_2025,_09_52_53_PM_(1)_1777802723071.png";
+import { Brand as SharedBrand } from "@/components/brand";
 
 const HERO_HIGHLIGHTS = [
   {
@@ -102,7 +102,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
         : "Sign In";
 
   return (
-    <div className="min-h-[100dvh] bg-[#0d0d0f] text-foreground relative overflow-hidden">
+    <div className="sa-force-dark min-h-[100dvh] bg-background text-foreground relative overflow-hidden">
       {/* Background ambience */}
       <div
         className="pointer-events-none absolute inset-0 opacity-60"
@@ -121,9 +121,10 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
       />
 
       <div className="relative">
-        {/* Partnership banner */}
+        <div className="sa-topline" />
+        {/* Product family banner */}
         <div className="border-b border-white/5 bg-white/[0.02] px-6 py-2 text-center text-xs text-white/60">
-          In partnership with{" "}
+          Part of{" "}
           <a
             href="https://www.swishassistant.com"
             target="_blank"
@@ -221,7 +222,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                   A complete package to <span className="text-primary">capture, host, and share</span>.
                 </h2>
                 <p className="text-white/60 leading-relaxed">
-                  Swish Stats works hand-in-hand with{" "}
+                  Swish Stats is built into{" "}
                   <a
                     href="https://www.swishassistant.com"
                     target="_blank"
@@ -269,7 +270,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                 ].map(({ icon: Icon, step, title, desc }) => (
                   <div
                     key={step}
-                    className="rounded-xl border border-white/10 bg-[#15151a]/60 p-5"
+                    className="rounded-xl border border-white/10 bg-card p-5"
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -317,7 +318,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
             <Brand small />
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
               <span>
-                In partnership with{" "}
+                A product of{" "}
                 <a
                   href="https://www.swishassistant.com"
                   target="_blank"
@@ -417,7 +418,7 @@ function LiveScoreMockup() {
 
   return (
     <div
-      className="hidden lg:block rounded-2xl border border-white/10 bg-gradient-to-br from-[#15151a]/95 to-[#0d0d0f]/95 backdrop-blur-sm p-5 shadow-2xl shadow-black/50 relative overflow-hidden"
+      className="hidden lg:block rounded-2xl border border-white/10 bg-gradient-to-br from-card to-background backdrop-blur-sm p-5 shadow-2xl shadow-black/50 relative overflow-hidden"
       aria-hidden="true"
     >
       {/* Court accent in background */}
@@ -493,22 +494,5 @@ function LiveScoreMockup() {
 }
 
 function Brand({ small = false }: { small?: boolean }) {
-  return (
-    <div className="inline-flex items-center gap-2.5">
-      <img
-        src={logoUrl}
-        alt="Swish Stats logo"
-        className={small ? "w-6 h-6 object-contain" : "w-9 h-9 object-contain"}
-      />
-      <span
-        className={
-          small
-            ? "text-sm font-bold tracking-tight text-white/70"
-            : "text-xl font-bold tracking-tight text-white"
-        }
-      >
-        Swish<span className="text-primary">Stats</span>
-      </span>
-    </div>
-  );
+  return <SharedBrand size={small ? "sm" : "md"} showTagline={!small} />;
 }

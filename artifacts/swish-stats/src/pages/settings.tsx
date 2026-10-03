@@ -13,7 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { RotateCcw, Save } from "lucide-react";
+import { RotateCcw, Save, Moon, Sun } from "lucide-react";
+import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import {
   type AppSettings,
   DEFAULT_SETTINGS,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/app-settings";
 
 export default function Settings() {
+  const [theme, setThemeState] = useState<Theme>(getTheme);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
@@ -46,7 +48,8 @@ export default function Settings() {
       <main className="flex-1">
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+            <p className="sa-eyebrow mb-2">Preferences</p>
+            <h1 className="text-4xl md:text-5xl font-bold">Settings</h1>
             <p className="text-muted-foreground mt-1">
               Default game format and capture preferences. These apply when you
               create new games.
@@ -55,7 +58,7 @@ export default function Settings() {
 
           <Card>
             <CardContent className="p-6 sm:p-8 space-y-6">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+              <h2 className="sa-eyebrow-muted font-sans">
                 Game format (FIBA defaults)
               </h2>
 
@@ -130,7 +133,7 @@ export default function Settings() {
 
           <Card>
             <CardContent className="p-6 sm:p-8 space-y-6">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+              <h2 className="sa-eyebrow-muted font-sans">
                 Scoring
               </h2>
               <div className="flex items-center justify-between gap-4">
@@ -147,6 +150,41 @@ export default function Settings() {
                   checked={settings.confirmBeforeFinalize}
                   onCheckedChange={(v) => update("confirmBeforeFinalize", v)}
                 />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6 sm:p-8 space-y-6">
+              <h2 className="sa-eyebrow-muted font-sans">Appearance</h2>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium">Theme</div>
+                  <p className="text-xs text-muted-foreground">
+                    Dark matches Swish Assistant. Light is easier to read in a bright gym or outdoors.
+                    Applies straight away, on this device.
+                  </p>
+                </div>
+                <div className="inline-flex p-[3px] gap-0.5 rounded-[10px] bg-secondary border border-border" role="radiogroup" aria-label="Theme">
+                  {(["dark", "light"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="radio"
+                      aria-checked={theme === t}
+                      onClick={() => { setTheme(t); setThemeState(t); }}
+                      className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-[7px] text-sm font-medium capitalize transition-colors ${
+                        theme === t
+                          ? "bg-card text-foreground shadow-[0_1px_2px_rgba(0,0,0,.3),0_0_0_1px_hsl(var(--border))]"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid={`theme-${t}`}
+                    >
+                      {t === "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </div>
             </CardContent>
           </Card>

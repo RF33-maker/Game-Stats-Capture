@@ -86,7 +86,7 @@ function PlayerRow({ player, team, competitionId, onChanged }: {
   );
 
   return (
-    <div className="rounded-xl border border-border bg-card p-3 space-y-3" data-testid="link-row">
+    <div className="sa-card p-3 space-y-3" data-testid="link-row">
       <div className="flex items-center gap-3">
         {editing ? (
           <form className="flex flex-1 gap-2" onSubmit={(e) => {
@@ -180,7 +180,8 @@ export default function LinkPlayers() {
       <main className="flex-1">
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Link players to Swish</h1>
+            <p className="sa-eyebrow mb-2">After the game</p>
+            <h1 className="text-4xl md:text-5xl font-bold">Link players to Swish</h1>
             <p className="text-muted-foreground mt-1">
               Match everyone to their Swish Assistant profile so their stats land in the right place.
               You can fix names and numbers here too.
@@ -204,7 +205,7 @@ export default function LinkPlayers() {
                   .sort((a, b) => Number(!!a.sitePlayerId) - Number(!!b.sitePlayerId) || (parseInt(a.jerseyNumber) || 0) - (parseInt(b.jerseyNumber) || 0));
                 return (
                   <section key={team.id} className="space-y-3">
-                    <h2 className="text-lg font-bold">
+                    <h2 className="text-2xl font-bold">
                       {team.name}
                       <span className="ml-2 text-sm font-normal text-muted-foreground">
                         {roster.filter(p => p.sitePlayerId).length}/{roster.length} linked

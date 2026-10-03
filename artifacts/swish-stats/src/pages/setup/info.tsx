@@ -80,7 +80,7 @@ export default function SetupInfo() {
 
   return (
     <SetupLayout gameId={String(gameId)} title="Game Information" step={1} leagueId={leagueQuery}>
-      <div className="bg-card border rounded-xl p-8 shadow-sm">
+      <div className="sa-card p-8">
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => updateGame.mutate({ gameId, data }))} className="space-y-6">
             

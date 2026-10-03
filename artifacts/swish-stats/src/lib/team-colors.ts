@@ -9,7 +9,7 @@ export type Surface = "light" | "dark";
 // rest of the app uses --background (hsl 220 10% 8%).
 const SURFACE_HEX: Record<Surface, string> = {
   light: "#ffffff",
-  dark: "#131518",
+  dark: "#111317",
 };
 
 const SURFACE_FALLBACK_TEXT: Record<Surface, string> = {
@@ -42,6 +42,11 @@ export function contrastRatio(a: string, b: string): number {
   const la = luminance(ra);
   const lb = luminance(rb);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** Which surface the app is currently drawn on (dark by default; `.light` on <html> for bright gyms). */
+export function appSurface(): Surface {
+  return typeof document !== "undefined" && document.documentElement.classList.contains("light") ? "light" : "dark";
 }
 
 /** The team colour if it reads on `surface`, otherwise the surface's normal text colour. */

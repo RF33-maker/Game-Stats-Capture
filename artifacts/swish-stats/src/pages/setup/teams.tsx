@@ -140,7 +140,7 @@ export default function SetupTeams() {
             {/* Home Team */}
             <div className="bg-card border border-border rounded-xl p-6 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: form.watch("home.colorPrimary") }} />
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                 <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-sm">HOME</span>
                 Team Details
               </h2>
@@ -236,7 +236,7 @@ export default function SetupTeams() {
             {/* Away Team */}
             <div className="bg-card border border-border rounded-xl p-6 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: form.watch("away.colorPrimary") }} />
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
                 <span className="bg-muted text-muted-foreground px-2 py-0.5 rounded text-sm">AWAY</span>
                 Team Details
               </h2>

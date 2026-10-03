@@ -28,6 +28,7 @@ import {
 import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, BarChart2, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
+import { BrandMark } from "@/components/brand";
 import { LocalModeBadge } from "@/components/local-mode-badge";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import { loadSettings } from "@/lib/app-settings";
@@ -36,7 +37,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CourtZones, SHOT_ZONES, ZONE_SHOT_VALUE, shotZoneLabel, type ShotZoneId } from "@/components/court-zones";
-import { teamTextColor } from "@/lib/team-colors";
+import { teamTextColor, appSurface } from "@/lib/team-colors";
 
 // Field-goal make/miss event types — the only ones a shot zone applies to.
 const FG_SHOT_TYPES = new Set<StatEventType>(['2ptm', '2pta', '3ptm', '3pta']);
@@ -153,28 +154,29 @@ export default function GameCapture() {
   }, [isRunning, localClock, gameId, game, updateClock]);
 
   if (gameLoading || teamsLoading || playersLoading) {
-    return <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>;
+    return <div className="min-h-[100dvh] flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
   }
 
   if (!game || !homeTeam || !awayTeam || !players) return null;
 
   if (game.status === 'final') {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50 text-slate-900">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground">
         <div className="text-center space-y-6 p-8 max-w-sm">
-          <div className="text-6xl">🏀</div>
+          <div className="flex justify-center"><BrandMark className="h-16" /></div>
           <div>
-            <h1 className="text-2xl font-black uppercase tracking-tighter mb-2">Game Finalized</h1>
-            <p className="text-slate-500 text-sm">This game has already been finalized and is locked for editing.</p>
+            <p className="sa-eyebrow mb-2">Final</p>
+            <h1 className="text-4xl font-bold mb-2">Game finalized</h1>
+            <p className="text-muted-foreground text-sm">This game has already been finalized and is locked for editing.</p>
           </div>
           <div className="flex flex-col gap-3">
             <Link href={`/game/${gameId}/box${effectiveLeagueId ? `?league=${effectiveLeagueId}` : ""}`}>
-              <Button className="w-full bg-blue-600 hover:bg-blue-700 font-bold">
+              <Button className="w-full">
                 <BarChart2 className="w-4 h-4 mr-2" /> View Box Score
               </Button>
             </Link>
             <Link href={homeHref}>
-              <Button variant="outline" className="w-full border-slate-300 bg-white hover:bg-slate-100">
+              <Button variant="outline" className="w-full border-[hsl(var(--border-strong))] bg-card hover:bg-accent">
                 <Home className="w-4 h-4 mr-2" /> Back to League
               </Button>
             </Link>
@@ -604,45 +606,39 @@ export default function GameCapture() {
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-slate-50 text-slate-900 overflow-hidden font-sans select-none">
+    <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden font-sans select-none">
       
       {/* Top Header Scoreboard */}
-      <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-4 shrink-0 shadow-sm">
-        <div className="flex items-center w-1/3 gap-4">
-          <Link href={homeHref}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 text-slate-400 hover:text-slate-900 hover:bg-slate-100 shrink-0"
-              title="Back to league (does not finalize)"
-            >
-              <Home className="w-5 h-5" />
-            </Button>
+      <div className="sa-topline shrink-0" />
+      <header className="h-16 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center w-1/3 gap-3">
+          <Link href={homeHref} title="Back to league (does not finalize)" className="shrink-0 hover:opacity-90 transition-opacity">
+            <BrandMark className="h-8" />
           </Link>
-          <AppMenu triggerClassName="text-slate-400 hover:text-slate-900 hover:bg-slate-100" />
-          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: teamTextColor(awayTeam.colorPrimary, "light") }}>
+          <AppMenu triggerClassName="text-muted-foreground hover:text-foreground hover:bg-accent" />
+          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: teamTextColor(awayTeam.colorPrimary, appSurface()) }}>
             {awayTeam.abbreviation}
           </div>
-          <div className="text-4xl font-black font-mono tracking-tighter text-slate-900">
+          <div className="text-4xl font-black font-mono tracking-tighter text-foreground">
             {boxScore?.away.totalPoints || 0}
           </div>
-          {possessions?.currentPossessionTeamId === awayTeam.id && <ArrowLeft className="w-5 h-5 text-slate-400" />}
+          {possessions?.currentPossessionTeamId === awayTeam.id && <ArrowLeft className="w-5 h-5 text-muted-foreground" />}
         </div>
         
         <div className="flex-1 flex justify-center items-center gap-6">
           <div className="text-center font-mono font-bold">
-            <div className="text-xs text-slate-400">PERIOD</div>
-            <div className="text-xl leading-none text-slate-900">{game.currentPeriod}</div>
+            <div className="text-xs text-muted-foreground">PERIOD</div>
+            <div className="text-xl leading-none text-foreground">{game.currentPeriod}</div>
           </div>
           
-          <div className="bg-slate-900 rounded-lg px-4 py-1 flex items-center gap-4">
-            <span className="text-4xl font-black font-mono text-amber-400 tabular-nums tracking-tighter">
+          <div className="bg-[#0b0d10] border border-white/10 rounded-xl px-4 py-1 flex items-center gap-4">
+            <span className="text-4xl font-bold font-mono text-amber-400 tabular-nums">
               {formatClock(localClock)}
             </span>
             <Button 
               variant="outline" 
               size="icon" 
-              className={`h-10 w-10 border-slate-700 ${isRunning ? 'bg-amber-500/20 text-amber-400 border-amber-500/50' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+              className={`h-10 w-10 ${isRunning ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 hover:bg-amber-500/30' : 'bg-white/10 text-white border-white/15 hover:bg-white/20'}`}
               onClick={() => setIsRunning(!isRunning)}
             >
               {isRunning ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
@@ -652,11 +648,11 @@ export default function GameCapture() {
         </div>
 
         <div className="flex items-center justify-end w-1/3 gap-4">
-          {possessions?.currentPossessionTeamId === homeTeam.id && <ArrowRight className="w-5 h-5 text-slate-400" />}
-          <div className="text-4xl font-black font-mono tracking-tighter text-slate-900">
+          {possessions?.currentPossessionTeamId === homeTeam.id && <ArrowRight className="w-5 h-5 text-muted-foreground" />}
+          <div className="text-4xl font-black font-mono tracking-tighter text-foreground">
             {boxScore?.home.totalPoints || 0}
           </div>
-          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: teamTextColor(homeTeam.colorPrimary, "light") }}>
+          <div className="text-3xl font-black font-mono tracking-tighter" style={{ color: teamTextColor(homeTeam.colorPrimary, appSurface()) }}>
             {homeTeam.abbreviation}
           </div>
         </div>
@@ -691,14 +687,14 @@ export default function GameCapture() {
 
             {/* Court zone picker (Pro only) */}
             {!isLite && (
-            <div className="flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm p-3 min-h-0">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 text-center shrink-0">
+            <div className="flex flex-col bg-card rounded-xl border border-border shadow-sm p-3 min-h-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2 text-center shrink-0">
                 {pendingFgEvent ? (
                   <span className="text-amber-600">
                     Tap a {fgShotValue(pendingFgEvent)}PT zone, or press the button again to skip
                   </span>
                 ) : (
-                  <>Shot Location <span className="font-normal normal-case text-slate-300">(optional)</span></>
+                  <>Shot Location <span className="font-normal normal-case text-muted-foreground/60">(optional)</span></>
                 )}
               </div>
               <CourtZones
@@ -718,7 +714,7 @@ export default function GameCapture() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="mt-2 h-7 text-xs text-slate-500 hover:text-slate-900"
+                  className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground"
                   onClick={() => { setSelectedZone(null); setPendingFgEvent(null); }}
                 >
                   <X className="w-3 h-3 mr-1" /> Clear zone
@@ -748,7 +744,7 @@ export default function GameCapture() {
           </div>
 
           {/* Stat Buttons Matrix */}
-          <div className={`${isLite ? 'h-72 xl:h-80' : 'h-64'} bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
+          <div className={`${isLite ? 'h-72 xl:h-80' : 'h-64'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
             <div className={`grid gap-2 flex-1 ${isLite ? 'grid-cols-6 xl:gap-3' : 'grid-cols-6'}`}>
               {statButtons.map(btn => {
                 const btnType = btn.type as StatEventType;
@@ -766,7 +762,7 @@ export default function GameCapture() {
                     key={btn.type}
                     disabled={isDisabled}
                     onClick={() => handleStatButtonClick(btn.type as StatEventType | 'reb', btn.val)}
-                    className={`rounded-lg font-black ${isLite ? 'text-xl xl:text-2xl' : 'text-lg'} tracking-tighter uppercase text-white transition-all
+                    className={`rounded-[10px] sa-display font-bold leading-none ${isLite ? 'text-2xl xl:text-3xl' : 'text-xl xl:text-2xl'} text-white transition-all
                       ${btn.color} 
                       ${isDisabled ? 'opacity-20 cursor-not-allowed grayscale' : 'shadow-md active:scale-95'}
                       ${isArmed ? 'ring-4 ring-amber-400 ring-offset-1' : ''}
@@ -780,21 +776,21 @@ export default function GameCapture() {
             <div className="flex gap-2 h-12">
               <Button 
                 variant="outline" 
-                className="flex-1 bg-white hover:bg-slate-100 border-slate-300 text-slate-700 font-bold"
+                className="flex-1 bg-card hover:bg-accent border-[hsl(var(--border-strong))] text-foreground font-bold"
                 onClick={() => handleStat('jump_ball' as StatEventType)}
               >
                 JUMP BALL
               </Button>
               <Button 
                 variant="outline" 
-                className="flex-1 bg-white hover:bg-slate-100 border-slate-300 text-slate-700 font-bold"
+                className="flex-1 bg-card hover:bg-accent border-[hsl(var(--border-strong))] text-foreground font-bold"
                 onClick={handleEndPeriod}
               >
                 END PERIOD
               </Button>
               <Button 
                 variant="outline" 
-                className="flex-1 bg-white hover:bg-slate-100 border-slate-300 text-slate-700 font-bold"
+                className="flex-1 bg-card hover:bg-accent border-[hsl(var(--border-strong))] text-foreground font-bold"
                 onClick={handleStartPeriod}
               >
                 START PERIOD
@@ -805,15 +801,15 @@ export default function GameCapture() {
         </div>
 
         {/* Right Rail - PBP */}
-        <div className="w-64 xl:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0">
-          <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-            <h2 className="font-bold text-slate-500 text-sm tracking-wide">PLAY BY PLAY</h2>
+        <div className="w-64 xl:w-80 bg-card border-l border-border flex flex-col shrink-0">
+          <div className="p-4 border-b border-border flex justify-between items-center bg-secondary/60">
+            <h2 className="font-bold text-muted-foreground text-sm tracking-wide">PLAY BY PLAY</h2>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" className="h-8 bg-white border-slate-300 text-slate-700 hover:bg-slate-100" onClick={handleUndo}>
+              <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={handleUndo}>
                 <Undo2 className="w-4 h-4 mr-2" /> Undo
               </Button>
               <Link href={`/game/${gameId}/box`}>
-                <Button size="sm" variant="outline" className="h-8 bg-white border-slate-300 text-slate-700 hover:bg-slate-100">
+                <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent">
                   <BarChart2 className="w-4 h-4" />
                 </Button>
               </Link>
@@ -831,19 +827,19 @@ export default function GameCapture() {
                   tabIndex={editable ? 0 : undefined}
                   onClick={editable ? () => openEditPbp(entry) : undefined}
                   onKeyDown={editable ? (e) => { if (e.key === 'Enter') openEditPbp(entry); } : undefined}
-                  className={`w-full text-left text-sm p-3 rounded flex items-start gap-3 border group ${entry.needsReview ? 'bg-amber-50 border-amber-300' : 'bg-slate-50 border-slate-200'} ${editable ? 'hover:bg-slate-100 hover:border-amber-400 cursor-pointer' : 'opacity-70 cursor-default'}`}
+                  className={`w-full text-left text-sm p-3 rounded flex items-start gap-3 border group ${entry.needsReview ? 'bg-amber-50 border-amber-300' : 'bg-secondary/60 border-border'} ${editable ? 'hover:bg-accent hover:border-amber-400 cursor-pointer' : 'opacity-70 cursor-default'}`}
                 >
-                  <div className="text-xs font-mono text-slate-400 shrink-0 w-12 text-right pt-0.5">
+                  <div className="text-xs font-mono text-muted-foreground shrink-0 w-12 text-right pt-0.5">
                     {formatClock(entry.clockSeconds)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      {t && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.colorPrimary }} />}
-                      <span className="font-bold font-mono tracking-tighter text-slate-900">
+                      {t && <div className="w-2 h-2 rounded-full ring-1 ring-foreground/25" style={{ backgroundColor: t.colorPrimary }} />}
+                      <span className="font-bold font-mono tracking-tighter text-foreground">
                         {entry.awayScore} - {entry.homeScore}
                       </span>
                     </div>
-                    <div className="text-slate-600 leading-tight">
+                    <div className="text-muted-foreground leading-tight">
                       {entry.eventText}
                     </div>
                   </div>
@@ -852,22 +848,22 @@ export default function GameCapture() {
                       type="button"
                       title={entry.needsReview ? "Mark as reviewed" : "Flag for review"}
                       onClick={(e) => { e.stopPropagation(); handleToggleReview(entry); }}
-                      className={`shrink-0 mt-0.5 p-0.5 rounded ${entry.needsReview ? 'text-amber-600 hover:text-amber-700' : 'text-slate-300 hover:text-amber-500'}`}
+                      className={`shrink-0 mt-0.5 p-0.5 rounded ${entry.needsReview ? 'text-amber-600 hover:text-amber-700' : 'text-muted-foreground/60 hover:text-amber-500'}`}
                     >
                       {entry.needsReview ? <Flag className="w-3.5 h-3.5 fill-current" /> : <Flag className="w-3.5 h-3.5" />}
                     </button>
                   )}
                   {editable && (
-                    <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-amber-500 shrink-0 mt-0.5" />
+                    <Pencil className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-amber-500 shrink-0 mt-0.5" />
                   )}
                 </div>
               );
             })}
           </div>
 
-          <div className="p-4 bg-slate-50 border-t border-slate-200">
+          <div className="p-4 bg-secondary/60 border-t border-border">
             <Button 
-              className="w-full font-bold bg-blue-600 hover:bg-blue-700" 
+              className="w-full font-bold" 
               onClick={() => {
                 const flagged = (pbp ?? []).filter(p => p.needsReview);
                 // Outstanding flags always force the confirmation dialog —
@@ -894,12 +890,12 @@ export default function GameCapture() {
       </div>
 
       <Dialog open={!!editPbp} onOpenChange={(open) => !open && closeEditPbp()}>
-        <DialogContent className="bg-white text-slate-900 border-slate-200 sm:max-w-[480px]">
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
               Edit play
             </DialogTitle>
-            <DialogDescription className="text-slate-500">
+            <DialogDescription className="text-muted-foreground">
               Correct the event type, team, player, or shot location for this play.
             </DialogDescription>
           </DialogHeader>
@@ -923,15 +919,15 @@ export default function GameCapture() {
             const isFgShot = FG_SHOT_TYPES.has(editForm.eventType);
             return (
               <div className="space-y-4 mt-2">
-                <div className="text-xs text-slate-400 font-mono">
+                <div className="text-xs text-muted-foreground font-mono">
                   Q{editPbp.period} • {formatClock(editPbp.clockSeconds)}
                 </div>
-                <div className="text-sm text-slate-600 bg-slate-50 rounded p-3 border border-slate-200">
+                <div className="text-sm text-muted-foreground bg-secondary/60 rounded p-3 border border-border">
                   Currently: {editPbp.eventText}
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Event type</div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Event type</div>
                   <Select
                     value={editForm.eventType}
                     onValueChange={(v) => {
@@ -944,12 +940,12 @@ export default function GameCapture() {
                       setEditForm({ ...editForm, eventType: nextType, shotZone: keepZone ? editForm.shotZone : null });
                     }}
                   >
-                    <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10">
+                    <SelectTrigger className="bg-card border-[hsl(var(--border-strong))] text-foreground h-10">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-300 text-slate-900">
+                    <SelectContent className="bg-card border-[hsl(var(--border-strong))] text-foreground">
                       {eventTypeOptions.map(opt => (
-                        <SelectItem key={opt.value} value={opt.value} className="focus:bg-slate-100 focus:text-slate-900">
+                        <SelectItem key={opt.value} value={opt.value} className="focus:bg-accent focus:text-foreground">
                           {opt.label}
                         </SelectItem>
                       ))}
@@ -958,12 +954,12 @@ export default function GameCapture() {
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Team</div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Team</div>
                   <div className="grid grid-cols-3 gap-2">
                     {[
                       { id: null, label: 'NONE', color: '#94a3b8' },
-                      { id: awayTeam.id, label: awayTeam.abbreviation, color: teamTextColor(awayTeam.colorPrimary, "light") },
-                      { id: homeTeam.id, label: homeTeam.abbreviation, color: teamTextColor(homeTeam.colorPrimary, "light") },
+                      { id: awayTeam.id, label: awayTeam.abbreviation, color: teamTextColor(awayTeam.colorPrimary, appSurface()) },
+                      { id: homeTeam.id, label: homeTeam.abbreviation, color: teamTextColor(homeTeam.colorPrimary, appSurface()) },
                     ].map(opt => {
                       const selected = editForm.teamId === opt.id;
                       return (
@@ -971,7 +967,7 @@ export default function GameCapture() {
                           key={String(opt.id)}
                           type="button"
                           onClick={() => setEditForm({ ...editForm, teamId: opt.id, playerId: opt.id === editForm.teamId ? editForm.playerId : null })}
-                          className={`h-10 rounded font-black text-sm tracking-tighter border-2 transition ${selected ? 'border-slate-900 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                          className={`h-10 rounded font-black text-sm tracking-tighter border-2 transition ${selected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:bg-secondary'}`}
                           style={{ color: opt.color }}
                         >
                           {opt.label}
@@ -982,7 +978,7 @@ export default function GameCapture() {
                 </div>
 
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
                     Player {currentTeam ? `(${currentTeam.abbreviation})` : ''}
                   </div>
                   <Select
@@ -990,13 +986,13 @@ export default function GameCapture() {
                     onValueChange={(v) => setEditForm({ ...editForm, playerId: v === 'none' ? null : Number(v) })}
                     disabled={editForm.teamId == null}
                   >
-                    <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10 disabled:opacity-50">
+                    <SelectTrigger className="bg-card border-[hsl(var(--border-strong))] text-foreground h-10 disabled:opacity-50">
                       <SelectValue placeholder={editForm.teamId == null ? 'Select a team first' : 'No player'} />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-300 text-slate-900">
-                      <SelectItem value="none" className="focus:bg-slate-100 focus:text-slate-900">No player</SelectItem>
+                    <SelectContent className="bg-card border-[hsl(var(--border-strong))] text-foreground">
+                      <SelectItem value="none" className="focus:bg-accent focus:text-foreground">No player</SelectItem>
                       {eligiblePlayers.map(p => (
-                        <SelectItem key={p.id} value={String(p.id)} className="focus:bg-slate-100 focus:text-slate-900">
+                        <SelectItem key={p.id} value={String(p.id)} className="focus:bg-accent focus:text-foreground">
                           #{p.jerseyNumber} {p.firstName} {p.lastName}
                         </SelectItem>
                       ))}
@@ -1011,20 +1007,20 @@ export default function GameCapture() {
                   );
                   return (
                     <div>
-                      <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                        Shot location <span className="font-normal normal-case text-slate-300">(optional)</span>
+                      <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                        Shot location <span className="font-normal normal-case text-muted-foreground/60">(optional)</span>
                       </div>
                       <Select
                         value={editForm.shotZone ?? 'none'}
                         onValueChange={(v) => setEditForm({ ...editForm, shotZone: v === 'none' ? null : v as ShotZoneId })}
                       >
-                        <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10">
+                        <SelectTrigger className="bg-card border-[hsl(var(--border-strong))] text-foreground h-10">
                           <SelectValue placeholder="No zone" />
                         </SelectTrigger>
-                        <SelectContent className="bg-white border-slate-300 text-slate-900">
-                          <SelectItem value="none" className="focus:bg-slate-100 focus:text-slate-900">No zone</SelectItem>
+                        <SelectContent className="bg-card border-[hsl(var(--border-strong))] text-foreground">
+                          <SelectItem value="none" className="focus:bg-accent focus:text-foreground">No zone</SelectItem>
                           {eligibleZones.map(z => (
-                            <SelectItem key={z.id} value={z.id} className="focus:bg-slate-100 focus:text-slate-900">
+                            <SelectItem key={z.id} value={z.id} className="focus:bg-accent focus:text-foreground">
                               {z.label}
                             </SelectItem>
                           ))}
@@ -1048,7 +1044,7 @@ export default function GameCapture() {
             <div className="flex-1" />
             <Button
               variant="outline"
-              className="bg-white border-slate-300 text-slate-700 hover:bg-slate-100"
+              className="bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent"
               onClick={closeEditPbp}
               disabled={updateStat.isPending || deleteStat.isPending}
             >
@@ -1066,12 +1062,12 @@ export default function GameCapture() {
       </Dialog>
 
       <Dialog open={finalizeDialogOpen} onOpenChange={(open) => !updateGame.isPending && setFinalizeDialogOpen(open)}>
-        <DialogContent className="bg-white text-slate-900 border-slate-200 sm:max-w-[440px]">
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
               Finalize this game?
             </DialogTitle>
-            <DialogDescription className="text-slate-500">
+            <DialogDescription className="text-muted-foreground">
               This locks the game and stops all stat capture. You won't be able to record or edit any more plays. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -1089,7 +1085,7 @@ export default function GameCapture() {
                     <button
                       key={entry.id}
                       type="button"
-                      className="w-full text-left text-xs text-slate-700 hover:text-slate-900 flex items-start gap-2"
+                      className="w-full text-left text-xs text-foreground hover:text-foreground flex items-start gap-2"
                       onClick={() => { setFinalizeDialogOpen(false); openEditPbp(entry); }}
                     >
                       <Flag className="w-3 h-3 fill-current text-amber-600 shrink-0 mt-0.5" />
@@ -1103,14 +1099,14 @@ export default function GameCapture() {
           <DialogFooter className="gap-2 sm:gap-2 mt-4">
             <Button
               variant="outline"
-              className="bg-white border-slate-300 text-slate-700 hover:bg-slate-100"
+              className="bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent"
               onClick={() => setFinalizeDialogOpen(false)}
               disabled={updateGame.isPending}
             >
               Cancel
             </Button>
             <Button
-              className="bg-blue-600 hover:bg-blue-700 font-bold"
+              className="font-bold"
               onClick={handleFinalizeGame}
               disabled={updateGame.isPending}
             >
@@ -1130,13 +1126,13 @@ export default function GameCapture() {
           surfaces flagged plays from the relevant period while it's still
           fresh, without stopping the scorer from continuing. */}
       <Dialog open={reviewPrompt.open} onOpenChange={(open) => !open && setReviewPrompt(p => ({ ...p, open: false }))}>
-        <DialogContent className="bg-white text-slate-900 border-slate-200 sm:max-w-[440px]">
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle className="text-xl font-black uppercase tracking-tighter flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-amber-500" />
               Flagged plays — {reviewPrompt.periodLabel}
             </DialogTitle>
-            <DialogDescription className="text-slate-500">
+            <DialogDescription className="text-muted-foreground">
               These plays were flagged for review during {reviewPrompt.periodLabel}. Take a look now, or check them again before you finalize.
             </DialogDescription>
           </DialogHeader>
@@ -1144,14 +1140,14 @@ export default function GameCapture() {
             {reviewPrompt.entries.map(entry => (
               <div key={entry.id} className="flex items-start gap-2 p-2 rounded border border-amber-200 bg-amber-50">
                 <div className="flex-1 min-w-0 text-sm">
-                  <div className="text-xs font-mono text-slate-400">{formatClock(entry.clockSeconds)}</div>
-                  <div className="text-slate-700 leading-tight">{entry.eventText}</div>
+                  <div className="text-xs font-mono text-muted-foreground">{formatClock(entry.clockSeconds)}</div>
+                  <div className="text-foreground leading-tight">{entry.eventText}</div>
                 </div>
                 <div className="flex flex-col gap-1 shrink-0">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs bg-white border-slate-300"
+                    className="h-7 text-xs bg-card border-[hsl(var(--border-strong))]"
                     onClick={() => { setReviewPrompt(p => ({ ...p, open: false })); openEditPbp(entry); }}
                   >
                     Edit
@@ -1174,7 +1170,7 @@ export default function GameCapture() {
           <DialogFooter className="mt-2">
             <Button
               variant="outline"
-              className="bg-white border-slate-300 text-slate-700 hover:bg-slate-100"
+              className="bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent"
               onClick={() => setReviewPrompt(p => ({ ...p, open: false }))}
             >
               Dismiss
@@ -1184,19 +1180,19 @@ export default function GameCapture() {
       </Dialog>
 
       <Dialog open={ftDialog.open} onOpenChange={(open) => !open && setFtDialog({ open: false })}>
-        <DialogContent className="bg-white text-slate-900 border-slate-200 sm:max-w-[400px]">
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Free Throw Sequence</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-2 mt-4">
             {[1, 2, 3].map(total => (
               <div key={total} className="space-y-2">
-                <div className="text-center font-bold text-slate-400 mb-2">{total} SHOTS</div>
+                <div className="text-center font-bold text-muted-foreground mb-2">{total} SHOTS</div>
                 {Array.from({ length: total }).map((_, idx) => (
                   <Button
                     key={idx}
                     variant="outline"
-                    className="w-full bg-white border-slate-300 text-slate-700 hover:bg-slate-100"
+                    className="w-full bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent"
                     onClick={() => {
                       setFtDialog({ open: false });
                       handleStat(ftDialog.eventType!, ftDialog.eventType === 'ftm' ? 1 : 0, {
@@ -1247,7 +1243,7 @@ function TeamPanel({
 }) {
   const subActive = subModeBenchPlayerId != null;
   return (
-    <div className="flex flex-col min-h-0 bg-white rounded-xl border border-slate-200 shadow-sm relative overflow-y-auto overflow-x-hidden">
+    <div className="flex flex-col min-h-0 bg-card rounded-xl border border-border shadow-sm relative overflow-y-auto overflow-x-hidden">
       <div className="sticky top-0 left-0 w-full h-1 z-10" style={{ backgroundColor: team.colorPrimary }} />
 
       <div className={benchBeside ? "flex-1 min-h-0 grid grid-cols-[3fr_2fr]" : "contents"}>
@@ -1263,17 +1259,17 @@ function TeamPanel({
                 subActive
                   ? 'border-amber-400 bg-amber-50 hover:bg-amber-100 ring-2 ring-amber-200'
                   : isSelected
-                  ? 'border-slate-900 bg-slate-100 shadow-sm'
-                  : 'border-transparent bg-slate-50 hover:bg-slate-100'
+                  ? 'border-primary bg-primary/10'
+                  : 'border-transparent bg-secondary/60 hover:bg-accent'
               }`}
             >
               <div
                 className="text-xl xl:text-2xl font-black font-mono w-9 xl:w-12 shrink-0 text-center"
-                style={{ color: teamTextColor(team.colorPrimary, "light") }}
+                style={{ color: teamTextColor(team.colorPrimary, appSurface()) }}
               >
                 {p.jerseyNumber}
               </div>
-              <div className="text-left flex-1 min-w-0 truncate text-base xl:text-xl tracking-tight uppercase text-slate-900">
+              <div className="text-left flex-1 min-w-0 truncate sa-display font-semibold text-lg xl:text-2xl text-foreground">
                 {p.lastName}
               </div>
             </button>
@@ -1284,14 +1280,14 @@ function TeamPanel({
       {/* Bench — tap a bench player, then tap an on-court player to swap them in.
           min-h floor keeps this from collapsing to invisible on short viewports;
           the panel as a whole scrolls (see overflow-y-auto above) if space is tight. */}
-      <div className={`flex-1 min-h-[72px] flex flex-col border-slate-200 px-2 pt-2 ${benchBeside ? 'border-l min-h-0' : 'border-t'}`}>
+      <div className={`flex-1 min-h-[72px] flex flex-col border-border px-2 pt-2 ${benchBeside ? 'border-l min-h-0' : 'border-t'}`}>
         <div className="flex items-center justify-between px-1 shrink-0">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bench</span>
-          <span className="text-[10px] font-mono text-slate-300">{bench.length}</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bench</span>
+          <span className="text-[10px] font-mono text-muted-foreground/60">{bench.length}</span>
         </div>
         <div className="flex-1 min-h-[40px] overflow-y-auto space-y-1 py-1">
           {bench.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-center text-[11px] text-slate-300 italic px-2">
+            <div className="h-full flex items-center justify-center text-center text-[11px] text-muted-foreground/60 italic px-2">
               No bench players
             </div>
           ) : (
@@ -1306,13 +1302,13 @@ function TeamPanel({
                   className={`w-full flex items-center gap-3 px-3 py-1.5 rounded-lg border transition-all select-none ${
                     isArmed
                       ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-300'
-                      : 'border-transparent bg-slate-50 hover:bg-slate-100'
+                      : 'border-transparent bg-secondary/60 hover:bg-accent'
                   }`}
                 >
-                  <div className={`text-sm font-black font-mono w-8 text-center ${isArmed ? 'text-amber-600' : 'text-slate-400'}`}>
+                  <div className={`text-sm font-black font-mono w-8 text-center ${isArmed ? 'text-amber-600' : 'text-muted-foreground'}`}>
                     {p.jerseyNumber}
                   </div>
-                  <div className={`text-left flex-1 min-w-0 truncate text-sm tracking-tight uppercase ${isArmed ? 'text-amber-700' : 'text-slate-500'}`}>
+                  <div className={`text-left flex-1 min-w-0 truncate text-sm tracking-tight uppercase ${isArmed ? 'text-amber-700' : 'text-muted-foreground'}`}>
                     {p.lastName}
                   </div>
                 </button>
@@ -1329,15 +1325,15 @@ function TeamPanel({
       </div>
 
       {/* Team Actions */}
-      <div className="sticky bottom-0 mt-auto h-14 xl:h-16 shrink-0 border-t border-slate-200 bg-slate-50 flex p-2 gap-2">
+      <div className="sticky bottom-0 mt-auto h-14 xl:h-16 shrink-0 border-t border-border bg-secondary/60 flex p-2 gap-2">
         <Button
-          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold"
+          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold"
           onClick={onTimeout}
         >
           TIMEOUT
         </Button>
         <Button
-          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold"
+          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold"
           onClick={onTeamFoul}
         >
           TEAM FOUL

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Play, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { teamTextColor } from "@/lib/team-colors";
+import { teamTextColor, appSurface } from "@/lib/team-colors";
 
 export default function SetupExtras() {
   const [, params] = useRoute("/setup/:gameId/extras");
@@ -58,7 +58,7 @@ export default function SetupExtras() {
   return (
     <SetupLayout gameId={String(gameId)} title="Review & Start" step={4} leagueId={leagueQuery}>
       <div className="space-y-8">
-        <div className="bg-card border rounded-xl p-8 shadow-sm">
+        <div className="sa-card p-8">
           <h2 className="text-2xl font-bold mb-6 border-b pb-4">Game Summary</h2>
           
           <div className="grid grid-cols-2 gap-8 mb-8">
@@ -66,9 +66,9 @@ export default function SetupExtras() {
               <div>
                 <p className="text-sm text-muted-foreground">Matchup</p>
                 <div className="text-xl font-bold flex items-center gap-2 mt-1">
-                  <span style={{ color: teamTextColor(awayTeam?.colorPrimary, "dark") }}>{awayTeam?.abbreviation || 'AWAY'}</span>
+                  <span style={{ color: teamTextColor(awayTeam?.colorPrimary, appSurface()) }}>{awayTeam?.abbreviation || 'AWAY'}</span>
                   <span className="text-muted-foreground text-sm font-normal">@</span>
-                  <span style={{ color: teamTextColor(homeTeam?.colorPrimary, "dark") }}>{homeTeam?.abbreviation || 'HOME'}</span>
+                  <span style={{ color: teamTextColor(homeTeam?.colorPrimary, appSurface()) }}>{homeTeam?.abbreviation || 'HOME'}</span>
                 </div>
               </div>
               <div>

@@ -45,7 +45,7 @@ function Denied({
         : `You need at least the '${min}' role in this league to view or edit this page.`;
   return (
     <div className="min-h-[100dvh] flex items-center justify-center bg-background text-foreground p-6">
-      <div className="max-w-sm w-full text-center space-y-4 border rounded-xl bg-card p-8">
+      <div className="max-w-sm w-full text-center space-y-4 sa-card p-8">
         <ShieldAlert className="w-10 h-10 mx-auto text-amber-500" />
         <h1 className="text-xl font-bold">{heading}</h1>
         <p className="text-sm text-muted-foreground">{detail}</p>

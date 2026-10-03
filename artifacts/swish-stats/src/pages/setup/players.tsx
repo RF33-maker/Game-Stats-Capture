@@ -142,7 +142,7 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
   };
 
   return (
-    <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden flex flex-col h-[600px]">
+    <div className="sa-card overflow-hidden flex flex-col h-[600px]">
       <div 
         className="p-4 flex items-center justify-between"
         style={{ backgroundColor: team.colorPrimary, color: headerText }}

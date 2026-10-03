@@ -8,7 +8,9 @@ import App from "./App";
 import "./index.css";
 import { installLocalFetchInterceptor } from "@/lib/local-mode";
 import { store } from "@/lib/local-store";
+import { applyTheme } from "@/lib/theme";
 
+applyTheme();
 installLocalFetchInterceptor();
 
 // Load the device's saved data before the first render so screens never see

@@ -126,7 +126,7 @@ export function CourtZones({
         aria-label="Shot location zones"
       >
         {/* Court floor */}
-        <rect x={0} y={0} width={500} height={470} rx={8} className="fill-white" />
+        <rect x={0} y={0} width={500} height={470} rx={8} className="fill-[hsl(var(--card))]" />
 
         {/* Zone hit-areas */}
         {SHOT_ZONES.map(({ id, label }) => {
@@ -144,10 +144,10 @@ export function CourtZones({
               aria-disabled={isZoneDisabled}
               aria-pressed={isSelected}
               className={cn(
-                "stroke-slate-200 transition-colors",
+                "stroke-[hsl(var(--border-strong))] transition-colors",
                 isZoneDisabled
-                  ? "cursor-not-allowed fill-slate-50 opacity-40"
-                  : "cursor-pointer fill-white hover:fill-slate-100 focus:outline-none",
+                  ? "cursor-not-allowed fill-[hsl(var(--muted))] opacity-40"
+                  : "cursor-pointer fill-[hsl(var(--card))] hover:fill-[hsl(var(--accent))] focus:outline-none",
               )}
               style={isSelected ? { fill: `${accentColor}33`, stroke: accentColor, strokeWidth: 2 } : undefined}
               onClick={() => !isZoneDisabled && onSelectZone(isSelected ? null : id)}
@@ -163,7 +163,7 @@ export function CourtZones({
         })}
 
         {/* Decorative court markings (non-interactive, drawn on top) */}
-        <g className="pointer-events-none" fill="none" stroke="#94a3b8" strokeWidth={2}>
+        <g className="pointer-events-none" fill="none" stroke="hsl(var(--muted-foreground))" strokeOpacity={0.7} strokeWidth={2}>
           {/* Baseline */}
           <line x1={0} y1={2} x2={500} y2={2} />
           {/* Paint outline */}
@@ -185,7 +185,7 @@ export function CourtZones({
 
       {selectedZone && (
         <div
-          className="absolute top-2 left-1/2 -translate-x-1/2 text-xs font-bold uppercase tracking-wide px-2 py-1 rounded shadow-sm bg-white border"
+          className="absolute top-2 left-1/2 -translate-x-1/2 text-xs font-bold uppercase tracking-wide px-2 py-1 rounded-md shadow-sm bg-card border"
           style={{ borderColor: accentColor, color: accentColor }}
         >
           {shotZoneLabel(selectedZone)}

@@ -55,14 +55,15 @@ export default function Help() {
       <main className="flex-1">
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-10">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Help &amp; about</h1>
+            <p className="sa-eyebrow mb-2">Help</p>
+            <h1 className="text-4xl md:text-5xl font-bold">Help &amp; about</h1>
             <p className="text-muted-foreground mt-1">
               Everything you need to get the most out of Swish Stats.
             </p>
           </div>
 
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold">What is Swish Stats?</h2>
+            <h2 className="text-2xl font-bold">What is Swish Stats?</h2>
             <p className="text-muted-foreground leading-relaxed">
               Swish Stats is a fast, broadcast-style stat capture platform for
               basketball leagues of any size — from pickup runs to organized
@@ -73,12 +74,12 @@ export default function Help() {
           </section>
 
           <section className="space-y-4">
-            <h2 className="text-lg font-semibold">Capture. Host. Share.</h2>
+            <h2 className="text-2xl font-bold">Capture. Host. Share.</h2>
             <div className="grid gap-4 sm:grid-cols-3">
               {STEPS.map(({ icon: Icon, title, desc }) => (
                 <div
                   key={title}
-                  className="rounded-xl border bg-card p-5 space-y-3"
+                  className="sa-card p-5 space-y-3"
                 >
                   <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
                     <Icon className="w-5 h-5 text-primary" />
@@ -93,7 +94,7 @@ export default function Help() {
           </section>
 
           <section className="space-y-4">
-            <h2 className="text-lg font-semibold">Where to find things</h2>
+            <h2 className="text-2xl font-bold">Where to find things</h2>
             <div className="grid gap-3 sm:grid-cols-3">
               <FeatureRow
                 icon={Trophy}
@@ -114,8 +115,8 @@ export default function Help() {
           </section>
 
           <section className="space-y-4">
-            <h2 className="text-lg font-semibold">Frequently asked</h2>
-            <div className="divide-y rounded-xl border bg-card overflow-hidden">
+            <h2 className="text-2xl font-bold">Frequently asked</h2>
+            <div className="divide-y sa-card overflow-hidden">
               {FAQ.map(({ q, a }) => (
                 <div key={q} className="p-5">
                   <h3 className="font-semibold text-sm">{q}</h3>
@@ -129,7 +130,7 @@ export default function Help() {
 
           <Card className="bg-gradient-to-br from-card to-primary/5 border-primary/20">
             <CardContent className="p-6 sm:p-8 space-y-3">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-2xl font-bold">
                 In partnership with Swish Assistant
               </h2>
               <p className="text-muted-foreground leading-relaxed">
@@ -169,7 +170,7 @@ function FeatureRow({
   desc: string;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border bg-card p-4">
+    <div className="flex items-start gap-3 sa-card p-4">
       <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
         <Icon className="w-4 h-4 text-primary" />
       </div>

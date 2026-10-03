@@ -32,7 +32,8 @@ export default function Profile() {
       <main className="flex-1">
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Profile &amp; account</h1>
+            <p className="sa-eyebrow mb-2">Account</p>
+            <h1 className="text-4xl md:text-5xl font-bold">Profile &amp; account</h1>
             <p className="text-muted-foreground mt-1">
               Your account details for Swish Stats.
             </p>
@@ -58,7 +59,7 @@ export default function Profile() {
                     </div>
                   )}
                   <div className="min-w-0">
-                    <h2 className="text-xl font-bold truncate">
+                    <h2 className="text-xl font-bold truncate font-sans normal-case tracking-tight">
                       {displayName ?? "Unknown user"}
                     </h2>
                     {user?.email && (

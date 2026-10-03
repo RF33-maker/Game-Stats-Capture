@@ -47,7 +47,8 @@ export default function Organizer() {
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
+            <p className="sa-eyebrow mb-2">Organiser</p>
+            <h1 className="text-4xl md:text-5xl font-bold">
               Swish Organiser
             </h1>
             <p className="text-muted-foreground mt-1">
@@ -61,12 +62,12 @@ export default function Organizer() {
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : !hasLeagues ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-5 text-center border border-dashed rounded-2xl bg-card/40">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <div className="flex flex-col items-center justify-center py-24 gap-5 text-center sa-card">
+              <div className="sa-icon-tile !w-14 !h-14 !rounded-2xl">
                 <ClipboardList className="w-8 h-8 text-primary" />
               </div>
               <div>
-                <h2 className="text-xl font-bold">Nothing to organize yet</h2>
+                <h2 className="text-2xl font-bold">Nothing to organize yet</h2>
                 <p className="text-muted-foreground mt-1 max-w-xs mx-auto">
                   Create a league and a game first, then manage its teams and
                   players here.
@@ -95,7 +96,7 @@ export default function Organizer() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 min-w-0">
                         <Trophy className="w-4 h-4 text-primary shrink-0" />
-                        <h2 className="text-lg font-semibold truncate">
+                        <h2 className="text-2xl font-bold truncate">
                           {league.name}
                         </h2>
                         <span className="text-sm text-muted-foreground shrink-0">
@@ -111,7 +112,7 @@ export default function Organizer() {
                     </div>
 
                     {leagueGames.length === 0 ? (
-                      <div className="rounded-xl border border-dashed bg-card/40 px-6 py-8 text-center text-muted-foreground text-sm">
+                      <div className="sa-card px-6 py-8 text-center text-muted-foreground text-sm">
                         No games in this league yet.
                         {canManage && (
                           <>
@@ -200,7 +201,7 @@ export default function Organizer() {
           {DIRECTORY_AVAILABLE && (
             <section className="space-y-4 border-t border-border pt-8">
               <div>
-                <h2 className="text-xl font-bold">Swish directory</h2>
+                <h2 className="text-2xl font-bold">Swish directory</h2>
                 <p className="text-sm text-muted-foreground mt-1">
                   Every player, team and competition on Swish Assistant. Find people before game day,
                   then link them in game setup so their stats land on their existing profiles.

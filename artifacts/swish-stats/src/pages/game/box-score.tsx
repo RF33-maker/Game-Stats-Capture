@@ -10,7 +10,7 @@ import {
 import { Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
-import { teamTextColor, textOnColor } from "@/lib/team-colors";
+import { teamTextColor, textOnColor, appSurface } from "@/lib/team-colors";
 
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
@@ -69,13 +69,13 @@ export default function BoxScore() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-8 text-3xl font-black font-mono">
               <div className="flex items-center gap-4">
-                <span style={{ color: teamTextColor(awayTeam.colorPrimary, "dark") }}>{awayTeam.abbreviation}</span>
+                <span style={{ color: teamTextColor(awayTeam.colorPrimary, appSurface()) }}>{awayTeam.abbreviation}</span>
                 <span>{boxScore.away.totalPoints}</span>
               </div>
               <span className="text-muted-foreground">-</span>
               <div className="flex items-center gap-4">
                 <span>{boxScore.home.totalPoints}</span>
-                <span style={{ color: teamTextColor(homeTeam.colorPrimary, "dark") }}>{homeTeam.abbreviation}</span>
+                <span style={{ color: teamTextColor(homeTeam.colorPrimary, appSurface()) }}>{homeTeam.abbreviation}</span>
               </div>
             </div>
             <AppMenu />
@@ -87,7 +87,7 @@ export default function BoxScore() {
             { team: awayTeam, stats: boxScore.away },
             { team: homeTeam, stats: boxScore.home }
           ].map(({ team, stats }) => (
-            <div key={team.id} className="bg-card border rounded-xl overflow-hidden shadow-sm">
+            <div key={team.id} className="sa-card overflow-hidden">
               <div 
                 className="px-4 py-3 font-bold text-lg"
                 style={{ backgroundColor: team.colorPrimary, color: textOnColor(team.colorPrimary) }}

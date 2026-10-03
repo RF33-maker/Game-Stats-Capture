@@ -2,6 +2,8 @@ import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { Brand, BrandMark } from "@/components/brand";
+import { ChevronLeft } from "lucide-react";
 
 interface AppHeaderProps {
   showBack?: { href: string; label: string };
@@ -24,20 +26,18 @@ export function AppHeader({ showBack }: AppHeaderProps) {
     : "?";
 
   return (
-    <header className="sticky top-0 z-20 border-b bg-card/95 backdrop-blur-sm">
-      <div className="max-w-5xl mx-auto px-6 py-3 flex items-center gap-4">
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+    <header className="sticky top-0 z-20 border-b sa-glass">
+      <div className="sa-topline" />
+      <div className="max-w-5xl mx-auto px-6 h-16 flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <Link href="/leagues" className="shrink-0 hover:opacity-90 transition-opacity" aria-label="Swish Stats home">
+            {showBack ? <BrandMark className="h-9" /> : <Brand />}
+          </Link>
           {showBack && (
             <Link href={showBack.href}>
-              <span className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium shrink-0">
-                ← {showBack.label}
-              </span>
-            </Link>
-          )}
-          {!showBack && (
-            <Link href="/leagues">
-              <span className="text-lg font-black tracking-tight text-primary hover:opacity-80 transition-opacity cursor-pointer">
-                SWISH STATS
+              <span className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors text-sm font-medium shrink-0">
+                <ChevronLeft className="w-4 h-4" />
+                {showBack.label}
               </span>
             </Link>
           )}
@@ -46,7 +46,7 @@ export function AppHeader({ showBack }: AppHeaderProps) {
         <div className="flex items-center gap-2 shrink-0">
           {!LOCAL_MODE_ENABLED && displayName && (
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold select-none">
+              <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-bold select-none ring-1 ring-primary/25">
                 {initials}
               </div>
               <span className="text-sm text-muted-foreground hidden sm:block max-w-[140px] truncate">
