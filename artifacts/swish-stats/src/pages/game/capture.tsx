@@ -62,6 +62,10 @@ type PendingShot = {
   made: boolean | null;
 };
 
+// What usually comes next: an assist after a make, a rebound after a miss.
+// The prompt never blocks — any other action simply dismisses it.
+type FollowUp = { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null };
+
 type ShotEvent = { id: number; eventType: string; teamId: number | null; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
 export default function GameCapture() {
@@ -75,6 +79,7 @@ export default function GameCapture() {
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [pendingShot, setPendingShot] = useState<PendingShot | null>(null);
+  const [followUp, setFollowUp] = useState<FollowUp | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
   const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
@@ -275,6 +280,17 @@ export default function GameCapture() {
         setSelectedTeamId(null);
       }
       if (isFgShot) setPendingShot(null);
+
+      // Offer the natural next step (see FollowUp).
+      const eventTeamId: number | null = ftData?.teamId ?? selectedTeamId;
+      const eventPlayerId: number | null = ftData?.playerId !== undefined ? ftData.playerId : selectedPlayerId;
+      const lastFreeThrowMissed = eventType === 'fta' && ftData?.ftSequenceIndex != null
+        && ftData.ftSequenceIndex === ftData.ftSequenceTotal;
+      if (!loadSettings().followUpPrompts || eventTeamId == null) setFollowUp(null);
+      else if (eventType === '2ptm' || eventType === '3ptm') setFollowUp({ kind: 'assist', teamId: eventTeamId, shooterId: eventPlayerId });
+      else if (eventType === '2pta' || eventType === '3pta' || lastFreeThrowMissed) setFollowUp({ kind: 'rebound', teamId: eventTeamId, shooterId: eventPlayerId });
+      else setFollowUp(null);
+
       if (eventType === 'timeout') {
         const flaggedThisPeriod = (pbp ?? []).filter(
           p => p.period === game.currentPeriod && p.needsReview,
@@ -307,12 +323,14 @@ export default function GameCapture() {
   };
 
   const handleCourtTap = (point: CourtPoint) => {
+    setFollowUp(null);
     const call = classifyShot(point);
     // Re-tapping just moves the spot; keep a result that was already chosen.
     setPendingShot(prev => ({ point, value: call.value, zone: call.zone, label: call.label, made: prev?.made ?? null }));
   };
 
   const handleShotWithoutLocation = (value: 2 | 3) => {
+    setFollowUp(null);
     setPendingShot({ point: null, value, zone: null, label: 'No location', made: null });
   };
 
@@ -331,6 +349,20 @@ export default function GameCapture() {
       // The shot was only waiting for its shooter.
       recordShot(pendingShot, pendingShot.made, { teamId, playerId });
       return;
+    }
+    if (followUp && !pendingShot) {
+      if (followUp.kind === 'rebound') {
+        // Same team as the shooter = offensive board, otherwise defensive.
+        void handleStat((teamId === followUp.teamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId });
+        return;
+      }
+      if (teamId === followUp.teamId && playerId !== followUp.shooterId) {
+        void handleStat('ast' as StatEventType, 0, { teamId, playerId });
+        return;
+      }
+      // An assist can only come from a teammate: any other tap is the scorer
+      // moving on, so drop the prompt and select the player as usual.
+      setFollowUp(null);
     }
     setSelectedPlayerId(playerId);
     setSelectedTeamId(teamId);
@@ -380,6 +412,7 @@ export default function GameCapture() {
   };
 
   const handleUndo = async () => {
+    setFollowUp(null);
     const lastEvent = statEvents?.[0];
     if (!lastEvent) return;
     try {
@@ -633,6 +666,21 @@ export default function GameCapture() {
 
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
+  // "Assist?" / "Rebound?" — answered by tapping a player, or dismissed.
+  const followUpTeam = followUp ? (followUp.teamId === homeTeam.id ? homeTeam : awayTeam) : null;
+  const followUpBar = followUp && followUpTeam && !pendingShot ? (
+    <div className="h-full flex items-center justify-between gap-2 rounded-[10px] border border-sky-500/40 bg-sky-500/10 px-3" data-testid="follow-up" data-kind={followUp.kind}>
+      <span className="text-sm font-semibold text-sky-400 leading-tight">
+        {followUp.kind === 'assist'
+          ? <>Assist? <span className="font-normal text-sky-300/90">Tap the {followUpTeam.abbreviation} passer</span></>
+          : <>Rebound? <span className="font-normal text-sky-300/90">Tap who got it</span></>}
+      </span>
+      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">
+        {followUp.kind === 'assist' ? 'No assist' : 'No rebound'}
+      </Button>
+    </div>
+  ) : null;
+
   return (
     <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden font-sans select-none">
       
@@ -702,7 +750,11 @@ export default function GameCapture() {
                 bench={awayBench}
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
-                awaitingShooter={!isLite && pendingShot?.made != null}
+                awaitingShooter={
+                  (!isLite && pendingShot?.made != null)
+                  || (!pendingShot && followUp?.kind === 'rebound')
+                  || (!pendingShot && followUp?.kind === 'assist' && followUp.teamId === team.id)
+                }
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
@@ -761,7 +813,7 @@ export default function GameCapture() {
                       <Button variant="ghost" size="sm" onClick={() => setPendingShot(null)}>Cancel</Button>
                     </div>
                   )
-                ) : (
+                ) : followUpBar ? followUpBar : (
                   <div className="h-full flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground text-center px-2">
                     <span>
                       {selectedPlayerId
@@ -787,7 +839,11 @@ export default function GameCapture() {
                 bench={homeBench}
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
-                awaitingShooter={!isLite && pendingShot?.made != null}
+                awaitingShooter={
+                  (!isLite && pendingShot?.made != null)
+                  || (!pendingShot && followUp?.kind === 'rebound')
+                  || (!pendingShot && followUp?.kind === 'assist' && followUp.teamId === team.id)
+                }
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
@@ -796,6 +852,9 @@ export default function GameCapture() {
               />
             ))}
           </div>
+
+          {/* Lite has no court panel, so its prompt sits above the buttons */}
+          {isLite && followUpBar && <div className="h-12 shrink-0">{followUpBar}</div>}
 
           {/* Stat Buttons Matrix */}
           <div className={`${isLite ? 'h-72 xl:h-80' : 'h-52 xl:h-56'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>

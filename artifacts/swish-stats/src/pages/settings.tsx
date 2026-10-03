@@ -151,6 +151,22 @@ export default function Settings() {
                   onCheckedChange={(v) => update("confirmBeforeFinalize", v)}
                 />
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="followUpPrompts" className="text-sm font-medium">
+                    Ask for assists and rebounds
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    After a made shot, prompt for the assist; after a miss, prompt for the rebound.
+                    One tap on the player records it — or carry on and the prompt goes away.
+                  </p>
+                </div>
+                <Switch
+                  id="followUpPrompts"
+                  checked={settings.followUpPrompts}
+                  onCheckedChange={(v) => update("followUpPrompts", v)}
+                />
+              </div>
             </CardContent>
           </Card>
 
