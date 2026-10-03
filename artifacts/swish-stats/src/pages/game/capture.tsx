@@ -322,6 +322,14 @@ export default function GameCapture() {
     void handleStat(type, made ? shot.value : 0, { teamId: who.teamId, playerId: who.playerId, ...location });
   };
 
+  // A rebound nobody secured (out of bounds, a foul on the rebound, the ball
+  // wedged...) goes to a team. Offensive if that team took the shot — or,
+  // with no prompt showing, if it's the team still in possession.
+  const handleTeamRebound = (teamId: number) => {
+    const shootingTeamId = followUp?.kind === 'rebound' ? followUp.teamId : (possessions?.currentPossessionTeamId ?? null);
+    void handleStat((teamId === shootingTeamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId: null });
+  };
+
   const handleCourtTap = (point: CourtPoint) => {
     setFollowUp(null);
     const call = classifyShot(point);
@@ -670,14 +678,22 @@ export default function GameCapture() {
   const followUpTeam = followUp ? (followUp.teamId === homeTeam.id ? homeTeam : awayTeam) : null;
   const followUpBar = followUp && followUpTeam && !pendingShot ? (
     <div className="h-full flex items-center justify-between gap-2 rounded-[10px] border border-sky-500/40 bg-sky-500/10 px-3" data-testid="follow-up" data-kind={followUp.kind}>
-      <span className="text-sm font-semibold text-sky-400 leading-tight">
+      <span className="text-sm font-semibold text-sky-400 leading-tight min-w-0">
         {followUp.kind === 'assist'
           ? <>Assist? <span className="font-normal text-sky-300/90">Tap the {followUpTeam.abbreviation} passer</span></>
           : <>Rebound? <span className="font-normal text-sky-300/90">Tap who got it</span></>}
       </span>
-      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">
-        {followUp.kind === 'assist' ? 'No assist' : 'No rebound'}
-      </Button>
+      <span className="flex items-center gap-1 shrink-0">
+        {followUp.kind === 'rebound' && [awayTeam, homeTeam].map(t => (
+          <Button key={t.id} variant="outline" size="sm" className="px-2" onClick={() => handleTeamRebound(t.id)}
+            title={`Nobody secured it — credit ${t.name} with a team rebound`} data-testid={`team-rebound-${t.isHome ? 'home' : 'away'}`}>
+            {t.abbreviation} team
+          </Button>
+        ))}
+        <Button variant="ghost" size="sm" className="px-2" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">
+          {followUp.kind === 'assist' ? 'No assist' : 'None'}
+        </Button>
+      </span>
     </div>
   ) : null;
 
@@ -757,6 +773,7 @@ export default function GameCapture() {
                 }
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
+                onTeamRebound={() => handleTeamRebound(team.id)}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
                 onSelectBenchPlayer={(id) => handleBenchPlayerClick(team.id, id)}
                 benchBeside={isLite}
@@ -846,6 +863,7 @@ export default function GameCapture() {
                 }
                 onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
                 onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
+                onTeamRebound={() => handleTeamRebound(team.id)}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
                 onSelectBenchPlayer={(id) => handleBenchPlayerClick(team.id, id)}
                 benchBeside={isLite}
@@ -1335,6 +1353,7 @@ function TeamPanel({
   onSelectPlayer,
   onTimeout,
   onTeamFoul,
+  onTeamRebound,
   subModeBenchPlayerId,
   onSelectBenchPlayer,
   benchBeside = false,
@@ -1347,6 +1366,7 @@ function TeamPanel({
   onSelectPlayer: (id: number) => void;
   onTimeout: () => void;
   onTeamFoul: () => void;
+  onTeamRebound: () => void;
   // Non-null when a bench player on this team is armed for a substitution —
   // the value is that bench player's id, and on-court rows become tap
   // targets to complete the swap.
@@ -1443,18 +1463,15 @@ function TeamPanel({
       </div>
       </div>
 
-      {/* Team Actions */}
-      <div className="sticky bottom-0 mt-auto h-14 xl:h-16 shrink-0 border-t border-border bg-secondary/60 flex p-2 gap-2">
-        <Button
-          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold"
-          onClick={onTimeout}
-        >
-          TIMEOUT
+      {/* Team Actions — things credited to the team rather than a player */}
+      <div className="sticky bottom-0 mt-auto h-14 xl:h-16 shrink-0 border-t border-border bg-secondary/60 grid grid-cols-3 p-2 gap-1.5">
+        <Button className="min-w-0 h-full px-1 whitespace-normal leading-[1.05] text-[11px] xl:text-xs bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold" onClick={onTimeout}>
+          TIME OUT
         </Button>
-        <Button
-          className="flex-1 min-w-0 h-full px-1 text-xs xl:text-sm bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold"
-          onClick={onTeamFoul}
-        >
+        <Button className="min-w-0 h-full px-1 whitespace-normal leading-[1.05] text-[11px] xl:text-xs bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold" onClick={onTeamRebound} title="Nobody secured the rebound — credit the team" data-testid="team-rebound">
+          TEAM REB
+        </Button>
+        <Button className="min-w-0 h-full px-1 whitespace-normal leading-[1.05] text-[11px] xl:text-xs bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold" onClick={onTeamFoul}>
           TEAM FOUL
         </Button>
       </div>

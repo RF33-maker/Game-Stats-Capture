@@ -193,8 +193,18 @@ function buildBoxScore(gameId: number): HandlerResult {
   for (const p of allPlayers) {
     lineByPlayer.set(p.id, emptyStatLine(p));
   }
+  // Stats credited to the team rather than a player (team rebounds, team
+  // turnovers, bench technicals) get their own line, so totals include them.
+  const teamLineByTeam = new Map<number, StatLine>();
+  for (const t of teams) {
+    teamLineByTeam.set(t.id, emptyStatLine({ id: 0, teamId: t.id, firstName: "", lastName: "Team", jerseyNumber: "" }));
+  }
   for (const ev of events) {
-    if (ev.playerId == null) continue;
+    if (ev.playerId == null) {
+      const teamLine = ev.teamId != null ? teamLineByTeam.get(ev.teamId) : undefined;
+      if (teamLine) applyEvent(teamLine, ev);
+      continue;
+    }
     const line = lineByPlayer.get(ev.playerId);
     if (!line) continue;
     applyEvent(line, ev);
@@ -220,7 +230,8 @@ function buildBoxScore(gameId: number): HandlerResult {
       totalPoints,
       possessions: possessionsForTeam(team.id),
       players: lines,
-      teamTotals: teamTotals(lines, team.id),
+      teamLine: teamLineByTeam.get(team.id)!,
+      teamTotals: teamTotals([...lines, teamLineByTeam.get(team.id)!], team.id),
     };
   };
 

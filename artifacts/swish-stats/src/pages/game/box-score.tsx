@@ -12,6 +12,16 @@ import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { teamTextColor, textOnColor, appSurface } from "@/lib/team-colors";
 
+// Stats credited to the team rather than a player (e.g. team rebounds).
+// Only shown when there is something in it.
+function teamRow<P extends { playerId: number }>(stats: { players: P[] }): P[] {
+  const line = (stats as unknown as { teamLine?: P }).teamLine;
+  if (!line) return [];
+  const hasAnything = Object.entries(line as Record<string, unknown>)
+    .some(([k, v]) => typeof v === "number" && v > 0 && k !== "playerId" && k !== "teamId");
+  return hasAnything ? [line] : [];
+}
+
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
   const gameId = Number(params?.gameId);
@@ -116,11 +126,11 @@ export default function BoxScore() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {stats.players.map((p) => (
+                    {[...stats.players, ...teamRow(stats)].map((p) => (
                       <tr key={p.playerId} className="hover:bg-muted/20">
                         <td className="px-4 py-3 font-medium">
                           <span className="text-muted-foreground text-xs w-6 inline-block">{p.jerseyNumber}</span>
-                          {p.lastName}, {p.firstName[0]}.
+                          {p.playerId === 0 ? <span className="italic text-muted-foreground">Team</span> : <>{p.lastName}, {p.firstName[0]}.</>}
                         </td>
                         <td className="px-2 py-3 text-right text-muted-foreground">-</td>
                         <td className="px-2 py-3 text-right font-bold">{p.points}</td>

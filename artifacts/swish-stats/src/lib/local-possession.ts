@@ -135,6 +135,10 @@ export function describeEvent(args: {
       : "Unknown";
 
   let action = EVENT_LABELS[eventType] ?? eventType;
+  // No player on a rebound or turnover means it was credited to the team.
+  if (!player && team && (eventType === "oreb" || eventType === "dreb" || eventType === "tov")) {
+    action = `team ${action}`;
+  }
   if (eventType === "ftm" && ftSequenceIndex != null && ftSequenceTotal != null) {
     action = `made FT ${ftSequenceIndex}/${ftSequenceTotal}`;
   } else if (eventType === "fta" && ftSequenceIndex != null && ftSequenceTotal != null) {
