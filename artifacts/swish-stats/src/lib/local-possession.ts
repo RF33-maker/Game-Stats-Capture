@@ -1,3 +1,5 @@
+import { SHOT_TYPES, TURNOVER_TYPES, periodLabel as gamePeriodLabel, qualifierLabel } from "./game-state";
+
 export type PossessionEffect = {
   scoreDelta: number;
   possessionEnded: boolean;
@@ -58,6 +60,14 @@ export function computePossessionEffect(args: {
         scoreDelta: 0,
         possessionEnded: false,
         nextPossessionTeamId: eventTeamId ?? currentPossessionTeamId ?? null,
+      };
+    case "jump_ball":
+      // A jump ball recorded with a team says who came away with the ball.
+      if (eventTeamId == null) return { scoreDelta: 0, possessionEnded: false, nextPossessionTeamId: undefined };
+      return {
+        scoreDelta: 0,
+        possessionEnded: currentPossessionTeamId != null && currentPossessionTeamId !== eventTeamId,
+        nextPossessionTeamId: eventTeamId,
       };
     case "period_end":
       return {
@@ -120,13 +130,16 @@ export function describeEvent(args: {
   // The other half of a substitution pair — e.g. for a sub_in event, the
   // player who came out; for a sub_out event, the player who came in.
   otherPlayer?: { lastName: string } | null;
+  qualifiers?: string[] | null;
+  periodCount?: number;
 }): string {
   const { eventType, team, player, period, clockSeconds, ftSequenceIndex, ftSequenceTotal, otherPlayer } = args;
+  const q = args.qualifiers ?? [];
 
   const mins = Math.floor(clockSeconds / 60);
   const secs = clockSeconds % 60;
   const clock = `${mins}:${secs.toString().padStart(2, "0")}`;
-  const periodLabel = period <= 4 ? `Q${period}` : `OT${period - 4}`;
+  const periodLabel = gamePeriodLabel(period, args.periodCount ?? 4);
 
   const subject = player
     ? `#${player.jerseyNumber} ${player.firstName} ${player.lastName}`
@@ -139,6 +152,20 @@ export function describeEvent(args: {
   if (!player && team && (eventType === "oreb" || eventType === "dreb" || eventType === "tov")) {
     action = `team ${action}`;
   }
+  if (eventType === "pf") {
+    action = q.includes("offensive") ? "offensive foul" : q.includes("shooting") ? "shooting foul" : "personal foul";
+  } else if (eventType === "flagrant") {
+    action = q.includes("disqualifying") ? "disqualifying foul" : "unsportsmanlike foul";
+  } else if (eventType === "tf" && !player) {
+    action = q.includes("coach") ? "coach technical foul" : "bench technical foul";
+  } else if (eventType === "tov") {
+    const kind = q.find(x => TURNOVER_TYPES.some(t => t[0] === x));
+    if (kind && kind !== "other") action += ` (${qualifierLabel(kind)})`;
+  } else if (["2ptm", "2pta", "3ptm", "3pta"].includes(eventType)) {
+    const kind = q.find(x => SHOT_TYPES.some(t => t[0] === x));
+    if (kind && kind !== "jump") action = action.replace("FG", qualifierLabel(kind));
+    if (q.includes("fastbreak")) action += " (fast break)";
+  }
   if (eventType === "ftm" && ftSequenceIndex != null && ftSequenceTotal != null) {
     action = `made FT ${ftSequenceIndex}/${ftSequenceTotal}`;
   } else if (eventType === "fta" && ftSequenceIndex != null && ftSequenceTotal != null) {
@@ -148,7 +175,9 @@ export function describeEvent(args: {
   if (eventType === "period_end") return `${periodLabel} ${clock} — End of ${periodLabel}`;
   if (eventType === "period_start") return `${periodLabel} ${clock} — Start of ${periodLabel}`;
   if (eventType === "timeout") return `${periodLabel} ${clock} — ${team?.abbreviation ?? "Team"} timeout`;
-  if (eventType === "jump_ball") return `${periodLabel} ${clock} — Jump ball`;
+  if (eventType === "jump_ball") {
+    return team ? `${periodLabel} ${clock} — Jump ball, ${team.abbreviation} possession` : `${periodLabel} ${clock} — Jump ball`;
+  }
   if (eventType === "sub_in") {
     return otherPlayer
       ? `${periodLabel} ${clock} — ${subject} subs in for ${otherPlayer.lastName}`

@@ -200,6 +200,7 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
         shot_y: e.shotY,
         ft_sequence_index: e.ftSequenceIndex,
         ft_sequence_total: e.ftSequenceTotal,
+        qualifiers: e.qualifiers ?? [],
         pair_event_uid: eventUid(e.pairEventId),
         replaces_event_uid: eventUid(e.replacesId),
         needs_review: e.needsReview,

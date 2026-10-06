@@ -1,4 +1,5 @@
 import { useRoute, Link, useSearch } from "wouter";
+import { formatMinutes } from "@/lib/game-state";
 import { 
   useGetGame, 
   useListTeams, 
@@ -21,6 +22,9 @@ function teamRow<P extends { playerId: number }>(stats: { players: P[] }): P[] {
     .some(([k, v]) => typeof v === "number" && v > 0 && k !== "playerId" && k !== "teamId");
   return hasAnything ? [line] : [];
 }
+
+// Minutes and plus/minus come from the on-device engine; the generated client doesn't know them.
+const extra = (p: unknown) => p as { secondsPlayed?: number; plusMinus?: number };
 
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
@@ -123,6 +127,7 @@ export default function BoxScore() {
                       <th className="px-2 py-3 text-right">BLK</th>
                       <th className="px-2 py-3 text-right">TOV</th>
                       <th className="px-2 py-3 text-right">PF</th>
+                      <th className="px-2 py-3 text-right">+/-</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -132,7 +137,9 @@ export default function BoxScore() {
                           <span className="text-muted-foreground text-xs w-6 inline-block">{p.jerseyNumber}</span>
                           {p.playerId === 0 ? <span className="italic text-muted-foreground">Team</span> : <>{p.lastName}, {p.firstName[0]}.</>}
                         </td>
-                        <td className="px-2 py-3 text-right text-muted-foreground">-</td>
+                        <td className="px-2 py-3 text-right text-muted-foreground tabular-nums">
+                          {p.playerId === 0 ? "" : formatMinutes(extra(p).secondsPlayed ?? 0)}
+                        </td>
                         <td className="px-2 py-3 text-right font-bold">{p.points}</td>
                         <td className="px-2 py-3 text-right">{p.fgMade}-{p.fgAttempted}</td>
                         <td className="px-2 py-3 text-right">{p.twoPtMade}-{p.twoPtAttempted}</td>
@@ -145,7 +152,10 @@ export default function BoxScore() {
                         <td className="px-2 py-3 text-right">{p.steals}</td>
                         <td className="px-2 py-3 text-right">{p.blocks}</td>
                         <td className="px-2 py-3 text-right">{p.turnovers}</td>
-                        <td className="px-2 py-3 text-right">{p.personalFouls}</td>
+                        <td className="px-2 py-3 text-right">{p.personalFouls + p.technicalFouls + p.flagrantFouls}</td>
+                        <td className="px-2 py-3 text-right tabular-nums text-muted-foreground">
+                          {p.playerId === 0 ? "" : `${(extra(p).plusMinus ?? 0) > 0 ? "+" : ""}${extra(p).plusMinus ?? 0}`}
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-muted/10 font-bold border-t-2 border-border">
@@ -163,7 +173,8 @@ export default function BoxScore() {
                       <td className="px-2 py-3 text-right">{stats.teamTotals.steals}</td>
                       <td className="px-2 py-3 text-right">{stats.teamTotals.blocks}</td>
                       <td className="px-2 py-3 text-right">{stats.teamTotals.turnovers}</td>
-                      <td className="px-2 py-3 text-right">{stats.teamTotals.personalFouls}</td>
+                      <td className="px-2 py-3 text-right">{stats.teamTotals.personalFouls + stats.teamTotals.technicalFouls + stats.teamTotals.flagrantFouls}</td>
+                      <td className="px-2 py-3 text-right" />
                     </tr>
                   </tbody>
                 </table>

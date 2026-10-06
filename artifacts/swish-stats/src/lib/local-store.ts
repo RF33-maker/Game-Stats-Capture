@@ -128,6 +128,9 @@ export type LSStatEvent = {
   shotY: number | null;
   ftSequenceIndex: number | null;
   ftSequenceTotal: number | null;
+  // What kind of foul / turnover / shot it was (e.g. "shooting", "travel",
+  // "fastbreak"). Part of the event: never changed after it is recorded.
+  qualifiers?: string[];
   possessionTeamId: number | null;
   // Durable link between a sub_out row and its paired sub_in row (mirrors
   // the server schema) — substitutions are always created/voided as a pair.
@@ -299,8 +302,8 @@ export function byOrder(a: LSStatEvent, b: LSStatEvent) {
 type CreateGameInput = Partial<Omit<LSGame, "id" | "createdAt" | "updatedAt">>;
 type CreateStatEventInput = Omit<
   LSStatEvent,
-  "id" | "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone" | "shotX" | "shotY"
-> & Partial<Pick<LSStatEvent, "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone" | "shotX" | "shotY">>;
+  "id" | "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone" | "shotX" | "shotY" | "qualifiers"
+> & Partial<Pick<LSStatEvent, "uid" | "createdAt" | "orderKey" | "replacesId" | "voidedAt" | "voidReason" | "shotZone" | "shotX" | "shotY" | "qualifiers">>;
 type CreatePbpInput = Omit<LSPlayByPlay, "id" | "createdAt">;
 type CreatePlayerInput = Omit<LSPlayer, "id" | "uid" | "createdAt"> & Partial<Pick<LSPlayer, "uid">>;
 type CreateTeamInput = Omit<LSTeam, "id" | "uid" | "createdAt"> & Partial<Pick<LSTeam, "uid">>;
@@ -630,7 +633,7 @@ export const store = {
       return events[idx];
     },
     /** Void `id` and record a corrected copy in its place. */
-    replace(id: number, changes: Partial<Pick<LSStatEvent, "teamId" | "playerId" | "eventType" | "period" | "clockSeconds" | "value" | "shotZone" | "shotX" | "shotY" | "needsReview">>): LSStatEvent | null {
+    replace(id: number, changes: Partial<Pick<LSStatEvent, "teamId" | "playerId" | "eventType" | "period" | "clockSeconds" | "value" | "shotZone" | "shotX" | "shotY" | "needsReview" | "qualifiers">>): LSStatEvent | null {
       const target = this.get(id);
       if (!target || target.voidedAt) return null;
       this.void(id, "corrected");
@@ -650,6 +653,7 @@ export const store = {
         possessionTeamId: target.possessionTeamId,
         pairEventId: target.pairEventId,
         needsReview: target.needsReview,
+        qualifiers: target.qualifiers,
         ...changes,
         orderKey: target.orderKey,
         replacesId: target.id,

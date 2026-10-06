@@ -237,6 +237,7 @@ async function pullGame(g: Row, access: LSGame["myAccess"]) {
         shotY: e.shot_y,
         ftSequenceIndex: e.ft_sequence_index,
         ftSequenceTotal: e.ft_sequence_total,
+        qualifiers: e.qualifiers ?? [],
         possessionTeamId: null,
         pairEventId: null,
         needsReview: e.needs_review,

@@ -43,6 +43,10 @@ import {
   type CourtPoint, type FullPoint, type ShotZoneKey, type StoredShot,
 } from "@/lib/shot-geometry";
 import { teamTextColor, appSurface } from "@/lib/team-colors";
+import {
+  TURNOVER_TYPES, arrowTeam, gameRules, inGameOrder, periodLabel as gamePeriodLabel, playerFouls, teamFouls, timeoutsLeft,
+  type GameEvent, type PlayerFouls,
+} from "@/lib/game-state";
 
 // Field-goal make/miss event types — the only ones a shot zone applies to.
 const FG_SHOT_TYPES = new Set<StatEventType>(['2ptm', '2pta', '3ptm', '3pta']);
@@ -69,11 +73,33 @@ type PendingShot = {
   label: string;
   metres: number | null;
   made: boolean | null;
+  // Optional detail: "layup", "dunk", "fastbreak"...
+  tags?: string[];
 };
 
-// What usually comes next: an assist after a make, a rebound after a miss.
-// The prompt never blocks — any other action simply dismisses it.
-type FollowUp = { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null };
+// What usually comes next. `teamId` is always the team whose player the
+// scorer is being asked to tap. A prompt never blocks — any other action
+// simply dismisses it.
+type FollowUp =
+  // Assist after a make (the shooter's team); rebound after a miss (teamId = the shooting team).
+  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean }
+  // Who blocked it (the defending team), then back to the rebound.
+  | { kind: 'block'; teamId: number; shotTeamId: number; shooterId: number | null }
+  // After a turnover: who stole it. After a steal: who lost it.
+  | { kind: 'steal' | 'turnover'; teamId: number }
+  // After a foul: who was fouled, and how many free throws they get.
+  | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean };
+
+// A trip to the line. total 0 = still asking how many shots.
+type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean };
+
+type FoulChoice = 'personal' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
+
+// "7:42" or "742" → seconds; null if it isn't a clock.
+function parseClock(text: string): number | null {
+  const m = text.trim().match(/^(\d{1,2}):?([0-5]\d)$/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
 
 type ShotEvent = { id: number; eventType: string; teamId: number | null; period: number; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
@@ -93,12 +119,16 @@ export default function GameCapture() {
   const [playsOpen, setPlaysOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
-  const [ftDialog, setFtDialog] = useState<{ open: boolean; eventType?: StatEventType }>({ open: false });
+  const [ftSeq, setFtSeq] = useState<FtSeq | null>(null);
+  const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
+  const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
+  const [tipDialog, setTipDialog] = useState(false);
+  const [endsOpen, setEndsOpen] = useState(false);
   const [editPbp, setEditPbp] = useState<PlayByPlayEntry | null>(null);
   // Substitution flow: tapping a bench player arms it, then tapping an
   // on-court player on the same team completes the swap.
   const [subMode, setSubMode] = useState<{ teamId: number; benchPlayerId: number } | null>(null);
-  const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null; shotZone: string | null; shotX: number | null; shotY: number | null }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null, shotZone: null, shotX: null, shotY: null });
+  const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null; shotZone: string | null; shotX: number | null; shotY: number | null; period: number; clock: string }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null, shotZone: null, shotX: null, shotY: null, period: 1, clock: '' });
   const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false);
   // Non-blocking prompt shown after a period ends or a timeout is called,
   // listing plays flagged "needs review" in the relevant period so the
@@ -180,6 +210,29 @@ export default function GameCapture() {
     };
   }, [isRunning, localClock, gameId, game, updateClock]);
 
+  // Before the first play of a full-court game, check the teams are shown
+  // attacking the right baskets — every shot location depends on it.
+  const endsKey = `swish-stats:ends:${gameId}`;
+  useEffect(() => {
+    if (!game || !statEvents || game.status === 'final') return;
+    if (game.captureMode === 'simple' || loadSettings().courtView !== 'full') return;
+    if (statEvents.length === 0 && !window.localStorage.getItem(endsKey)) setEndsOpen(true);
+  }, [game?.id, game?.status, game?.captureMode, statEvents?.length, endsKey]);
+
+  // Keyboard: space starts/stops the clock, Ctrl/Cmd+Z undoes the last play.
+  const undoRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if (e.code === 'Space') { e.preventDefault(); setIsRunning(r => !r); }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   if (gameLoading || teamsLoading || playersLoading) {
     return <div className="min-h-[100dvh] flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
   }
@@ -247,6 +300,22 @@ export default function GameCapture() {
   const homeBench = getBenchPlayers(homeTeam.id, homeOnCourt);
   const awayBench = getBenchPlayers(awayTeam.id, awayOnCourt);
 
+  // Table-crew state, worked out from the plays so far.
+  const rules = gameRules(game as unknown as Parameters<typeof gameRules>[0]);
+  const evAsc = inGameOrder((statEvents ?? []) as unknown as GameEvent[]);
+  const otherTeamId = (id: number) => (id === homeTeam.id ? awayTeam.id : homeTeam.id);
+  const abbr = (id: number | null) => (id === homeTeam.id ? homeTeam.abbreviation : awayTeam.abbreviation);
+  const playerName = (id: number | null) => {
+    const p = players.find(x => x.id === id);
+    return p ? `#${p.jerseyNumber} ${p.lastName}` : 'player';
+  };
+  const foulsByPlayer = new Map<number, PlayerFouls>(players.map(p => [p.id, playerFouls(evAsc, p.id, rules)]));
+  const teamFoulCount = (teamId: number) => teamFouls(evAsc, teamId, game.currentPeriod, rules);
+  // At the limit, every further foul sends the other team to the line.
+  const inPenalty = (teamId: number) => teamFoulCount(teamId) >= rules.bonusAfterTeamFouls;
+  const arrowId = arrowTeam(evAsc, homeTeam.id, awayTeam.id);
+  const detail = loadSettings().detailPrompts;
+
   const invalidateData = () => {
     queryClient.invalidateQueries({ queryKey: getListStatEventsQueryKey(gameId) });
     queryClient.invalidateQueries({ queryKey: getListPlayByPlayQueryKey(gameId) });
@@ -256,19 +325,15 @@ export default function GameCapture() {
   };
 
   // `extra` overrides the defaults below: free-throw sequence data, a team
-  // for team events, or the shooter + location for a shot.
-  const handleStat = async (eventType: StatEventType, value: number = 0, ftData?: any) => {
+  // for team events, the shooter + location for a shot, or qualifier tags.
+  // `opts.next` says what to ask for afterwards instead of the usual prompt.
+  const handleStat = async (eventType: StatEventType, value: number = 0, ftData?: any, opts?: { next?: FollowUp | null }): Promise<boolean> => {
     if (!(ftData?.teamId ?? selectedTeamId) && !['timeout', 'period_start', 'period_end', 'jump_ball'].includes(eventType)) {
       toast.error("Select a player first");
-      return;
-    }
-    
-    const isFt = eventType === 'ftm' || eventType === 'fta';
-    if (isFt && !ftData && !ftDialog.open) {
-      setFtDialog({ open: true, eventType });
-      return;
+      return false;
     }
 
+    const isFt = eventType === 'ftm' || eventType === 'fta';
     const isFgShot = FG_SHOT_TYPES.has(eventType);
 
     try {
@@ -292,14 +357,26 @@ export default function GameCapture() {
       }
       if (isFgShot) setPendingShot(null);
 
-      // Offer the natural next step (see FollowUp).
       const eventTeamId: number | null = ftData?.teamId ?? selectedTeamId;
       const eventPlayerId: number | null = ftData?.playerId !== undefined ? ftData.playerId : selectedPlayerId;
-      const lastFreeThrowMissed = eventType === 'fta' && ftData?.ftSequenceIndex != null
-        && ftData.ftSequenceIndex === ftData.ftSequenceTotal;
-      if (!loadSettings().followUpPrompts || eventTeamId == null) setFollowUp(null);
+
+      // Foul trouble: say so the moment it happens.
+      if (eventPlayerId != null && ['pf', 'tf', 'flagrant'].includes(eventType)) {
+        const after = playerFouls(
+          [...evAsc, { id: -1, teamId: eventTeamId, playerId: eventPlayerId, period: game.currentPeriod, clockSeconds: localClock, eventType, qualifiers: ftData?.qualifiers }],
+          eventPlayerId, rules);
+        if (after.out === 'ejected') toast.error(`${playerName(eventPlayerId)} is ejected — substitute them now`, { duration: 8000 });
+        else if (after.out === 'fouls') toast.error(`${playerName(eventPlayerId)} has fouled out (${after.total}) — substitute them now`, { duration: 8000 });
+        else if (after.total === rules.foulLimit - 1) toast.warning(`${playerName(eventPlayerId)} is on ${after.total} fouls`);
+      }
+
+      // Offer the natural next step (see FollowUp).
+      if (opts?.next !== undefined) setFollowUp(opts.next);
+      else if (!loadSettings().followUpPrompts || eventTeamId == null) setFollowUp(null);
       else if (eventType === '2ptm' || eventType === '3ptm') setFollowUp({ kind: 'assist', teamId: eventTeamId, shooterId: eventPlayerId });
-      else if (eventType === '2pta' || eventType === '3pta' || lastFreeThrowMissed) setFollowUp({ kind: 'rebound', teamId: eventTeamId, shooterId: eventPlayerId });
+      else if (eventType === '2pta' || eventType === '3pta') setFollowUp({ kind: 'rebound', teamId: eventTeamId, shooterId: eventPlayerId });
+      else if (eventType === 'tov' && eventPlayerId != null) setFollowUp({ kind: 'steal', teamId: otherTeamId(eventTeamId) });
+      else if (eventType === 'stl') setFollowUp({ kind: 'turnover', teamId: otherTeamId(eventTeamId) });
       else setFollowUp(null);
 
       if (eventType === 'timeout') {
@@ -310,17 +387,109 @@ export default function GameCapture() {
           setReviewPrompt({ open: true, periodLabel: periodLabel(game.currentPeriod), entries: flaggedThisPeriod });
         }
       }
+      return true;
     } catch (e) {
       toast.error("Failed to record stat");
+      return false;
     }
   };
 
-  const handleStatButtonClick = (eventType: StatEventType | 'reb', value?: number) => {
+  // ---- Fouls: what kind, who was fouled, then the free throws.
+
+  const openFoul = (teamId: number, playerId: number | null) => {
+    setIsRunning(false); // a whistle stops the clock
+    setFollowUp(null);
+    setFoulDialog({ teamId, playerId });
+  };
+
+  const recordFoul = async (choice: FoulChoice) => {
+    const f = foulDialog;
+    if (!f) return;
+    setFoulDialog(null);
+    const who = { teamId: f.teamId, playerId: f.playerId };
+    const victim = otherTeamId(f.teamId);
+    const fouled = (fts: number, recordFd: boolean, noRebound: boolean): FollowUp => ({ kind: 'fouled', teamId: victim, fts, recordFd, noRebound });
+    switch (choice) {
+      case 'personal':
+        // In the penalty, even a non-shooting foul is two shots.
+        await handleStat('pf' as StatEventType, 0, who, { next: fouled(inPenalty(f.teamId) ? 2 : 0, true, false) });
+        break;
+      case 'shooting2': case 'shooting3': case 'and1':
+        await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['shooting'] },
+          { next: fouled(choice === 'shooting3' ? 3 : choice === 'and1' ? 1 : 2, true, false) });
+        break;
+      case 'offensive':
+        // No free throws; the ball goes the other way.
+        if (await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['offensive'] }, { next: null })) {
+          await handleStat('tov' as StatEventType, 0, { ...who, qualifiers: ['offensive_foul'] }, { next: null });
+        }
+        break;
+      case 'technical':
+        await handleStat('tf' as StatEventType, 0, who, { next: fouled(1, false, true) });
+        break;
+      case 'unsportsmanlike': case 'disqualifying':
+        await handleStat('flagrant' as StatEventType, 0, { ...who, qualifiers: [choice] }, { next: fouled(2, true, true) });
+        break;
+      case 'coach': case 'bench':
+        await handleStat('tf' as StatEventType, 0, { teamId: f.teamId, playerId: null, qualifiers: [choice] }, { next: fouled(1, false, true) });
+        break;
+    }
+  };
+
+  const handleFreeThrow = async (made: boolean) => {
+    const s = ftSeq;
+    if (!s || !s.total) return;
+    const last = s.index >= s.total;
+    // Only the last shot is live: a miss needs a rebound (not after a
+    // technical or unsportsmanlike, where the shooting team keeps the ball).
+    const next: FollowUp | null = last && !made && !s.noRebound && loadSettings().followUpPrompts
+      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId } : null;
+    setFtSeq(last ? null : { ...s, index: s.index + 1 });
+    await handleStat((made ? 'ftm' : 'fta') as StatEventType, made ? 1 : 0,
+      { teamId: s.teamId, playerId: s.playerId, ftSequenceIndex: s.index, ftSequenceTotal: s.total }, { next });
+  };
+
+  const handleTimeout = (teamId: number) => {
+    const go = () => { setIsRunning(false); void handleStat('timeout' as StatEventType, 0, { teamId, playerId: null }); };
+    if (timeoutsLeft(evAsc, teamId, game.currentPeriod, rules).left > 0) { go(); return; }
+    toast.warning(`${abbr(teamId)} have no timeouts left`, { action: { label: 'Record anyway', onClick: go } });
+  };
+
+  const recordTurnover = (teamId: number, playerId: number | null, type?: string) => {
+    void handleStat('tov' as StatEventType, 0, { teamId, playerId, ...(type ? { qualifiers: [type] } : {}) });
+  };
+  const handleTeamTurnover = (teamId: number) => {
+    if (detail) setTovDialog({ teamId, playerId: null });
+    else recordTurnover(teamId, null);
+  };
+
+  // Jump ball: the opening tip asks who won it; after that the arrow decides.
+  const handleJumpBall = () => {
+    setFollowUp(null);
+    if (arrowId == null) { setTipDialog(true); return; }
+    void handleStat('jump_ball' as StatEventType, 0, { teamId: arrowId, playerId: null }, { next: null });
+    toast.info(`Held ball — ${abbr(arrowId)} ball. The arrow now points to ${abbr(otherTeamId(arrowId))}.`);
+  };
+
+  const handleStatButtonClick = (eventType: StatEventType | 'reb' | 'ft', value?: number) => {
+    if (selectedTeamId == null || selectedPlayerId == null) return;
     if (eventType === 'reb') {
       // A missed shot leaves possession with the shooting team until the
       // rebound, so a board by the team in possession is offensive.
       const possessionTeamId = possessions?.currentPossessionTeamId ?? null;
       handleStat(possessionTeamId != null && possessionTeamId === selectedTeamId ? 'oreb' : 'dreb', value);
+      return;
+    }
+    if (eventType === 'ft') {
+      setFollowUp(null);
+      setFtSeq({ teamId: selectedTeamId, playerId: selectedPlayerId, total: 0, index: 1, noRebound: false });
+      return;
+    }
+    if (eventType === 'pf') { openFoul(selectedTeamId, selectedPlayerId); return; }
+    if (eventType === 'tov' && detail) { setTovDialog({ teamId: selectedTeamId, playerId: selectedPlayerId }); return; }
+    if (eventType === 'blk' && followUp?.kind === 'rebound' && followUp.teamId !== selectedTeamId) {
+      // A block on the shot that was just missed: keep asking for the rebound.
+      handleStat(eventType, value, undefined, { next: { ...followUp, blocked: true } });
       return;
     }
     handleStat(eventType, value);
@@ -366,7 +535,10 @@ export default function GameCapture() {
       location = { ...halfPointToStored(shot.tap.point, left), shotZone: classifyShot(shot.tap.point).zone };
     }
     const type = `${value}pt${made ? 'm' : 'a'}` as StatEventType;
-    void handleStat(type, made ? value : 0, { teamId: who.teamId, playerId: who.playerId, ...location });
+    void handleStat(type, made ? value : 0, {
+      teamId: who.teamId, playerId: who.playerId, ...location,
+      ...(shot.tags?.length ? { qualifiers: shot.tags } : {}),
+    });
   };
 
   // A rebound nobody secured (out of bounds, a foul on the rebound, the ball
@@ -374,7 +546,7 @@ export default function GameCapture() {
   // with no prompt showing, if it's the team still in possession.
   const handleTeamRebound = (teamId: number) => {
     const shootingTeamId = followUp?.kind === 'rebound' ? followUp.teamId : (possessions?.currentPossessionTeamId ?? null);
-    void handleStat((teamId === shootingTeamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId: null });
+    void handleStat((teamId === shootingTeamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId: null }, { next: null });
   };
 
   const handleFullCourtTap = (point: FullPoint) => {
@@ -383,7 +555,8 @@ export default function GameCapture() {
     // The basket tapped says which team shot — unless a player is already
     // picked, in which case it's theirs (a backcourt heave if it's the far end).
     const teamId = selectedTeamId ?? (stored.shotX <= 50 ? leftTeam.id : rightTeam.id);
-    setPendingShot(prev => ({ tap: { kind: 'full', stored }, teamId, ...readFullTap(stored, teamId), made: prev?.made ?? null }));
+    setFtSeq(null);
+    setPendingShot(prev => ({ tap: { kind: 'full', stored }, teamId, ...readFullTap(stored, teamId), made: prev?.made ?? null, tags: prev?.tags }));
   };
 
   const handleCourtTap = (point: CourtPoint) => {
@@ -393,7 +566,7 @@ export default function GameCapture() {
     setPendingShot(prev => ({
       tap: { kind: 'half', point }, teamId: null,
       value: call.value, zone: call.zone, label: call.label, metres: distanceMetres(point),
-      made: prev?.made ?? null,
+      made: prev?.made ?? null, tags: prev?.tags,
     }));
   };
 
@@ -428,18 +601,40 @@ export default function GameCapture() {
       // their shot, from the backcourt.
       setPendingShot({ ...pendingShot, teamId, ...readFullTap(pendingShot.tap.stored, teamId) });
     }
-    if (followUp && !pendingShot) {
-      if (followUp.kind === 'rebound') {
+    if (followUp && !pendingShot && !ftSeq) {
+      const f = followUp;
+      if (f.kind === 'rebound') {
         // Same team as the shooter = offensive board, otherwise defensive.
-        void handleStat((teamId === followUp.teamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId });
+        void handleStat((teamId === f.teamId ? 'oreb' : 'dreb') as StatEventType, 0, { teamId, playerId }, { next: null });
         return;
       }
-      if (teamId === followUp.teamId && playerId !== followUp.shooterId) {
-        void handleStat('ast' as StatEventType, 0, { teamId, playerId });
+      if (f.kind === 'assist' && teamId === f.teamId && playerId !== f.shooterId) {
+        void handleStat('ast' as StatEventType, 0, { teamId, playerId }, { next: null });
         return;
       }
-      // An assist can only come from a teammate: any other tap is the scorer
-      // moving on, so drop the prompt and select the player as usual.
+      if (f.kind === 'block' && teamId === f.teamId) {
+        void handleStat('blk' as StatEventType, 0, { teamId, playerId },
+          { next: { kind: 'rebound', teamId: f.shotTeamId, shooterId: f.shooterId, blocked: true } });
+        return;
+      }
+      if (f.kind === 'steal' && teamId === f.teamId) {
+        void handleStat('stl' as StatEventType, 0, { teamId, playerId }, { next: null });
+        return;
+      }
+      if (f.kind === 'turnover' && teamId === f.teamId) {
+        void handleStat('tov' as StatEventType, 0, { teamId, playerId }, { next: null });
+        return;
+      }
+      if (f.kind === 'fouled' && teamId === f.teamId) {
+        void (async () => {
+          if (f.recordFd) await handleStat('fd' as StatEventType, 0, { teamId, playerId }, { next: null });
+          else setFollowUp(null);
+          if (f.fts > 0) setFtSeq({ teamId, playerId, total: f.fts, index: 1, noRebound: f.noRebound });
+        })();
+        return;
+      }
+      // Anyone else is the scorer moving on: drop the prompt and select the
+      // player as usual.
       setFollowUp(null);
     }
     setSelectedPlayerId(playerId);
@@ -491,6 +686,7 @@ export default function GameCapture() {
 
   const handleUndo = async () => {
     setFollowUp(null);
+    setFtSeq(null);
     const lastEvent = statEvents?.[0];
     if (!lastEvent) return;
     try {
@@ -500,6 +696,8 @@ export default function GameCapture() {
       toast.error("Failed to undo");
     }
   };
+
+  undoRef.current = () => { void handleUndo(); };
 
   const handleEndPeriod = async () => {
     if (!game) return;
@@ -522,7 +720,23 @@ export default function GameCapture() {
 
       const isLastRegPeriod = game.currentPeriod >= game.periodCount;
       const nextPeriod = game.currentPeriod + 1;
-      const nextDurationSec = (isLastRegPeriod ? 5 : game.periodDurationMins) * 60;
+      const nextDurationSec = (isLastRegPeriod ? rules.overtimeDurationMins : game.periodDurationMins) * 60;
+
+      // Regulation (or an overtime) is over and someone is ahead: that's the
+      // game. Don't roll on into an overtime nobody is going to play.
+      if (isLastRegPeriod && (boxScore?.home.totalPoints ?? 0) !== (boxScore?.away.totalPoints ?? 0)) {
+        await updateClock.mutateAsync({ gameId, data: { currentPeriod: game.currentPeriod, clockSeconds: 0 } });
+        setLocalClock(0);
+        setSelectedPlayerId(null);
+        setSelectedTeamId(null);
+        setPendingShot(null);
+        setFollowUp(null);
+        setFtSeq(null);
+        invalidateData();
+        setPlaysOpen(false);
+        setFinalizeDialogOpen(true);
+        return;
+      }
 
       await updateClock.mutateAsync({
         gameId,
@@ -538,9 +752,9 @@ export default function GameCapture() {
       setPendingShot(null);
       invalidateData();
 
-      const label = isLastRegPeriod
-        ? `OT${nextPeriod - game.periodCount}`
-        : `Q${nextPeriod}`;
+      setFollowUp(null);
+      setFtSeq(null);
+      const label = periodLabel(nextPeriod);
       toast.success(`Period ended — advanced to ${label}`);
 
       const flaggedThisPeriod = (pbp ?? []).filter(
@@ -595,6 +809,8 @@ export default function GameCapture() {
       shotZone: (ev as unknown as ShotEvent).shotZone ?? null,
       shotX: (ev as unknown as ShotEvent).shotX ?? null,
       shotY: (ev as unknown as ShotEvent).shotY ?? null,
+      period: ev.period,
+      clock: formatClock(ev.clockSeconds),
     });
   };
 
@@ -612,11 +828,17 @@ export default function GameCapture() {
     ]);
     const isStructural = structural.has(editForm.eventType);
     const isFgShot = FG_SHOT_TYPES.has(editForm.eventType);
+    const clockSeconds = parseClock(editForm.clock);
+    if (clockSeconds == null) { toast.error("Enter the clock as minutes:seconds, e.g. 7:42"); return; }
+    const original = statEvents?.find(e => e.id === editPbp.statEventId);
     try {
       await updateStat.mutateAsync({
         statEventId: editPbp.statEventId,
         data: {
           eventType: editForm.eventType,
+          // Only send the time when it was actually changed.
+          ...(original && (original.period !== editForm.period || original.clockSeconds !== clockSeconds)
+            ? ({ period: editForm.period, clockSeconds } as object) : {}),
           teamId: isStructural ? null : editForm.teamId,
           playerId: isStructural ? null : editForm.playerId,
           // Keep the points in step with the (possibly changed) event type.
@@ -670,8 +892,7 @@ export default function GameCapture() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const periodLabel = (period: number) =>
-    period > game.periodCount ? `OT${period - game.periodCount}` : `Q${period}`;
+  const periodLabel = (period: number) => gamePeriodLabel(period, game.periodCount);
 
   const handleToggleReview = async (entry: PlayByPlayEntry) => {
     if (entry.statEventId == null) return;
@@ -707,26 +928,38 @@ export default function GameCapture() {
     { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
-  const simpleStats = [
-    { type: '2ptm', label: '2PT MAKE', color: 'bg-green-600 hover:bg-green-700', val: 2 },
-    { type: '2pta', label: '2PT MISS', color: 'bg-red-600 hover:bg-red-700' },
-    { type: '3ptm', label: '3PT MAKE', color: 'bg-green-600 hover:bg-green-700', val: 3 },
-    { type: '3pta', label: '3PT MISS', color: 'bg-red-600 hover:bg-red-700' },
-    { type: 'ftm', label: 'FT MAKE', color: 'bg-green-700 hover:bg-green-800', val: 1 },
-    { type: 'fta', label: 'FT MISS', color: 'bg-red-700 hover:bg-red-800' },
-    { type: 'reb', label: 'REBOUND', color: 'bg-blue-600 hover:bg-blue-700' },
+  // The grid. Free throws and fouls open their own short flows.
+  const proButtons = [
+    { type: 'ft', label: 'FREE THROWS', color: 'bg-green-700 hover:bg-green-800' },
+    { type: 'oreb', label: 'O REB', color: 'bg-blue-600 hover:bg-blue-700' },
+    { type: 'dreb', label: 'D REB', color: 'bg-indigo-600 hover:bg-indigo-700' },
     { type: 'ast', label: 'ASSIST', color: 'bg-sky-600 hover:bg-sky-700' },
-    { type: 'tov', label: 'TOV', color: 'bg-orange-600 hover:bg-orange-700' },
+    { type: 'tov', label: 'TURNOVER', color: 'bg-orange-600 hover:bg-orange-700' },
     { type: 'stl', label: 'STEAL', color: 'bg-cyan-600 hover:bg-cyan-700' },
     { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
     { type: 'pf', label: 'FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
     { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
+  const simpleStats = [
+    { type: '2ptm', label: '2PT MAKE', color: 'bg-green-600 hover:bg-green-700', val: 2 },
+    { type: '2pta', label: '2PT MISS', color: 'bg-red-600 hover:bg-red-700' },
+    { type: '3ptm', label: '3PT MAKE', color: 'bg-green-600 hover:bg-green-700', val: 3 },
+    { type: '3pta', label: '3PT MISS', color: 'bg-red-600 hover:bg-red-700' },
+    { type: 'ft', label: 'FREE THROWS', color: 'bg-green-700 hover:bg-green-800' },
+    { type: 'reb', label: 'REBOUND', color: 'bg-blue-600 hover:bg-blue-700' },
+    { type: 'ast', label: 'ASSIST', color: 'bg-sky-600 hover:bg-sky-700' },
+    { type: 'tov', label: 'TURNOVER', color: 'bg-orange-600 hover:bg-orange-700' },
+    { type: 'stl', label: 'STEAL', color: 'bg-cyan-600 hover:bg-cyan-700' },
+    { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
+    { type: 'pf', label: 'FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
+    { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
+  ] as { type: string; label: string; color: string; val?: number }[];
+
   const isLite = activeMode === 'simple';
   // In Pro, field goals are recorded by tapping the court, so the grid only
   // carries everything else.
-  const statButtons = isLite ? simpleStats : complexStats.filter(b => !FG_SHOT_TYPES.has(b.type as StatEventType));
+  const statButtons: { type: string; label: string; color: string; val?: number }[] = isLite ? simpleStats : proButtons;
 
   // Shots already recorded, for the court. The newest few are drawn brighter.
   const locatedShots = ((statEvents ?? []) as unknown as ShotEvent[])
@@ -748,28 +981,82 @@ export default function GameCapture() {
 
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
-  // "Assist?" / "Rebound?" — answered by tapping a player, or dismissed.
-  const followUpTeam = followUp ? (followUp.teamId === homeTeam.id ? homeTeam : awayTeam) : null;
-  const followUpBar = followUp && followUpTeam && !pendingShot ? (
-    <div className="h-full flex items-center justify-between gap-2 rounded-[10px] border border-sky-500/40 bg-sky-500/10 px-3" data-testid="follow-up" data-kind={followUp.kind}>
-      <span className="text-sm font-semibold text-sky-400 leading-tight min-w-0">
-        {followUp.kind === 'assist'
-          ? <>Assist? <span className="font-normal text-sky-300/90">Tap the {followUpTeam.abbreviation} passer</span></>
-          : <>Rebound? <span className="font-normal text-sky-300/90">Tap who got it</span></>}
-      </span>
-      <span className="flex items-center gap-1 shrink-0">
-        {followUp.kind === 'rebound' && [awayTeam, homeTeam].map(t => (
+  // The prompt strip: a free-throw trip, or the question that follows the
+  // last play. Answered by tapping a player or a button, or dismissed.
+  const bar = (tone: 'sky' | 'green', testId: string, kind: string, text: React.ReactNode, actions: React.ReactNode) => (
+    <div className={`h-full flex items-center justify-between gap-2 rounded-[10px] border px-3 ${tone === 'green' ? 'border-green-500/40 bg-green-500/10' : 'border-sky-500/40 bg-sky-500/10'}`} data-testid={testId} data-kind={kind}>
+      <span className={`text-sm font-semibold leading-tight min-w-0 ${tone === 'green' ? 'text-green-400' : 'text-sky-400'}`}>{text}</span>
+      <span className="flex items-center gap-1 shrink-0">{actions}</span>
+    </div>
+  );
+  const dim = (s: string) => <span className="font-normal opacity-80">{s}</span>;
+  const skip = (label: string) => (
+    <Button variant="ghost" size="sm" className="px-2" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">{label}</Button>
+  );
+  let followUpBar: React.ReactNode = null;
+  if (pendingShot) followUpBar = null;
+  else if (ftSeq) {
+    followUpBar = ftSeq.total === 0
+      ? bar('green', 'ft-bar', 'count', <>Free throws for {playerName(ftSeq.playerId)} {dim('— how many?')}</>, <>
+          {[1, 2, 3].map(n => (
+            <Button key={n} size="sm" variant="outline" className="px-3 font-bold" onClick={() => setFtSeq({ ...ftSeq, total: n })} data-testid={`ft-count-${n}`}>{n}</Button>
+          ))}
+          <Button variant="ghost" size="sm" className="px-2" onClick={() => setFtSeq(null)} title="Cancel"><X className="w-4 h-4" /></Button>
+        </>)
+      : bar('green', 'ft-bar', 'shot', <>FT {ftSeq.index} of {ftSeq.total} {dim(`· ${playerName(ftSeq.playerId)}`)}</>, <>
+          <Button size="sm" className="px-3 font-bold bg-green-600 hover:bg-green-700 text-white" disabled={recordStat.isPending} onClick={() => handleFreeThrow(true)} data-testid="ft-made">MADE</Button>
+          <Button size="sm" className="px-3 font-bold bg-red-600 hover:bg-red-700 text-white" disabled={recordStat.isPending} onClick={() => handleFreeThrow(false)} data-testid="ft-missed">MISSED</Button>
+          <Button variant="ghost" size="sm" className="px-2" onClick={() => setFtSeq(null)} title="Stop this trip to the line"><X className="w-4 h-4" /></Button>
+        </>);
+  } else if (followUp) {
+    const f = followUp;
+    const who = abbr(f.teamId);
+    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, <>Assist? {dim(`Tap the ${who} passer`)}</>, skip('No assist'));
+    else if (f.kind === 'rebound') followUpBar = bar('sky', 'follow-up', f.kind, <>Rebound? {dim('Tap who got it')}</>, <>
+        {!f.blocked && (
+          <Button variant="outline" size="sm" className="px-2" data-testid="follow-up-blocked" title="The shot was blocked — say who by"
+            onClick={() => setFollowUp({ kind: 'block', teamId: otherTeamId(f.teamId), shotTeamId: f.teamId, shooterId: f.shooterId })}>
+            Blocked
+          </Button>
+        )}
+        {[awayTeam, homeTeam].map(t => (
           <Button key={t.id} variant="outline" size="sm" className="px-2" onClick={() => handleTeamRebound(t.id)}
             title={`Nobody secured it — credit ${t.name} with a team rebound`} data-testid={`team-rebound-${t.isHome ? 'home' : 'away'}`}>
             {t.abbreviation} team
           </Button>
         ))}
-        <Button variant="ghost" size="sm" className="px-2" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">
-          {followUp.kind === 'assist' ? 'No assist' : 'None'}
-        </Button>
-      </span>
-    </div>
-  ) : null;
+        {skip('None')}
+      </>);
+    else if (f.kind === 'block') followUpBar = bar('sky', 'follow-up', f.kind, <>Blocked by? {dim(`Tap the ${who} player`)}</>,
+      <Button variant="ghost" size="sm" className="px-2" onClick={() => setFollowUp({ kind: 'rebound', teamId: f.shotTeamId, shooterId: f.shooterId, blocked: true })}>Back</Button>);
+    else if (f.kind === 'steal') followUpBar = bar('sky', 'follow-up', f.kind, <>Steal? {dim(`Tap the ${who} player who took it`)}</>, skip('No steal'));
+    else if (f.kind === 'turnover') followUpBar = bar('sky', 'follow-up', f.kind, <>Turnover by? {dim(`Tap the ${who} player who lost it`)}</>, <>
+        <Button variant="outline" size="sm" className="px-2" onClick={() => void handleStat('tov' as StatEventType, 0, { teamId: f.teamId, playerId: null }, { next: null })}>{who} team</Button>
+        {skip('Skip')}
+      </>);
+    else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
+      f.fts > 0
+        ? <>{f.fts} free throw{f.fts === 1 ? '' : 's'} {dim(`— tap the ${who} shooter`)}</>
+        : <>Who was fouled? {dim(`Tap the ${who} player`)}</>,
+      skip(f.fts > 0 ? 'No shots' : 'Skip'));
+  }
+
+  // Which team's on-court players are being asked for right now.
+  const awaiting = (teamId: number) => {
+    if (pendingShot) return !isLite && pendingShot.made != null && (pendingShot.teamId == null || pendingShot.teamId === teamId);
+    if (ftSeq || !followUp) return false;
+    return followUp.kind === 'rebound' || followUp.teamId === teamId;
+  };
+  const panelProps = (team: typeof homeTeam) => ({
+    awaitingShooter: awaiting(team.id),
+    onTimeout: () => handleTimeout(team.id),
+    onBenchTech: () => openFoul(team.id, null),
+    onTeamRebound: () => handleTeamRebound(team.id),
+    onTeamTurnover: () => handleTeamTurnover(team.id),
+    fouls: foulsByPlayer,
+    foulLimit: rules.foulLimit,
+    timeouts: timeoutsLeft(evAsc, team.id, game.currentPeriod, rules).left,
+  });
 
   return (
     <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden font-sans select-none">
@@ -788,14 +1075,23 @@ export default function GameCapture() {
           <div className="text-4xl font-black font-mono tracking-tighter text-foreground">
             {boxScore?.away.totalPoints || 0}
           </div>
+          <TeamFoulBadge count={teamFoulCount(awayTeam.id)} penalty={inPenalty(awayTeam.id)} side="away" />
           {possessions?.currentPossessionTeamId === awayTeam.id && <ArrowLeft className="w-5 h-5 text-muted-foreground" />}
         </div>
         
         <div className="flex-1 flex justify-center items-center gap-6">
           <div className="text-center font-mono font-bold">
             <div className="text-xs text-muted-foreground">PERIOD</div>
-            <div className="text-xl leading-none text-foreground">{game.currentPeriod}</div>
+            <div className="text-xl leading-none text-foreground" data-testid="period-label">{periodLabel(game.currentPeriod)}</div>
           </div>
+          {arrowId != null && (
+            <div className="text-center font-mono font-bold hidden md:block" title="Alternating possession: who gets the ball at the next held ball or period start" data-testid="possession-arrow">
+              <div className="text-xs text-muted-foreground">ARROW</div>
+              <div className="text-sm leading-none" style={{ color: teamTextColor((arrowId === homeTeam.id ? homeTeam : awayTeam).colorPrimary, appSurface()) }}>
+                {arrowId === awayTeam.id ? '◀ ' : ''}{abbr(arrowId)}{arrowId === homeTeam.id ? ' ▶' : ''}
+              </div>
+            </div>
+          )}
           
           <div className="bg-[#0b0d10] border border-white/10 rounded-xl px-4 py-1 flex items-center gap-4">
             <span className="text-4xl font-bold font-mono text-amber-400 tabular-nums">
@@ -815,6 +1111,7 @@ export default function GameCapture() {
 
         <div className="flex items-center justify-end w-1/3 gap-4">
           {possessions?.currentPossessionTeamId === homeTeam.id && <ArrowRight className="w-5 h-5 text-muted-foreground" />}
+          <TeamFoulBadge count={teamFoulCount(homeTeam.id)} penalty={inPenalty(homeTeam.id)} side="home" />
           <div className="text-4xl font-black font-mono tracking-tighter text-foreground">
             {boxScore?.home.totalPoints || 0}
           </div>
@@ -848,7 +1145,7 @@ export default function GameCapture() {
               </button>
               {/* Game flow lives up here in full-court Pro, so the court gets the height */}
               <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={() => handleStat('jump_ball' as StatEventType)}>JUMP BALL</Button>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleJumpBall}>JUMP BALL</Button>
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleEndPeriod}>END PERIOD</Button>
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleStartPeriod}>START PERIOD</Button>
               </div>
@@ -873,14 +1170,7 @@ export default function GameCapture() {
                 bench={awayBench}
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
-                awaitingShooter={
-                  (!isLite && pendingShot?.made != null && (pendingShot.teamId == null || pendingShot.teamId === team.id))
-                  || (!pendingShot && followUp?.kind === 'rebound')
-                  || (!pendingShot && followUp?.kind === 'assist' && followUp.teamId === team.id)
-                }
-                onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
-                onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
-                onTeamRebound={() => handleTeamRebound(team.id)}
+                {...panelProps(team)}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
                 onSelectBenchPlayer={(id) => handleBenchPlayerClick(team.id, id)}
                 benchBeside={isLite}
@@ -904,7 +1194,25 @@ export default function GameCapture() {
                 ) : (
                   <span className="sa-eyebrow-muted whitespace-nowrap">Tap the court to record a shot</span>
                 )}
-                {fullCourt && (
+                {detail && pendingShot && (
+                  <div className="flex items-center gap-1 shrink-0" data-testid="shot-tags">
+                    {([['layup', 'Layup'], ['dunk', 'Dunk'], ['fastbreak', 'Fast break']] as const).map(([tag, label]) => {
+                      const on = pendingShot.tags?.includes(tag) ?? false;
+                      return (
+                        <button key={tag} type="button"
+                          className={`h-6 px-2 rounded-md border text-[11px] font-semibold ${on ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-accent'}`}
+                          onClick={() => {
+                            // Layup and dunk are alternatives; fast break is on top of either.
+                            const rest = (pendingShot.tags ?? []).filter(x => x !== tag && !(tag !== 'fastbreak' && x !== 'fastbreak'));
+                            setPendingShot({ ...pendingShot, tags: on ? rest : [...rest, tag] });
+                          }}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {fullCourt && !(detail && pendingShot) && (
                   <Button variant="ghost" size="sm" className="h-6 px-2 gap-1 text-[11px] text-muted-foreground shrink-0" onClick={handleSwapEnds}
                     disabled={updateGame.isPending} title="The teams are shown attacking the wrong baskets" data-testid="swap-ends">
                     <ArrowLeftRight className="w-3.5 h-3.5" /> Swap ends
@@ -985,14 +1293,7 @@ export default function GameCapture() {
                 bench={homeBench}
                 selectedPlayerId={selectedPlayerId}
                 onSelectPlayer={(id) => handlePlayerTap(team.id, id)}
-                awaitingShooter={
-                  (!isLite && pendingShot?.made != null && (pendingShot.teamId == null || pendingShot.teamId === team.id))
-                  || (!pendingShot && followUp?.kind === 'rebound')
-                  || (!pendingShot && followUp?.kind === 'assist' && followUp.teamId === team.id)
-                }
-                onTimeout={() => handleStat('timeout' as StatEventType, 0, { teamId: team.id })}
-                onTeamFoul={() => handleStat('tf' as StatEventType, 0, { teamId: team.id })}
-                onTeamRebound={() => handleTeamRebound(team.id)}
+                {...panelProps(team)}
                 subModeBenchPlayerId={subMode && subMode.teamId === team.id ? subMode.benchPlayerId : null}
                 onSelectBenchPlayer={(id) => handleBenchPlayerClick(team.id, id)}
                 benchBeside={isLite}
@@ -1012,7 +1313,7 @@ export default function GameCapture() {
                   <button
                     key={btn.type}
                     disabled={isDisabled}
-                    onClick={() => handleStatButtonClick(btn.type as StatEventType | 'reb', btn.val)}
+                    onClick={() => handleStatButtonClick(btn.type as StatEventType | 'reb' | 'ft', btn.val)}
                     className={`rounded-[10px] sa-display font-bold leading-none ${isLite ? 'text-2xl xl:text-3xl' : 'text-xl xl:text-2xl'} text-white transition-all
                       ${btn.color} 
                       ${isDisabled ? 'opacity-20 cursor-not-allowed grayscale' : 'shadow-md active:scale-95'}
@@ -1027,7 +1328,7 @@ export default function GameCapture() {
               <Button 
                 variant="outline" 
                 className="flex-1 bg-card hover:bg-accent border-[hsl(var(--border-strong))] text-foreground font-bold"
-                onClick={() => handleStat('jump_ball' as StatEventType)}
+                onClick={handleJumpBall}
               >
                 JUMP BALL
               </Button>
@@ -1183,8 +1484,24 @@ export default function GameCapture() {
             const isFgShot = FG_SHOT_TYPES.has(editForm.eventType);
             return (
               <div className="space-y-4 mt-2">
-                <div className="text-xs text-muted-foreground font-mono">
-                  Q{editPbp.period} • {formatClock(editPbp.clockSeconds)}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Period</div>
+                    <Select value={String(editForm.period)} onValueChange={(v) => setEditForm({ ...editForm, period: Number(v) })}>
+                      <SelectTrigger className="bg-card border-[hsl(var(--border-strong))] text-foreground h-10" data-testid="edit-period"><SelectValue /></SelectTrigger>
+                      <SelectContent className="bg-card border-[hsl(var(--border-strong))] text-foreground">
+                        {Array.from({ length: Math.max(game.currentPeriod, game.periodCount, editForm.period) }, (_, i) => i + 1).map(n => (
+                          <SelectItem key={n} value={String(n)}>{periodLabel(n)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Game clock</div>
+                    <input value={editForm.clock} onChange={(e) => setEditForm({ ...editForm, clock: e.target.value })}
+                      inputMode="numeric" placeholder="7:42" aria-label="Game clock" data-testid="edit-clock"
+                      className={`w-full h-10 rounded-md border bg-card px-3 font-mono text-sm ${parseClock(editForm.clock) == null ? 'border-destructive' : 'border-[hsl(var(--border-strong))]'}`} />
+                  </div>
                 </div>
                 <div className="text-sm text-muted-foreground bg-secondary/60 rounded p-3 border border-border">
                   Currently: {editPbp.eventText}
@@ -1464,34 +1781,128 @@ export default function GameCapture() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={ftDialog.open} onOpenChange={(open) => !open && setFtDialog({ open: false })}>
-        <DialogContent className="bg-card text-foreground border-border sm:max-w-[400px]">
+      {/* What kind of foul? One tap records it and sets up what follows. */}
+      <Dialog open={!!foulDialog} onOpenChange={(open) => !open && setFoulDialog(null)}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[520px]" data-testid="foul-dialog">
+          {foulDialog && (() => {
+            const team = foulDialog.teamId === homeTeam.id ? homeTeam : awayTeam;
+            const penalty = inPenalty(team.id);
+            const option = (choice: FoulChoice, label: string, hint: string, tone = 'bg-purple-600 hover:bg-purple-700') => (
+              <button key={choice} type="button" onClick={() => void recordFoul(choice)} data-testid={`foul-${choice}`}
+                className={`rounded-[10px] ${tone} text-white px-3 py-3 text-left shadow-md active:scale-95 transition-all`}>
+                <div className="sa-display font-bold text-xl leading-none">{label}</div>
+                <div className="text-[11px] opacity-85 mt-1 leading-tight">{hint}</div>
+              </button>
+            );
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
+                    {foulDialog.playerId != null ? `Foul on ${playerName(foulDialog.playerId)}` : `${team.abbreviation} technical`}
+                  </DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    {foulDialog.playerId != null
+                      ? <>{team.abbreviation} team fouls this period: {teamFoulCount(team.id)}{penalty && <span className="text-red-400 font-semibold"> — in the penalty, so any foul is two shots</span>}</>
+                      : 'Charged to the bench, not to a player. The other team shoots one free throw.'}
+                  </DialogDescription>
+                </DialogHeader>
+                {foulDialog.playerId != null ? (
+                  <div className="space-y-2 mt-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      {option('personal', 'PERSONAL', penalty ? 'Not shooting — 2 shots (penalty)' : 'Not shooting — no free throws')}
+                      {option('offensive', 'OFFENSIVE', 'Also a turnover. No free throws')}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {option('shooting2', 'SHOOTING · 2', 'Missed 2-point attempt', 'bg-purple-700 hover:bg-purple-800')}
+                      {option('shooting3', 'SHOOTING · 3', 'Missed 3-point attempt', 'bg-purple-700 hover:bg-purple-800')}
+                      {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {option('technical', 'TECHNICAL', '1 shot, any shooter', 'bg-slate-600 hover:bg-slate-700')}
+                      {option('unsportsmanlike', 'UNSPORTS.', '2 shots + possession', 'bg-red-700 hover:bg-red-800')}
+                      {option('disqualifying', 'DISQUALIFY', 'Ejected. 2 shots + possession', 'bg-red-800 hover:bg-red-900')}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {option('coach', 'COACH', 'Technical on the head coach', 'bg-slate-600 hover:bg-slate-700')}
+                    {option('bench', 'BENCH', 'Technical on the bench', 'bg-slate-600 hover:bg-slate-700')}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Turnover type (only when "Record turnover and shot types" is on) */}
+      <Dialog open={!!tovDialog} onOpenChange={(open) => !open && setTovDialog(null)}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[480px]" data-testid="tov-dialog">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Free Throw Sequence</DialogTitle>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tighter">
+              {tovDialog?.playerId != null ? `Turnover — ${playerName(tovDialog.playerId)}` : `${abbr(tovDialog?.teamId ?? null)} team turnover`}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">What happened?</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            {[1, 2, 3].map(total => (
-              <div key={total} className="space-y-2">
-                <div className="text-center font-bold text-muted-foreground mb-2">{total} SHOTS</div>
-                {Array.from({ length: total }).map((_, idx) => (
-                  <Button
-                    key={idx}
-                    variant="outline"
-                    className="w-full bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent"
-                    onClick={() => {
-                      setFtDialog({ open: false });
-                      handleStat(ftDialog.eventType!, ftDialog.eventType === 'ftm' ? 1 : 0, {
-                        ftSequenceIndex: idx + 1,
-                        ftSequenceTotal: total
-                      });
-                    }}
-                  >
-                    Shot {idx + 1}
-                  </Button>
-                ))}
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            {TURNOVER_TYPES.filter(([key]) => key !== 'offensive_foul').map(([key, label]) => (
+              <Button key={key} variant="outline" className="h-12 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent font-semibold"
+                data-testid={`tov-${key}`}
+                onClick={() => { const d = tovDialog!; setTovDialog(null); recordTurnover(d.teamId, d.playerId, key); }}>
+                {label}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Opening tip: who came away with it? The other team gets the arrow. */}
+      <Dialog open={tipDialog} onOpenChange={setTipDialog}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[400px]" data-testid="tip-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Who won the tip?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              They start with the ball. The other team gets the possession arrow for the next held ball.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            {[awayTeam, homeTeam].map(tm => (
+              <button key={tm.id} type="button" data-testid={`tip-${tm.isHome ? 'home' : 'away'}`}
+                className="h-20 rounded-[10px] border-2 border-border bg-secondary/60 hover:bg-accent sa-display font-bold text-3xl"
+                style={{ color: teamTextColor(tm.colorPrimary, appSurface()) }}
+                onClick={() => { setTipDialog(false); void handleStat('jump_ball' as StatEventType, 0, { teamId: tm.id, playerId: null }, { next: null }); }}>
+                {tm.abbreviation}
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Before the first play: are the teams shown shooting the right way? */}
+      <Dialog open={endsOpen} onOpenChange={(open) => { if (!open) { window.localStorage.setItem(endsKey, '1'); setEndsOpen(false); } }}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[460px]" data-testid="ends-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Which way are they shooting?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Looking at the court from where you're sitting. Shot locations depend on this — the teams swap automatically at half-time.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 mt-2 text-center">
+            {[{ tm: leftTeam, side: '◀ LEFT basket' }, { tm: rightTeam, side: 'RIGHT basket ▶' }].map(({ tm, side }) => (
+              <div key={tm.id} className="rounded-[10px] border border-border bg-secondary/60 py-4">
+                <div className="sa-display font-bold text-3xl" style={{ color: teamTextColor(tm.colorPrimary, appSurface()) }}>{tm.abbreviation}</div>
+                <div className="text-xs text-muted-foreground mt-1">attack the {side}</div>
               </div>
             ))}
           </div>
+          <DialogFooter className="gap-2 sm:gap-2 mt-2">
+            <Button variant="outline" className="bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={handleSwapEnds} disabled={updateGame.isPending}>
+              <ArrowLeftRight className="w-4 h-4 mr-2" /> Swap them
+            </Button>
+            <Button className="font-bold" data-testid="ends-confirm" onClick={() => { window.localStorage.setItem(endsKey, '1'); setEndsOpen(false); }}>
+              That's right
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -1505,8 +1916,12 @@ function TeamPanel({
   selectedPlayerId,
   onSelectPlayer,
   onTimeout,
-  onTeamFoul,
+  onBenchTech,
   onTeamRebound,
+  onTeamTurnover,
+  fouls,
+  foulLimit,
+  timeouts,
   subModeBenchPlayerId,
   onSelectBenchPlayer,
   benchBeside = false,
@@ -1518,8 +1933,13 @@ function TeamPanel({
   selectedPlayerId: number | null;
   onSelectPlayer: (id: number) => void;
   onTimeout: () => void;
-  onTeamFoul: () => void;
+  onBenchTech: () => void;
   onTeamRebound: () => void;
+  onTeamTurnover: () => void;
+  fouls: Map<number, PlayerFouls>;
+  foulLimit: number;
+  // Timeouts this team has left in the current half / overtime.
+  timeouts: number;
   // Non-null when a bench player on this team is armed for a substitution —
   // the value is that bench player's id, and on-court rows become tap
   // targets to complete the swap.
@@ -1564,6 +1984,7 @@ function TeamPanel({
               <div className="text-left flex-1 min-w-0 truncate sa-display font-semibold text-lg xl:text-2xl text-foreground">
                 {p.lastName}
               </div>
+              <FoulPill fouls={fouls.get(p.id)} limit={foulLimit} />
             </button>
           );
         })}
@@ -1600,9 +2021,10 @@ function TeamPanel({
                   <div className={`text-sm font-black font-mono w-8 text-center ${isArmed ? 'text-amber-600' : 'text-muted-foreground'}`}>
                     {p.jerseyNumber}
                   </div>
-                  <div className={`text-left flex-1 min-w-0 truncate text-sm tracking-tight uppercase ${isArmed ? 'text-amber-700' : 'text-muted-foreground'}`}>
+                  <div className={`text-left flex-1 min-w-0 truncate text-sm tracking-tight uppercase ${isArmed ? 'text-amber-700' : 'text-muted-foreground'} ${fouls.get(p.id)?.out ? 'line-through' : ''}`}>
                     {p.lastName}
                   </div>
+                  <FoulPill fouls={fouls.get(p.id)} limit={foulLimit} small />
                 </button>
               );
             })
@@ -1617,17 +2039,42 @@ function TeamPanel({
       </div>
 
       {/* Team Actions — things credited to the team rather than a player */}
-      <div className="sticky bottom-0 mt-auto h-14 xl:h-16 shrink-0 border-t border-border bg-secondary/60 grid grid-cols-3 p-2 gap-1.5">
-        <Button className="min-w-0 h-full px-1 whitespace-normal leading-[1.05] text-[11px] xl:text-xs bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold" onClick={onTimeout}>
-          TIME OUT
-        </Button>
-        <Button className="min-w-0 h-full px-1 whitespace-normal leading-[1.05] text-[11px] xl:text-xs bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold" onClick={onTeamRebound} title="Nobody secured the rebound — credit the team" data-testid="team-rebound">
-          TEAM REB
-        </Button>
-        <Button className="min-w-0 h-full px-1 whitespace-normal leading-[1.05] text-[11px] xl:text-xs bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold" onClick={onTeamFoul}>
-          TEAM FOUL
-        </Button>
+      <div className="sticky bottom-0 mt-auto h-[4.5rem] xl:h-20 shrink-0 border-t border-border bg-secondary/60 grid grid-cols-2 grid-rows-2 p-1.5 gap-1.5">
+        {([
+          { label: <>TIME OUT <span className={`font-mono ${timeouts === 0 ? 'text-red-400' : 'text-muted-foreground'}`}>· {timeouts}</span></>, onClick: onTimeout, title: `${timeouts} left this half`, id: 'team-timeout' },
+          { label: 'TEAM REB', onClick: onTeamRebound, title: 'Nobody secured the rebound — credit the team', id: 'team-rebound' },
+          { label: 'TEAM TOV', onClick: onTeamTurnover, title: 'A turnover on the team: shot clock, 5 or 8 seconds…', id: 'team-turnover' },
+          { label: 'BENCH TECH', onClick: onBenchTech, title: 'Technical foul on the coach or bench', id: 'team-bench-tech' },
+        ]).map(b => (
+          <Button key={b.id} className="min-w-0 h-full px-1 whitespace-nowrap text-[10px] xl:text-[11px] bg-card hover:bg-accent text-foreground border border-[hsl(var(--border-strong))] font-bold"
+            onClick={b.onClick} title={b.title} data-testid={b.id}>
+            {b.label}
+          </Button>
+        ))}
       </div>
+    </div>
+  );
+}
+
+// A player's foul count, turning amber one short of the limit and red when out.
+function FoulPill({ fouls, limit, small = false }: { fouls?: PlayerFouls; limit: number; small?: boolean }) {
+  if (!fouls || fouls.total === 0) return null;
+  const tone = fouls.out ? 'bg-red-600 text-white' : fouls.total >= limit - 1 ? 'bg-amber-500 text-black' : 'bg-foreground/10 text-muted-foreground';
+  return (
+    <span className={`shrink-0 rounded font-mono font-bold ${small ? 'text-[10px] px-1' : 'text-xs px-1.5 py-0.5'} ${tone}`}
+      title={fouls.out === 'ejected' ? 'Ejected' : fouls.out === 'fouls' ? 'Fouled out' : `${fouls.total} foul${fouls.total === 1 ? '' : 's'}`} data-testid="foul-pill">
+      {fouls.out ? 'OUT' : `${fouls.total}F`}
+    </span>
+  );
+}
+
+// Team fouls this period, shown beside the score. Red once the team is in
+// the penalty (the other team shoots on every further foul).
+function TeamFoulBadge({ count, penalty, side }: { count: number; penalty: boolean; side: 'home' | 'away' }) {
+  return (
+    <div className={`font-mono font-bold leading-tight ${side === 'home' ? 'text-right' : 'text-left'}`} data-testid={`team-fouls-${side}`} title="Team fouls this period">
+      <div className="text-[10px] text-muted-foreground">FOULS</div>
+      <div className={`text-sm ${penalty ? 'text-red-400' : 'text-foreground'}`}>{count}{penalty && <span className="text-[9px] ml-1 align-middle">PENALTY</span>}</div>
     </div>
   );
 }

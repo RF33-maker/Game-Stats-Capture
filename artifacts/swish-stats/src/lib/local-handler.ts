@@ -1,6 +1,7 @@
 import { store, byOrder, type LSGame, type LSStatEvent, type LeagueRole, leagueRules } from "./local-store";
 import { computePossessionEffect, applyScoreDelta, describeEvent } from "./local-possession";
 
+import { gameRules, inGameOrder, playingTime } from "./game-state";
 import { listMembers, addMember, updateMemberRole, removeMember, OfflineError } from "./remote";
 
 // Local-only dev mode seeds a "Local Games" league; signed-in mode uses the
@@ -118,9 +119,13 @@ export function rebuildPlayByPlay(gameId: number): void {
   let homeScore = 0;
   let awayScore = 0;
   let possessionTeamId: number | null = null;
+  // Alternating possession: the opening tip's loser holds the arrow, and it
+  // flips each time it is used (see arrowTeam in game-state.ts).
+  let arrow: number | null = null;
+  const otherTeamId = (id: number) => (id === home.id ? away.id : home.id);
 
   for (const ev of events) {
-    const effect = computePossessionEffect({
+    let effect = computePossessionEffect({
       eventType: ev.eventType,
       eventTeamId: ev.teamId,
       ftSequenceIndex: ev.ftSequenceIndex,
@@ -129,6 +134,13 @@ export function rebuildPlayByPlay(gameId: number): void {
       awayTeamId: away.id,
       currentPossessionTeamId: possessionTeamId,
     });
+
+    if (ev.eventType === "jump_ball" && ev.teamId != null) {
+      arrow = otherTeamId(ev.teamId);
+    } else if (ev.eventType === "period_start" && ev.period > 1 && arrow != null) {
+      effect = { ...effect, nextPossessionTeamId: arrow };
+      arrow = otherTeamId(arrow);
+    }
 
     const next = applyScoreDelta(effect.scoreDelta, ev.teamId, home.id, homeScore, awayScore);
     homeScore = next.homeScore;
@@ -150,6 +162,8 @@ export function rebuildPlayByPlay(gameId: number): void {
       ftSequenceIndex: ev.ftSequenceIndex,
       ftSequenceTotal: ev.ftSequenceTotal,
       otherPlayer,
+      qualifiers: ev.qualifiers,
+      periodCount: game.periodCount,
     });
 
     store.playByPlay.create({
@@ -217,11 +231,19 @@ function buildBoxScore(gameId: number): HandlerResult {
   const homePoints = lastPbp?.homeScore ?? 0;
   const awayPoints = lastPbp?.awayScore ?? 0;
 
+  const time = playingTime(inGameOrder(events), allPlayers, gameRules(game),
+    { period: game.currentPeriod, clockSeconds: game.status === "setup" ? game.periodDurationMins * 60 : game.clockSeconds });
+
   const buildTeam = (team: typeof home, totalPoints: number) => {
     const lines = allPlayers
       .filter(p => p.teamId === team.id)
-      .map(p => lineByPlayer.get(p.id)!)
-      .filter(Boolean);
+      .filter(p => lineByPlayer.has(p.id))
+      .map(p => ({
+        ...lineByPlayer.get(p.id)!,
+        isStarter: p.isStarter,
+        secondsPlayed: time.get(p.id)?.seconds ?? 0,
+        plusMinus: time.get(p.id)?.plusMinus ?? 0,
+      }));
     return {
       teamId: team.id,
       name: team.name,
@@ -665,6 +687,7 @@ export async function handleLocalRequest(
       shotZone?: string | null;
       shotX?: number | null;
       shotY?: number | null;
+      qualifiers?: string[] | null;
     };
 
     // Substitutions are an indivisible pair validated against the live
@@ -715,6 +738,7 @@ export async function handleLocalRequest(
       shotY: hasXY ? data.shotY! : null,
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
+      qualifiers: (data.qualifiers ?? []).filter(q => /^[a-z0-9_]+$/.test(q)).slice(0, 6),
       possessionTeamId: game.possessionTeamId,
       pairEventId: null,
       needsReview: false,
@@ -731,6 +755,8 @@ export async function handleLocalRequest(
       clockSeconds: data.clockSeconds,
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
+      qualifiers: statEvent.qualifiers,
+      periodCount: game.periodCount,
     });
 
     const pbp = store.playByPlay.create({
@@ -755,7 +781,13 @@ export async function handleLocalRequest(
     if (effect.nextPossessionTeamId !== undefined) {
       gameUpdates.possessionTeamId = effect.nextPossessionTeamId;
     }
-    const updatedGame = store.games.update(gameId, gameUpdates)!;
+    let updatedGame = store.games.update(gameId, gameUpdates)!;
+    // The possession arrow depends on the whole sequence, so replay it when
+    // one of the two events that use it comes in.
+    if (data.eventType === "jump_ball" || data.eventType === "period_start") {
+      rebuildPlayByPlay(gameId);
+      updatedGame = store.games.get(gameId)!;
+    }
 
     return ok({ statEvent, playByPlay: pbp, game: updatedGame }, 201);
   }
@@ -840,6 +872,8 @@ export async function handleLocalRequest(
       if (data.teamId !== undefined) changes.teamId = data.teamId;
       if (data.playerId !== undefined) changes.playerId = data.playerId;
       if (data.eventType !== undefined) changes.eventType = data.eventType;
+      // Tags describe the original kind of event; they don't carry over to a different one.
+      if (data.eventType !== undefined && data.eventType !== target.eventType) changes.qualifiers = [];
       if (data.period !== undefined) changes.period = data.period;
       if (data.clockSeconds !== undefined) changes.clockSeconds = data.clockSeconds;
       if (data.value !== undefined) changes.value = data.value;

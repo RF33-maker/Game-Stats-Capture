@@ -21,6 +21,9 @@ export interface AppSettings {
   // Pro shot court: "full" is drawn as the scorer sees the floor; "half" is
   // a single bigger half court for small screens.
   courtView: "full" | "half";
+  // Ask what kind of turnover it was and offer shot types (layup, dunk,
+  // fast break). More detail for the stats, one more tap per play.
+  detailPrompts: boolean;
 }
 
 // FIBA defaults: 4 periods x 10 minutes, 5-minute overtimes.
@@ -32,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   confirmBeforeFinalize: true,
   followUpPrompts: true,
   courtView: "full",
+  detailPrompts: false,
 };
 
 const STORAGE_KEY = "swish-stats:settings";

@@ -195,6 +195,22 @@ export default function Settings() {
                   onCheckedChange={(v) => update("followUpPrompts", v)}
                 />
               </div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor="detailPrompts" className="text-sm font-medium">
+                    Record turnover and shot types
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Ask what kind of turnover it was (travel, bad pass…) and offer layup, dunk and
+                    fast break on shots. Richer stats for one extra tap — leave off if you're scoring alone.
+                  </p>
+                </div>
+                <Switch
+                  id="detailPrompts"
+                  checked={settings.detailPrompts}
+                  onCheckedChange={(v) => update("detailPrompts", v)}
+                />
+              </div>
             </CardContent>
           </Card>
 
