@@ -7,6 +7,8 @@ import { Loader2, Play, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { teamTextColor, appSurface } from "@/lib/team-colors";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { OfficialsEditor } from "@/components/organiser/game-day";
 
 export default function SetupExtras() {
   const [, params] = useRoute("/setup/:gameId/extras");
@@ -131,6 +133,16 @@ export default function SetupExtras() {
             </div>
           </div>
         </div>
+
+        {ORGANISER_AVAILABLE && game && (
+          <div className="sa-card p-8 space-y-3">
+            <div>
+              <h2 className="text-xl font-bold">Officials</h2>
+              <p className="text-sm text-muted-foreground">Referees and table crew, for the game report. Optional — you can add them after the game too.</p>
+            </div>
+            <OfficialsEditor gameUid={(game as typeof game & { uid: string }).uid} gameDate={game.date} canEdit />
+          </div>
+        )}
 
         <div className="flex justify-center pt-4">
           <Button 

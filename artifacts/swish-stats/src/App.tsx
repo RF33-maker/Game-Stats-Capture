@@ -68,21 +68,21 @@ function Router() {
       </Route>
       <Route path="/setup/:gameId/teams">
         <ProtectedRoute>
-          <RequireLeagueRole min="admin">
+          <RequireLeagueRole min="scorer">
             <SetupTeams />
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>
       <Route path="/setup/:gameId/players">
         <ProtectedRoute>
-          <RequireLeagueRole min="admin">
+          <RequireLeagueRole min="scorer">
             <SetupPlayers />
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>
       <Route path="/setup/:gameId/extras">
         <ProtectedRoute>
-          <RequireLeagueRole min="admin">
+          <RequireLeagueRole min="scorer">
             <SetupExtras />
           </RequireLeagueRole>
         </ProtectedRoute>

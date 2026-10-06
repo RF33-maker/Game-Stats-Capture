@@ -49,37 +49,61 @@ async function doPull() {
   // already includes them.
   await syncNow().catch(() => {});
 
-  const memberships = await all("league_members", q => q.eq("user_id", userId));
-  const leagueUids = memberships.map(m => m.league_uid as string);
-  const leagues = leagueUids.length ? await all("leagues", q => q.in("uid", leagueUids)) : [];
+  // Row-level security decides what comes back: leagues this user belongs
+  // to, plus the league of any game they joined with a code or whose team
+  // they manage (those arrive with the lowest role).
+  const [memberships, leagues, scoring, managing] = await Promise.all([
+    all("league_members", q => q.eq("user_id", userId)),
+    all("leagues", q => q),
+    all("game_scorers", q => q.eq("user_id", userId)),
+    all("team_managers", q => q.eq("user_id", userId)),
+  ]);
   const roleOf = new Map(memberships.map(m => [m.league_uid as string, m.role as LeagueRole]));
+  const scoringGames = new Set(scoring.map(s => s.game_uid as string));
+  const managedTeams = new Set(managing.map(m => m.league_team_uid as string));
 
   withoutOutbox(() => {
     for (const l of leagues) {
       const local = store.leagues.getByUid(l.uid);
       if (local) {
         store.leagues.update(local.id, {
-          ...(store.outbox.hasPendingFor("leagues", l.uid) ? {} : { name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id }),
-          role: roleOf.get(l.uid) ?? local.role,
+          ...(store.outbox.hasPendingFor("leagues", l.uid) ? {} : { name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id, ...rulesOf(l) }),
+          role: roleOf.get(l.uid) ?? "viewer",
         });
       } else {
         store.leagues.create({
           uid: l.uid, name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id,
-          role: roleOf.get(l.uid) ?? "viewer", createdAt: l.created_at,
+          role: roleOf.get(l.uid) ?? "viewer", createdAt: l.created_at, ...rulesOf(l),
         });
       }
     }
   });
 
-  if (!leagueUids.length) return;
-  const games = await all("games", q => q.in("league_uid", leagueUids));
+  const games = await all("games", q => q);
   for (const g of games) {
-    await pullGame(g);
+    const access = scoringGames.has(g.uid) ? "scorer"
+      : managedTeams.has(g.home_league_team_uid) || managedTeams.has(g.away_league_team_uid) ? "manager"
+      : null;
+    await pullGame(g, access);
   }
   await store.persist();
 }
 
-async function pullGame(g: Row) {
+function rulesOf(l: Row) {
+  return {
+    defaultCaptureMode: l.default_capture_mode,
+    periodCount: l.period_count,
+    periodDurationMins: l.period_duration_mins,
+    overtimeDurationMins: l.overtime_duration_mins,
+    foulLimit: l.foul_limit,
+    bonusAfterTeamFouls: l.bonus_after_team_fouls,
+    timeoutsFirstHalf: l.timeouts_first_half,
+    timeoutsSecondHalf: l.timeouts_second_half,
+    timeoutsOvertime: l.timeouts_overtime,
+  };
+}
+
+async function pullGame(g: Row, access: LSGame["myAccess"]) {
   const local = store.games.getByUid(g.uid);
   const gameDirty = local && store.outbox.list().some(i => {
     if (i.table === "games") return i.uid === g.uid;
@@ -105,13 +129,34 @@ async function pullGame(g: Row) {
       currentPeriod: g.current_period,
       clockSeconds: g.clock_seconds,
       homeAttacksLeftFirstHalf: g.home_attacks_left_first_half ?? false,
+      tipoffTime: g.tipoff_time,
+      roundLabel: g.round_label,
+      gameNumber: g.game_number,
+      venueUid: g.venue_uid,
+      homeLeagueTeamUid: g.home_league_team_uid,
+      awayLeagueTeamUid: g.away_league_team_uid,
+      attendance: g.attendance,
+      overtimeDurationMins: g.overtime_duration_mins,
+      foulLimit: g.foul_limit,
+      bonusAfterTeamFouls: g.bonus_after_team_fouls,
+      timeoutsFirstHalf: g.timeouts_first_half,
+      timeoutsSecondHalf: g.timeouts_second_half,
+      timeoutsOvertime: g.timeouts_overtime,
     };
+    // Set by the server only; safe to refresh even while the game has unsent changes.
+    const serverOwned: Partial<LSGame> = { gameCode: g.game_code, myAccess: access };
     let gameId: number;
     if (!local) {
-      gameId = store.games.create({ uid: g.uid, ...gameFields }).id;
+      gameId = store.games.create({ uid: g.uid, ...gameFields, ...serverOwned }).id;
     } else {
       gameId = local.id;
-      if (!gameDirty) store.games.update(gameId, gameFields);
+      if (!gameDirty) store.games.update(gameId, { ...gameFields, ...serverOwned });
+      else {
+        // Fill in anything this device has never had a value for.
+        const missing = Object.fromEntries(Object.entries(gameFields)
+          .filter(([k]) => (local as Record<string, unknown>)[k] === undefined));
+        store.games.update(gameId, { ...missing, ...serverOwned });
+      }
     }
 
     const teamIdByUid = new Map<string, number>();
@@ -121,6 +166,7 @@ async function pullGame(g: Row) {
         gameId, isHome: t.is_home, name: t.name, abbreviation: t.abbreviation,
         colorPrimary: t.color_primary ?? "#ea580c", colorSecondary: t.color_secondary ?? "#ffffff",
         logoUrl: t.logo_url, siteTeamId: t.site_team_id,
+        leagueTeamUid: t.league_team_uid, headCoach: t.head_coach, assistantCoach: t.assistant_coach,
       };
       if (!lt) {
         if (store.outbox.hasPendingFor("game_teams", t.uid)) continue;
@@ -141,6 +187,7 @@ async function pullGame(g: Row) {
         teamId, jerseyNumber: p.jersey_number, firstName: p.first_name, lastName: p.last_name,
         position: p.position, headshotUrl: p.headshot_url, isActive: p.is_active, isStarter: p.is_starter,
         sitePlayerId: p.site_player_id,
+        squadPlayerUid: p.squad_player_uid, isCaptain: p.is_captain ?? false,
       };
       if (!lp) {
         // Deleted on this device but the delete hasn't reached the server yet.

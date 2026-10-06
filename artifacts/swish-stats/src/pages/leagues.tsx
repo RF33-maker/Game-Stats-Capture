@@ -21,6 +21,7 @@ import {
   Settings,
   Trophy,
   Zap,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +38,8 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AppHeader } from "@/components/app-header";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { JoinGameDialog } from "@/components/organiser/game-day";
 
 function statusLabel(status: Game["status"]) {
   if (status === "active") return "Live";
@@ -52,11 +55,12 @@ function statusClasses(status: Game["status"]) {
   return "bg-blue-500/20 text-blue-400 border-blue-500/30";
 }
 
-function gameAction(game: Game): { label: string; href: string } {
+function gameAction(game: Game, canAdmin = true): { label: string; href: string } {
   if (game.status === "setup")
     return {
       label: "Finish setup",
-      href: `/setup/${game.id}/info?league=${game.leagueId}`,
+      // Fixture details are the organiser's; a scorer goes straight to rosters.
+      href: `/setup/${game.id}/${canAdmin ? "info" : "players"}?league=${game.leagueId}`,
     };
   if (game.status === "final")
     return {
@@ -91,6 +95,7 @@ export default function LeaguesHub() {
   const { data: allGames, isLoading: gamesLoading } = useListGames();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
   const [name, setName] = useState("");
   const [season, setSeason] = useState("");
   const [, setLocation] = useLocation();
@@ -152,12 +157,20 @@ export default function LeaguesHub() {
                   : "Create your first league to start tracking games"}
               </p>
             </div>
-            {canCreateLeague && hasLeagues && (
-              <Button onClick={() => setCreateOpen(true)}>
-                <Plus className="w-4 h-4" />
-                New league
-              </Button>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {ORGANISER_AVAILABLE && (
+                <Button variant="secondary" onClick={() => setJoinOpen(true)} data-testid="join-with-code">
+                  <KeyRound className="w-4 h-4" />
+                  Join with a game code
+                </Button>
+              )}
+              {canCreateLeague && hasLeagues && (
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="w-4 h-4" />
+                  New league
+                </Button>
+              )}
+            </div>
           </div>
 
           {leaguesLoading ? (
@@ -174,7 +187,7 @@ export default function LeaguesHub() {
                 <p className="text-muted-foreground mt-1 max-w-xs mx-auto">
                   {LOCAL_MODE_ENABLED
                     ? "Local mode is active — leagues you create live in this browser."
-                    : "Create your first league and invite your team to start tracking games."}
+                    : "Running a league? Create it here. Scoring a game for someone else? Use the code your organiser gave you."}
                 </p>
               </div>
               {canCreateLeague && (
@@ -207,15 +220,11 @@ export default function LeaguesHub() {
                         : null;
                       const role = league?.viewerRole;
                       const canScore =
-                        role === "scorer" || role === "admin";
+                        role === "scorer" || role === "admin" ||
+                        (game as Game & { myAccess?: string | null }).myAccess === "scorer";
                       const canAdmin = role === "admin";
 
-                      const allowed =
-                        game.status === "active"
-                          ? canScore
-                          : game.status === "setup"
-                            ? canAdmin
-                            : true;
+                      const allowed = game.status === "final" ? true : canScore;
 
                       const actionLabel =
                         game.status === "active"
@@ -225,10 +234,12 @@ export default function LeaguesHub() {
                           : game.status === "setup"
                             ? canAdmin
                               ? "Finish setup"
-                              : "Awaiting setup"
+                              : canScore
+                                ? "Check rosters"
+                                : "Awaiting setup"
                             : "Box score";
 
-                      const { href } = gameAction(game);
+                      const { href } = gameAction(game, canAdmin);
 
                       return (
                         <div
@@ -245,7 +256,12 @@ export default function LeaguesHub() {
                           <div className="flex-1 min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium truncate">
-                                {game.competition || "Exhibition game"}
+                                {(() => {
+                                  const g = game as Game & { homeTeamName?: string | null; awayTeamName?: string | null };
+                                  return g.homeTeamName && g.awayTeamName
+                                    ? `${g.homeTeamName} v ${g.awayTeamName}`
+                                    : game.competition || "Exhibition game";
+                                })()}
                               </span>
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold border ${statusClasses(game.status)}`}
@@ -376,6 +392,8 @@ export default function LeaguesHub() {
           )}
         </div>
       </main>
+
+      <JoinGameDialog open={joinOpen} onOpenChange={setJoinOpen} />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>

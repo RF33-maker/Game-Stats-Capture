@@ -1,4 +1,4 @@
-import { store, byOrder, type LSGame, type LSStatEvent, type LeagueRole } from "./local-store";
+import { store, byOrder, type LSGame, type LSStatEvent, type LeagueRole, leagueRules } from "./local-store";
 import { computePossessionEffect, applyScoreDelta, describeEvent } from "./local-possession";
 
 import { listMembers, addMember, updateMemberRole, removeMember, OfflineError } from "./remote";
@@ -425,6 +425,16 @@ function seedSampleGame(): HandlerResult {
   return ok(store.games.get(game.id), 201);
 }
 
+/** Games with the two team names attached, for lists ("Hawks v Wolves"). */
+function gamesWithTeams(games: LSGame[]) {
+  const teams = store.teams.list();
+  return games.map((g) => ({
+    ...g,
+    homeTeamName: teams.find(t => t.gameId === g.id && t.isHome)?.name ?? null,
+    awayTeamName: teams.find(t => t.gameId === g.id && !t.isHome)?.name ?? null,
+  }));
+}
+
 // URL pattern matching
 const patterns = {
   listGames: /^\/api\/games$/,
@@ -471,7 +481,7 @@ export async function handleLocalRequest(
 
   // List games
   if (m === "GET" && patterns.listGames.test(pathname)) {
-    return ok(store.games.list());
+    return ok(gamesWithTeams(store.games.list()));
   }
 
   // Create game
@@ -498,6 +508,13 @@ export async function handleLocalRequest(
     const game = store.games.get(gameId);
     if (!game) return notFound("Game not found");
     return ok(game);
+  }
+
+  // Delete game (league admins; the server enforces it when the delete syncs)
+  match = pathname.match(/^\/api\/games\/(\d+)$/);
+  if (m === "DELETE" && match) {
+    if (!store.games.delete(Number(match[1]))) return notFound("Game not found");
+    return { status: 204, body: null };
   }
 
   // Update game
@@ -1114,11 +1131,12 @@ export async function handleLocalRequest(
     return ok({ ok: true });
   }
   if (m === "GET" && pathname === "/api/games") {
-    return ok(store.games.list());
+    return ok(gamesWithTeams(store.games.list()));
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
     const leagueId = Number(pathname.split("/")[3]);
-    return ok(store.games.list().filter((g) => g.leagueId === leagueId || g.leagueId == null));
+    return ok(gamesWithTeams(store.games.list()
+      .filter((g) => g.leagueId === leagueId || (LOCAL_ONLY && g.leagueId == null))));
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/activity$/.test(pathname)) {
     const leagueId = Number(pathname.split("/")[3]);
@@ -1196,9 +1214,24 @@ export async function handleLocalRequest(
   }
   // Create a game inside a league — fall through to normal create flow.
   if (m === "POST" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
+    const leagueId = Number(pathname.split("/")[3]);
+    const league = store.leagues.get(leagueId);
+    // The league's competition rules win over the device's own defaults.
+    const r = leagueRules(league);
     const created = store.games.create({
-      leagueId: Number(pathname.split("/")[3]),
       ...(body as Record<string, unknown>),
+      leagueId,
+      competition: league?.name ?? null,
+      captureMode: r.defaultCaptureMode,
+      periodCount: r.periodCount,
+      periodDurationMins: r.periodDurationMins,
+      clockSeconds: r.periodDurationMins * 60,
+      overtimeDurationMins: r.overtimeDurationMins,
+      foulLimit: r.foulLimit,
+      bonusAfterTeamFouls: r.bonusAfterTeamFouls,
+      timeoutsFirstHalf: r.timeoutsFirstHalf,
+      timeoutsSecondHalf: r.timeoutsSecondHalf,
+      timeoutsOvertime: r.timeoutsOvertime,
     });
     return ok(created, 201);
   }

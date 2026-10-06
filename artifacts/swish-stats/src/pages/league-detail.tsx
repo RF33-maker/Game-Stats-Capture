@@ -66,10 +66,28 @@ import {
   Activity,
   UserCheck,
   CheckCircle2,
+  CalendarPlus,
+  CalendarRange,
+  KeyRound,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { AppHeader } from "@/components/app-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { TeamsTab } from "@/components/organiser/teams-tab";
+import { RulesTab, VenuesTab } from "@/components/organiser/venues-rules";
+import { NewFixtureDialog, ScheduleDialog, type ScheduledGame } from "@/components/organiser/fixtures";
+import { GameDayDialog, prettyCode, type GameDayGame } from "@/components/organiser/game-day";
+import type { LeagueRules } from "@/lib/local-store";
+
+// Fields the on-device engine adds that the generated client doesn't know about.
+type GameExtras = ScheduledGame & GameDayGame & {
+  homeTeamName?: string | null;
+  awayTeamName?: string | null;
+  myAccess?: "scorer" | "manager" | null;
+};
 
 const ROLES: LeagueRole[] = ["viewer", "scorer", "admin"];
 
@@ -245,6 +263,10 @@ export default function LeagueDetail() {
 
   const [memberOpen, setMemberOpen] = useState(false);
   const [competitionOpen, setCompetitionOpen] = useState(false);
+  const [tab, setTab] = useState("games");
+  const [fixtureOpen, setFixtureOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [gameDay, setGameDay] = useState<{ game: GameDayGame; title: string } | null>(null);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<LeagueRole>("viewer");
   const [confirmDeleteGame, setConfirmDeleteGame] = useState<{
@@ -279,11 +301,20 @@ export default function LeagueDetail() {
     );
   }
 
+  const leagueUid = (league as typeof league & { uid: string }).uid;
+  const scheduled = (games ?? []) as unknown as ScheduledGame[];
+  const refreshGames = () => {
+    queryClient.invalidateQueries({ queryKey: getListLeagueGamesQueryKey(leagueId) });
+    invalidateActivity();
+  };
+
   const sortedGames = [...(games ?? [])].sort((a, b) => {
     const order = { active: 0, setup: 1, final: 2 };
     const statusDiff = order[a.status] - order[b.status];
     if (statusDiff !== 0) return statusDiff;
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
+    const when = (g: typeof a) => `${g.date.slice(0, 10)}T${(g as unknown as GameExtras).tipoffTime ?? "00:00"}`;
+    // Upcoming fixtures soonest first; finished games newest first.
+    return a.status === "setup" ? when(a).localeCompare(when(b)) : when(b).localeCompare(when(a));
   });
 
   return (
@@ -336,25 +367,51 @@ export default function LeagueDetail() {
               </div>
             </div>
             {canAdmin && (
-              <Button
-                onClick={() =>
-                  createGame.mutate({
-                    leagueId,
-                    data: newGameDefaults(),
-                  })
-                }
-                disabled={createGame.isPending}
-              >
-                {createGame.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4 mr-2" />
+              <div className="flex items-center gap-2 flex-wrap">
+                {ORGANISER_AVAILABLE && (
+                  <>
+                    <Button onClick={() => setFixtureOpen(true)} data-testid="schedule-game">
+                      <CalendarPlus className="w-4 h-4 mr-2" />
+                      Schedule game
+                    </Button>
+                    <Button variant="secondary" onClick={() => setScheduleOpen(true)} data-testid="build-schedule">
+                      <CalendarRange className="w-4 h-4 mr-2" />
+                      Build schedule
+                    </Button>
+                  </>
                 )}
-                New game
-              </Button>
+                <Button
+                  variant={ORGANISER_AVAILABLE ? "outline" : "default"}
+                  title="Start a one-off game and type the teams in yourself"
+                  onClick={() =>
+                    createGame.mutate({
+                      leagueId,
+                      data: newGameDefaults(),
+                    })
+                  }
+                  disabled={createGame.isPending}
+                >
+                  {createGame.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-2" />
+                  )}
+                  Quick game
+                </Button>
+              </div>
             )}
           </div>
 
+          <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="games" data-testid="tab-games">Games</TabsTrigger>
+              {ORGANISER_AVAILABLE && <TabsTrigger value="teams" data-testid="tab-teams">Teams</TabsTrigger>}
+              {ORGANISER_AVAILABLE && <TabsTrigger value="venues" data-testid="tab-venues">Venues</TabsTrigger>}
+              <TabsTrigger value="rules" data-testid="tab-rules">Rules</TabsTrigger>
+              <TabsTrigger value="members" data-testid="tab-members">Members</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="games" className="space-y-10 mt-0">
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">
@@ -401,23 +458,29 @@ export default function LeagueDetail() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {sortedGames.map((game) => {
+                  const x = game as unknown as GameExtras;
+                  const canScore = league.viewerRole !== "viewer" || x.myAccess === "scorer";
+                  const title = x.homeTeamName && x.awayTeamName
+                    ? `${x.homeTeamName} v ${x.awayTeamName}`
+                    : game.competition || "Exhibition game";
+                  const meta = [x.roundLabel, x.gameNumber != null ? `Game ${x.gameNumber}` : null].filter(Boolean).join(" · ");
                   const target =
                     game.status === "setup"
-                      ? `/setup/${game.id}/info?league=${leagueId}`
+                      ? `/setup/${game.id}/${canAdmin ? "info" : "players"}?league=${leagueId}`
                       : game.status === "final"
                         ? `/game/${game.id}/box?league=${leagueId}`
                         : `/game/${game.id}?league=${leagueId}`;
                   const allowed =
                     game.status === "final"
                       ? true
-                      : game.status === "active"
-                        ? canScore
-                        : canAdmin;
+                      : canScore;
                   const label =
                     game.status === "setup"
                       ? canAdmin
                         ? "Finish setup"
-                        : "Awaiting setup"
+                        : canScore
+                          ? "Check rosters & start"
+                          : "Awaiting setup"
                       : game.status === "final"
                         ? "Box score"
                         : canScore
@@ -439,14 +502,21 @@ export default function LeagueDetail() {
                         <div className="flex items-center justify-between">
                           {statusBadge(game.status)}
                           <span className="text-xs text-muted-foreground font-mono">
-                            {format(new Date(game.date), "MMM d, yyyy")}
+                            {format(new Date(game.date), "EEE d MMM yyyy")}
+                            {x.tipoffTime && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5">
+                                <Clock className="w-3 h-3" />
+                                {x.tipoffTime.slice(0, 5)}
+                              </span>
+                            )}
                           </span>
                         </div>
 
                         <div className="flex-1">
-                          <h3 className="font-semibold leading-tight">
-                            {game.competition || "Exhibition game"}
+                          <h3 className="font-semibold leading-tight" data-testid="game-card-title">
+                            {title}
                           </h3>
+                          {meta && <p className="text-xs text-muted-foreground mt-1">{meta}</p>}
                           {game.venue && (
                             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
@@ -456,6 +526,13 @@ export default function LeagueDetail() {
                         </div>
 
                         <div className="space-y-2 pt-1">
+                          {ORGANISER_AVAILABLE && canAdmin && (
+                            <Button size="sm" variant="ghost" className="w-full gap-1.5 text-xs justify-between" data-testid="game-day"
+                              onClick={() => setGameDay({ game: x, title })}>
+                              <span className="inline-flex items-center gap-1.5"><KeyRound className="w-3.5 h-3.5" />Code, officials &amp; details</span>
+                              {x.gameCode && game.status !== "final" && <span className="font-mono font-bold tracking-wider">{prettyCode(x.gameCode)}</span>}
+                            </Button>
+                          )}
                           {DIRECTORY_AVAILABLE && canScore && game.status !== "setup" && (
                             <Link href={`/game/${game.id}/link?league=${leagueId}`} className="block">
                               <Button size="sm" variant="ghost" className="w-full gap-1.5 text-xs" data-testid="link-players">
@@ -537,8 +614,7 @@ export default function LeagueDetail() {
                               onClick={() =>
                                 setConfirmDeleteGame({
                                   id: game.id,
-                                  label:
-                                    game.competition || "Exhibition game",
+                                  label: title,
                                 })
                               }
                             >
@@ -658,6 +734,25 @@ export default function LeagueDetail() {
             )}
           </section>
 
+            </TabsContent>
+
+            {ORGANISER_AVAILABLE && (
+              <TabsContent value="teams" className="mt-0">
+                <TeamsTab leagueUid={leagueUid} canAdmin={canAdmin} canScore={canScore}
+                  siteLeagueId={(league as typeof league & { siteLeagueId?: string | null }).siteLeagueId} />
+              </TabsContent>
+            )}
+            {ORGANISER_AVAILABLE && (
+              <TabsContent value="venues" className="mt-0">
+                <VenuesTab leagueUid={leagueUid} canAdmin={canAdmin} />
+              </TabsContent>
+            )}
+            <TabsContent value="rules" className="mt-0">
+              <RulesTab leagueId={leagueId} league={league as Partial<LeagueRules>} canAdmin={canAdmin}
+                onSaved={() => queryClient.invalidateQueries({ queryKey: getGetLeagueQueryKey(leagueId) })} />
+            </TabsContent>
+
+            <TabsContent value="members" className="mt-0">
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">
@@ -755,8 +850,23 @@ export default function LeagueDetail() {
               </Card>
             )}
           </section>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
+
+      {fixtureOpen && (
+        <NewFixtureDialog leagueUid={leagueUid} games={scheduled} onClose={() => setFixtureOpen(false)}
+          onCreated={() => { setFixtureOpen(false); refreshGames(); }} />
+      )}
+      {scheduleOpen && (
+        <ScheduleDialog leagueUid={leagueUid} games={scheduled} onClose={() => setScheduleOpen(false)}
+          onCreated={() => { setScheduleOpen(false); refreshGames(); }} />
+      )}
+      {gameDay && (
+        <GameDayDialog game={gameDay.game} title={gameDay.title} leagueUid={leagueUid} onClose={() => setGameDay(null)}
+          onChanged={() => { setGameDay(null); refreshGames(); }} />
+      )}
 
       {/* Add member dialog */}
       <CompetitionSearchDialog

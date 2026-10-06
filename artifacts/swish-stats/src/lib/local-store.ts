@@ -52,6 +52,27 @@ export type LSGame = {
   // True = the home team attacks the left basket in the first half (teams
   // swap at half-time). Drives which team a full-court tap belongs to.
   homeAttacksLeftFirstHalf?: boolean;
+  // Fixture details (set by the league organiser).
+  tipoffTime?: string | null;
+  roundLabel?: string | null;
+  gameNumber?: number | null;
+  venueUid?: string | null;
+  homeLeagueTeamUid?: string | null;
+  awayLeagueTeamUid?: string | null;
+  attendance?: number | null;
+  // Six-character code a volunteer types to score this game. Made by the
+  // server; never sent from the device.
+  gameCode?: string | null;
+  // Rules, copied from the league when the game is created.
+  overtimeDurationMins?: number;
+  foulLimit?: number;
+  bonusAfterTeamFouls?: number;
+  timeoutsFirstHalf?: number;
+  timeoutsSecondHalf?: number;
+  timeoutsOvertime?: number;
+  // How this user reaches the game when they aren't a league member:
+  // joined with the game code, or manage one of the two teams.
+  myAccess?: "scorer" | "manager" | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -67,6 +88,9 @@ export type LSTeam = {
   logoUrl: string | null;
   isHome: boolean;
   siteTeamId?: string | null;
+  leagueTeamUid?: string | null;
+  headCoach?: string | null;
+  assistantCoach?: string | null;
   createdAt: string;
 };
 
@@ -82,6 +106,8 @@ export type LSPlayer = {
   isActive: boolean;
   isStarter: boolean;
   sitePlayerId?: string | null;
+  squadPlayerUid?: string | null;
+  isCaptain?: boolean;
   createdAt: string;
 };
 
@@ -149,8 +175,44 @@ export type LSLeague = {
   // The site competition (public.competitions.league_id) games publish into.
   siteLeagueId?: string | null;
   siteLeagueName?: string | null;
+  // Competition rules every new game in the league starts with.
+  defaultCaptureMode?: "simple" | "complex";
+  periodCount?: number;
+  periodDurationMins?: number;
+  overtimeDurationMins?: number;
+  foulLimit?: number;
+  bonusAfterTeamFouls?: number;
+  timeoutsFirstHalf?: number;
+  timeoutsSecondHalf?: number;
+  timeoutsOvertime?: number;
   createdAt: string;
 };
+
+export type LeagueRules = Required<Pick<LSLeague,
+  "defaultCaptureMode" | "periodCount" | "periodDurationMins" | "overtimeDurationMins" | "foulLimit"
+  | "bonusAfterTeamFouls" | "timeoutsFirstHalf" | "timeoutsSecondHalf" | "timeoutsOvertime">>;
+
+// FIBA defaults.
+export const DEFAULT_RULES: LeagueRules = {
+  defaultCaptureMode: "complex",
+  periodCount: 4,
+  periodDurationMins: 10,
+  overtimeDurationMins: 5,
+  foulLimit: 5,
+  bonusAfterTeamFouls: 4,
+  timeoutsFirstHalf: 2,
+  timeoutsSecondHalf: 3,
+  timeoutsOvertime: 1,
+};
+
+export function leagueRules(l: Partial<LeagueRules> | null | undefined): LeagueRules {
+  const out = { ...DEFAULT_RULES };
+  for (const k of Object.keys(out) as (keyof LeagueRules)[]) {
+    const v = l?.[k];
+    if (v !== undefined && v !== null) (out as Record<string, unknown>)[k] = v;
+  }
+  return out;
+}
 
 // ---------- Outbox ----------
 //
@@ -165,7 +227,7 @@ export type OutboxOp =
   | "insert"   // stat_events: insert once (ignored if already there)
   | "void"     // stat_events: set voided_at
   | "review"   // stat_events: set needs_review
-  | "delete";  // players removed during setup
+  | "delete";  // players removed during setup; a whole game deleted by an admin
 
 export type OutboxItem = {
   id: number;
@@ -267,7 +329,7 @@ export const store = {
     save(leagues: LSLeague[]) { save("leagues", leagues); },
     get(id: number) { return this.list().find(l => l.id === id) ?? null; },
     getByUid(uid: string) { return this.list().find(l => l.uid === uid) ?? null; },
-    create(input: { name: string; season?: string | null; logoUrl?: string | null; uid?: string; role?: LeagueRole; createdAt?: string; siteLeagueId?: string | null }): LSLeague {
+    create(input: { name: string; season?: string | null; logoUrl?: string | null; uid?: string; role?: LeagueRole; createdAt?: string; siteLeagueId?: string | null } & Partial<LeagueRules>): LSLeague {
       const now = new Date().toISOString();
       const id = nextId("league");
       const league: LSLeague = {
@@ -278,6 +340,7 @@ export const store = {
         logoUrl: input.logoUrl ?? null,
         role: input.role ?? "admin",
         siteLeagueId: input.siteLeagueId ?? null,
+        ...leagueRules(input),
         createdAt: input.createdAt ?? now,
       };
       const leagues = this.list();
@@ -408,6 +471,28 @@ export const store = {
       this.save(games);
       queue("games", games[idx].uid, "upsert");
       return games[idx];
+    },
+    /** Remove a game and everything recorded in it from this device (and, once synced, the server). */
+    delete(id: number): boolean {
+      const games = this.list();
+      const idx = games.findIndex(g => g.id === id);
+      if (idx === -1) return false;
+      const [removed] = games.splice(idx, 1);
+      const teamIds = new Set(store.teams.forGame(id).map(t => t.id));
+      // Unsent changes to rows inside the game are moot now.
+      const gone = new Set<string>([
+        ...store.teams.forGame(id).map(t => t.uid),
+        ...store.players.list().filter(p => teamIds.has(p.teamId)).map(p => p.uid),
+        ...store.statEvents.allForGame(id).map(e => e.uid),
+      ]);
+      store.outbox.save(store.outbox.list().filter(i => !(gone.has(i.uid) || (i.table === "games" && i.uid === removed.uid))));
+      store.players.save(store.players.list().filter(p => !teamIds.has(p.teamId)));
+      store.teams.save(store.teams.list().filter(t => t.gameId !== id));
+      store.statEvents.save(store.statEvents.list().filter(e => e.gameId !== id));
+      store.playByPlay.save(store.playByPlay.list().filter(p => p.gameId !== id));
+      this.save(games);
+      queue("games", removed.uid, "delete");
+      return true;
     },
   },
 

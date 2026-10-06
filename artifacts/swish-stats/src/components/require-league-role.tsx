@@ -80,8 +80,7 @@ export function RequireLeagueRole({ min, children }: Props) {
       query: {
         enabled:
           !LOCAL_MODE_ENABLED &&
-          gameIdFromPath != null &&
-          leagueIdFromQuery == null,
+          gameIdFromPath != null,
         queryKey: getGetGameQueryKey(gameIdFromPath ?? 0),
         retry: false,
       },
@@ -103,11 +102,7 @@ export function RequireLeagueRole({ min, children }: Props) {
   if (LOCAL_MODE_ENABLED) return <>{children}</>;
 
   // Still resolving the game so we can find its league.
-  if (
-    leagueIdFromQuery == null &&
-    gameIdFromPath != null &&
-    gameLoading
-  ) {
+  if (gameIdFromPath != null && gameLoading) {
     return <Spinner />;
   }
 
@@ -128,8 +123,12 @@ export function RequireLeagueRole({ min, children }: Props) {
     return <Denied min={min} leagueId={leagueId} reason="insufficient-role" />;
   }
 
+  // A volunteer who joined with a game code scores that one game without
+  // holding a role in the league.
+  const gameAccess = (game as { myAccess?: string | null } | undefined)?.myAccess;
   const role = league.viewerRole as LeagueRole | undefined;
-  if (!role || RANK[role] < RANK[min]) {
+  const rank = Math.max(role ? RANK[role] : -1, gameAccess === "scorer" ? RANK.scorer : -1);
+  if (rank < RANK[min]) {
     return (
       <Denied min={min} leagueId={leagueId} reason="insufficient-role" />
     );

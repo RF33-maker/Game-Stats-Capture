@@ -95,11 +95,29 @@ function eventUid(id: number | null): string | null {
   return store.statEvents.get(id)?.uid ?? null;
 }
 
+/** Drop keys this device has no value for (undefined), keeping explicit nulls. */
+function defined(o: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+}
+
 function payload(item: OutboxItem): Record<string, unknown> | null {
   switch (item.table) {
     case "leagues": {
       const l = store.leagues.getByUid(item.uid);
-      return l && { uid: l.uid, name: l.name, season: l.season, logo_url: l.logoUrl, site_league_id: l.siteLeagueId ?? null };
+      return l && {
+        uid: l.uid, name: l.name, season: l.season, logo_url: l.logoUrl, site_league_id: l.siteLeagueId ?? null,
+        ...defined({
+          default_capture_mode: l.defaultCaptureMode,
+          period_count: l.periodCount,
+          period_duration_mins: l.periodDurationMins,
+          overtime_duration_mins: l.overtimeDurationMins,
+          foul_limit: l.foulLimit,
+          bonus_after_team_fouls: l.bonusAfterTeamFouls,
+          timeouts_first_half: l.timeoutsFirstHalf,
+          timeouts_second_half: l.timeoutsSecondHalf,
+          timeouts_overtime: l.timeoutsOvertime,
+        }),
+      };
     }
     case "games": {
       const g = store.games.getByUid(item.uid);
@@ -116,6 +134,23 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
         current_period: Math.min(g.currentPeriod, 20),
         clock_seconds: Math.max(0, Math.min(g.clockSeconds, 3600)),
         home_attacks_left_first_half: g.homeAttacksLeftFirstHalf ?? false,
+        // Fixture details and rules: only sent when this device knows them,
+        // so an older local copy can never blank what the organiser set.
+        ...defined({
+          tipoff_time: g.tipoffTime,
+          round_label: g.roundLabel,
+          game_number: g.gameNumber,
+          venue_uid: g.venueUid,
+          home_league_team_uid: g.homeLeagueTeamUid,
+          away_league_team_uid: g.awayLeagueTeamUid,
+          attendance: g.attendance,
+          overtime_duration_mins: g.overtimeDurationMins,
+          foul_limit: g.foulLimit,
+          bonus_after_team_fouls: g.bonusAfterTeamFouls,
+          timeouts_first_half: g.timeoutsFirstHalf,
+          timeouts_second_half: g.timeoutsSecondHalf,
+          timeouts_overtime: g.timeoutsOvertime,
+        }),
       };
     }
     case "game_teams": {
@@ -130,6 +165,7 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
         color_secondary: t.colorSecondary,
         logo_url: t.logoUrl,
         site_team_id: t.siteTeamId ?? null,
+        ...defined({ league_team_uid: t.leagueTeamUid, head_coach: t.headCoach, assistant_coach: t.assistantCoach }),
       };
     }
     case "game_players": {
@@ -145,6 +181,7 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
         is_starter: p.isStarter,
         is_active: p.isActive,
         site_player_id: p.sitePlayerId ?? null,
+        ...defined({ squad_player_uid: p.squadPlayerUid, is_captain: p.isCaptain }),
       };
     }
     case "stat_events": {
@@ -213,6 +250,17 @@ async function send(item: OutboxItem): Promise<void> {
       // Stat events are insert-once; a repeat send must not try to update.
       ignoreDuplicates: item.op === "insert",
     }));
+    // Only league admins may create a game row, and an upsert is checked as
+    // a create even when the row exists. Scorers (league scorers, and
+    // volunteers who joined with a game code) change the existing row instead.
+    if (error?.code === "42501" && item.table === "games") {
+      const { uid, league_uid: _league, ...changes } = row as Record<string, unknown>;
+      const res = await db.update(changes).eq("uid", uid as string).select("uid");
+      ({ error, status } = res);
+      if (!error && (res.data?.length ?? 0) === 0) {
+        throw new PermanentError("Not allowed to change this game");
+      }
+    }
   }
 
   if (error) {
