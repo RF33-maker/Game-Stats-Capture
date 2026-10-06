@@ -124,6 +124,7 @@ export default function GameCapture() {
   const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
   const [endsOpen, setEndsOpen] = useState(false);
+  const [attendance, setAttendance] = useState("");
   const [editPbp, setEditPbp] = useState<PlayByPlayEntry | null>(null);
   // Substitution flow: tapping a bench player arms it, then tapping an
   // on-court player on the same team completes the swap.
@@ -876,7 +877,11 @@ export default function GameCapture() {
     setFinalizeDialogOpen(false);
     setIsRunning(false);
     try {
-      await updateGame.mutateAsync({ gameId, data: { status: 'final' } });
+      const crowd = attendance.trim() === "" ? null : Math.max(0, Math.round(Number(attendance)));
+      await updateGame.mutateAsync({
+        gameId,
+        data: { status: 'final', ...(crowd != null && Number.isFinite(crowd) ? { attendance: crowd } : {}) } as never,
+      });
       queryClient.invalidateQueries({ queryKey: getGetGameQueryKey(gameId) });
       queryClient.invalidateQueries({ queryKey: getListGamesQueryKey() });
       toast.success("Game finalized!");
@@ -1673,6 +1678,37 @@ export default function GameCapture() {
               This locks the game and stops all stat capture. You won't be able to record or edit any more plays. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
+          {(() => {
+            // Things that usually mean the game isn't really finished, or a play needs another look.
+            const checks: string[] = [];
+            const hs = boxScore?.home.totalPoints ?? 0, as = boxScore?.away.totalPoints ?? 0;
+            if (hs === as) checks.push("The scores are level — play overtime first, unless this competition allows a draw.");
+            if (game.currentPeriod < game.periodCount) checks.push(`Only ${periodLabel(game.currentPeriod)} has been reached — a full game is ${game.periodCount} periods.`);
+            else if (localClock > 0) checks.push(`There is still ${formatClock(localClock)} on the clock in ${periodLabel(game.currentPeriod)}.`);
+            const needPlayer = new Set(['2ptm', '2pta', '3ptm', '3pta', 'ftm', 'fta', 'ast', 'stl', 'blk', 'pf', 'fd']);
+            const orphan = evAsc.filter(e => e.playerId == null && needPlayer.has(e.eventType)).length;
+            if (orphan) checks.push(`${orphan} ${orphan === 1 ? 'play has' : 'plays have'} no player against ${orphan === 1 ? 'it' : 'them'}.`);
+            for (const [tm, five] of [[awayTeam, awayOnCourt], [homeTeam, homeOnCourt]] as const) {
+              if (five.length !== 5) checks.push(`${tm.abbreviation} are shown with ${five.length} players on court — check the substitutions.`);
+            }
+            return (
+              <div className="space-y-3 mt-1">
+                {checks.length > 0 && (
+                  <div className="border border-amber-500/40 bg-amber-500/10 rounded-lg p-3 space-y-1" data-testid="final-checks">
+                    <div className="flex items-center gap-2 text-amber-500 font-bold text-xs uppercase tracking-wide">
+                      <ShieldAlert className="w-4 h-4" /> Before you finalize
+                    </div>
+                    {checks.map(c => <p key={c} className="text-xs text-foreground">{c}</p>)}
+                  </div>
+                )}
+                <label className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">Attendance <span className="text-xs">(optional)</span></span>
+                  <input type="number" min={0} inputMode="numeric" value={attendance} onChange={(e) => setAttendance(e.target.value)}
+                    className="w-28 h-9 rounded-md border border-[hsl(var(--border-strong))] bg-card px-2 text-right font-mono" data-testid="attendance" />
+                </label>
+              </div>
+            );
+          })()}
           {(() => {
             const flaggedPlays = (pbp ?? []).filter(p => p.needsReview);
             if (flaggedPlays.length === 0) return null;

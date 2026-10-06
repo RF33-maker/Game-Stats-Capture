@@ -8,7 +8,10 @@ import {
   getListTeamsQueryKey,
   getGetBoxScoreQueryKey
 } from "@workspace/api-client-react";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Printer } from "lucide-react";
+import { useGetLeague, getGetLeagueQueryKey } from "@workspace/api-client-react";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { Corrections } from "@/components/organiser/corrections";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { teamTextColor, textOnColor, appSurface } from "@/lib/team-colors";
@@ -48,6 +51,10 @@ export default function BoxScore() {
 
   const { data: boxScore, isLoading: boxLoading } = useGetBoxScore(gameId, {
     query: { enabled: !!gameId, queryKey: getGetBoxScoreQueryKey(gameId) }
+  });
+
+  const { data: league } = useGetLeague(game?.leagueId ?? 0, {
+    query: { enabled: game?.leagueId != null, queryKey: getGetLeagueQueryKey(game?.leagueId ?? 0), retry: false },
   });
 
   if (gameLoading || teamsLoading || boxLoading) {
@@ -92,6 +99,9 @@ export default function BoxScore() {
                 <span style={{ color: teamTextColor(homeTeam.colorPrimary, appSurface()) }}>{homeTeam.abbreviation}</span>
               </div>
             </div>
+            <Link href={`/game/${gameId}/report${effectiveLeagueId ? `?league=${effectiveLeagueId}` : ""}`}>
+              <Button variant="outline" size="sm" data-testid="open-report"><Printer className="w-4 h-4 mr-2" />Game report</Button>
+            </Link>
             <AppMenu />
           </div>
         </header>
@@ -181,6 +191,9 @@ export default function BoxScore() {
               </div>
             </div>
           ))}
+          {ORGANISER_AVAILABLE && game?.status === "final" && (
+            <Corrections gameUid={(game as typeof game & { uid: string }).uid} canAdmin={league?.viewerRole === "admin"} />
+          )}
         </div>
       </div>
     </div>

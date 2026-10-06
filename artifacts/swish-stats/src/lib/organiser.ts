@@ -358,3 +358,63 @@ export async function removeOfficial(uid: string): Promise<void> {
   requireOnline();
   mustChange(check(await supabase.from("game_officials").delete().eq("uid", uid).select("uid")), "edit officials");
 }
+
+// ---------- Correction requests ----------
+//
+// Once a game is final only a league admin can change it. Anyone who can see
+// the game can ask for a fix; the admin reopens the game, makes the change
+// and marks the request done (or turns it down with a reason).
+
+export type CorrectionStatus = "pending" | "approved" | "rejected" | "applied";
+export type Correction = {
+  uid: string;
+  gameUid: string;
+  description: string;
+  status: CorrectionStatus;
+  requestedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  mine: boolean;
+};
+
+async function myUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
+}
+
+function toCorrection(r: Row, me: string | null): Correction {
+  return {
+    uid: r.uid, gameUid: r.game_uid, description: r.description, status: r.status,
+    requestedAt: r.requested_at, reviewedAt: r.reviewed_at, reviewNote: r.review_note, mine: r.requested_by === me,
+  };
+}
+
+/** Requests on one game: an admin sees them all, anyone else their own. */
+export async function listCorrections(gameUid: string): Promise<Correction[]> {
+  requireOnline();
+  const me = await myUserId();
+  const rows = check(await supabase.from("correction_requests").select("*").eq("game_uid", gameUid).order("requested_at", { ascending: false }));
+  return (rows as Row[] ?? []).map(r => toCorrection(r, me));
+}
+
+/** Requests still waiting across a league (admins only — others get an empty list). */
+export async function listPendingCorrections(leagueUid: string): Promise<Correction[]> {
+  if (!ORGANISER_AVAILABLE || (typeof navigator !== "undefined" && !navigator.onLine)) return [];
+  const me = await myUserId();
+  const { data, error } = await supabase.from("correction_requests")
+    .select("*, games!inner(league_uid)").eq("games.league_uid", leagueUid).eq("status", "pending")
+    .order("requested_at", { ascending: false });
+  if (error) return [];
+  return (data as Row[] ?? []).map(r => toCorrection(r, me));
+}
+
+export async function requestCorrection(gameUid: string, description: string): Promise<void> {
+  requireOnline();
+  check(await supabase.from("correction_requests").insert({ game_uid: gameUid, description: description.trim() }).select("uid"));
+}
+
+export async function reviewCorrection(uid: string, status: Exclude<CorrectionStatus, "pending">, note?: string): Promise<void> {
+  requireOnline();
+  mustChange(check(await supabase.from("correction_requests")
+    .update({ status, review_note: note?.trim() || null }).eq("uid", uid).select("uid")), "review correction requests");
+}

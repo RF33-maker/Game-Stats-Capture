@@ -13,6 +13,7 @@ import SetupExtras from "@/pages/setup/extras";
 import GameCapture from "@/pages/game/capture";
 import BoxScore from "@/pages/game/box-score";
 import LinkPlayers from "@/pages/game/link-players";
+import GameReport from "@/pages/game/report";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import Stats from "@/pages/stats";
@@ -101,6 +102,13 @@ function Router() {
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>
+      <Route path="/game/:gameId/report">
+        <ProtectedRoute>
+          <RequireLeagueRole min="viewer">
+            <GameReport />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
       <Route path="/game/:gameId/box">
         <ProtectedRoute>
           <RequireLeagueRole min="viewer">
@@ -116,7 +124,8 @@ function Router() {
 // The capture screen shows the badge inline in its header instead.
 function FloatingLocalModeBadge() {
   const [onCapture] = useRoute("/game/:gameId");
-  if (onCapture) return null;
+  const [onReport] = useRoute("/game/:gameId/report");
+  if (onCapture || onReport) return null;
   return <LocalModeBadge />;
 }
 

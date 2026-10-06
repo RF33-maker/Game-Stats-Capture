@@ -81,6 +81,8 @@ import { RulesTab, VenuesTab } from "@/components/organiser/venues-rules";
 import { NewFixtureDialog, ScheduleDialog, type ScheduledGame } from "@/components/organiser/fixtures";
 import { GameDayDialog, prettyCode, type GameDayGame } from "@/components/organiser/game-day";
 import type { LeagueRules } from "@/lib/local-store";
+import { listPendingCorrections } from "@/lib/organiser";
+import { useQuery } from "@tanstack/react-query";
 
 // Fields the on-device engine adds that the generated client doesn't know about.
 type GameExtras = ScheduledGame & GameDayGame & {
@@ -261,6 +263,13 @@ export default function LeagueDetail() {
     },
   });
 
+  const pendingLeagueUid = league?.viewerRole === "admin" ? (league as unknown as { uid?: string }).uid : undefined;
+  const { data: pendingCorrections } = useQuery({
+    queryKey: ["organiser", "pending-corrections", pendingLeagueUid],
+    queryFn: () => listPendingCorrections(pendingLeagueUid!),
+    enabled: !!pendingLeagueUid,
+  });
+
   const [memberOpen, setMemberOpen] = useState(false);
   const [competitionOpen, setCompetitionOpen] = useState(false);
   const [tab, setTab] = useState("games");
@@ -307,6 +316,12 @@ export default function LeagueDetail() {
     queryClient.invalidateQueries({ queryKey: getListLeagueGamesQueryKey(leagueId) });
     invalidateActivity();
   };
+
+  const pendingByGame = new Map<number, number>();
+  for (const c of pendingCorrections ?? []) {
+    const g = (games ?? []).find(x => (x as unknown as GameExtras).uid === c.gameUid);
+    if (g) pendingByGame.set(g.id, (pendingByGame.get(g.id) ?? 0) + 1);
+  }
 
   const sortedGames = [...(games ?? [])].sort((a, b) => {
     const order = { active: 0, setup: 1, final: 2 };
@@ -517,6 +532,11 @@ export default function LeagueDetail() {
                             {title}
                           </h3>
                           {meta && <p className="text-xs text-muted-foreground mt-1">{meta}</p>}
+                          {pendingByGame.has(game.id) && (
+                            <Link href={`/game/${game.id}/box?league=${leagueId}`} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-500 hover:underline" data-testid="pending-corrections">
+                              {pendingByGame.get(game.id)} correction request{pendingByGame.get(game.id) === 1 ? "" : "s"} waiting
+                            </Link>
+                          )}
                           {game.venue && (
                             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
