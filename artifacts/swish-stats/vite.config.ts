@@ -3,35 +3,56 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import { VitePWA } from "vite-plugin-pwa";
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
-const port = Number(rawPort);
-
+// The dev server needs a port; a production build doesn't.
+const port = Number(process.env.PORT ?? 5174);
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+  throw new Error(`Invalid PORT value: "${process.env.PORT}"`);
 }
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
+const basePath = process.env.BASE_PATH ?? "/";
+const isProd = process.env.NODE_ENV === "production";
 
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
+    ...(isProd ? [] : [runtimeErrorOverlay()]),
+    // Installable, and opens with no signal: the app shell is cached on the
+    // device, so a scorer can reload or reopen it in a gym with no wifi.
+    // Game data is separate (IndexedDB) and never touched by this cache.
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["favicon.png", "apple-touch-icon.png", "icon-192.png"],
+      manifest: {
+        name: "Swish Stats",
+        short_name: "Swish Stats",
+        description: "Live basketball stat capture by Swish Assistant.",
+        theme_color: "#08090b",
+        background_color: "#08090b",
+        display: "standalone",
+        orientation: "any",
+        start_url: basePath,
+        scope: basePath,
+        icons: [
+          { src: "icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        navigateFallback: "index.html",
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "fonts" },
+          },
+        ],
+      },
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
