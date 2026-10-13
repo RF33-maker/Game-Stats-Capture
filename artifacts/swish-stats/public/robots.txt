@@ -1,0 +1,15 @@
+# Scorers Table: the public pages can be indexed; everything a signed-in
+# user sees is private and has nothing for a crawler anyway.
+User-agent: *
+Allow: /$
+Allow: /help
+Allow: /login
+Disallow: /leagues
+Disallow: /game/
+Disallow: /setup/
+Disallow: /settings
+Disallow: /profile
+Disallow: /stats
+Disallow: /organizer
+
+Sitemap: https://scorerstable.swishassistant.com/sitemap.xml
