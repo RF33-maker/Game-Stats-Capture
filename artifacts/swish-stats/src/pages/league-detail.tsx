@@ -924,7 +924,7 @@ export default function LeagueDetail() {
                 autoFocus
               />
               <p className="text-xs text-muted-foreground">
-                The user must have already signed in to Swish Stats at least
+                The user must have already signed in to Scorers Table at least
                 once.
               </p>
             </div>

@@ -171,7 +171,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
               </h1>
 
               <p className="text-base md:text-lg text-white/60 max-w-xl leading-relaxed">
-                Swish Stats helps leagues and teams capture every game, manage
+                Scorers Table helps leagues and teams capture every game, manage
                 their league hub, and share box scores in just a few taps.
               </p>
 
@@ -222,7 +222,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                   A complete package to <span className="text-primary">capture, host, and share</span>.
                 </h2>
                 <p className="text-white/60 leading-relaxed">
-                  Swish Stats is built into{" "}
+                  Scorers Table is built into{" "}
                   <a
                     href="https://www.swishassistant.com"
                     target="_blank"
@@ -253,7 +253,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                     icon: Camera,
                     step: "01",
                     title: "Capture",
-                    desc: "Track every play live with Swish Stats.",
+                    desc: "Track every play live with Scorers Table.",
                   },
                   {
                     icon: Cloud,
@@ -329,7 +329,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                 </a>
               </span>
               <span className="hidden sm:inline text-white/20">·</span>
-              <span>&copy; {new Date().getFullYear()} Swish Stats. All rights reserved.</span>
+              <span>&copy; {new Date().getFullYear()} Swish Assistant. All rights reserved.</span>
             </div>
           </div>
         </footer>

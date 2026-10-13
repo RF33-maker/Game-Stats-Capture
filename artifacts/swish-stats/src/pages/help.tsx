@@ -43,7 +43,7 @@ const FAQ = [
   },
   {
     q: "Do I need an account?",
-    a: "Yes. Swish Stats requires signing in so your leagues, games, and stats stay tied to your account across devices.",
+    a: "Yes. Scorers Table requires signing in so your leagues, games, and stats stay tied to your account across devices.",
   },
 ];
 
@@ -58,14 +58,14 @@ export default function Help() {
             <p className="sa-eyebrow mb-2">Help</p>
             <h1 className="text-4xl md:text-5xl font-bold">Help &amp; about</h1>
             <p className="text-muted-foreground mt-1">
-              Everything you need to get the most out of Swish Stats.
+              Everything you need to get the most out of Scorers Table.
             </p>
           </div>
 
           <section className="space-y-3">
-            <h2 className="text-2xl font-bold">What is Swish Stats?</h2>
+            <h2 className="text-2xl font-bold">What is Scorers Table?</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Swish Stats is a fast, broadcast-style stat capture platform for
+              Scorers Table is a fast, broadcast-style stat capture platform for
               basketball leagues of any size — from pickup runs to organized
               seasons. Capture games live, generate full FIBA-style box scores
               instantly, and keep your league organized in one connected
@@ -134,7 +134,7 @@ export default function Help() {
                 In partnership with Swish Assistant
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Swish Stats works hand-in-hand with Swish Assistant. Capture
+                Scorers Table works hand-in-hand with Swish Assistant. Capture
                 stats courtside, push them straight to your Swish Assistant
                 league, and share box scores with your community — all from one
                 connected workflow.
@@ -152,7 +152,7 @@ export default function Help() {
           </Card>
 
           <p className="text-xs text-muted-foreground text-center">
-            &copy; {new Date().getFullYear()} Swish Stats. All rights reserved.
+            &copy; {new Date().getFullYear()} Swish Assistant. All rights reserved.
           </p>
         </div>
       </main>

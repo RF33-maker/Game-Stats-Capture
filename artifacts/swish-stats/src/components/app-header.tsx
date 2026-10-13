@@ -30,7 +30,7 @@ export function AppHeader({ showBack }: AppHeaderProps) {
       <div className="sa-topline" />
       <div className="max-w-5xl mx-auto px-6 h-16 flex items-center gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <Link href="/leagues" className="shrink-0 hover:opacity-90 transition-opacity" aria-label="Swish Stats home">
+          <Link href="/leagues" className="shrink-0 hover:opacity-90 transition-opacity" aria-label="Scorers Table home">
             {showBack ? <BrandMark className="h-9" /> : <Brand />}
           </Link>
           {showBack && (

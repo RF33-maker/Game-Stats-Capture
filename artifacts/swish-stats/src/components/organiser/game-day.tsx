@@ -159,7 +159,7 @@ export function GameDayDialog({ game, leagueUid, title, onClose, onChanged }: {
               }}><Copy className="w-3.5 h-3.5 mr-1.5" />Copy</Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Give this to whoever is scoring. They sign in to Swish Stats, choose <strong>Join with a game code</strong> and get this game only — no access to the rest of your league. It stops working once the game is final.
+              Give this to whoever is scoring. They sign in to Scorers Table, choose <strong>Join with a game code</strong> and get this game only — no access to the rest of your league. It stops working once the game is final.
             </p>
             {!!scorers?.length && (
               <div className="pt-1 space-y-1">

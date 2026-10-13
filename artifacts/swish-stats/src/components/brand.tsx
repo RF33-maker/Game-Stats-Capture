@@ -12,7 +12,7 @@ export function Brand({ size = "md", showTagline = true, className = "" }: {
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
       <img src={logo} alt="" className={`${img} w-auto select-none`} draggable={false} />
       <span className="flex flex-col leading-none">
-        <span className={`sa-display font-bold ${word} leading-none text-foreground`}>Swish Stats</span>
+        <span className={`sa-display font-bold ${word} leading-none text-foreground`}>Scorers Table</span>
         {showTagline && (
           <span className="mt-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">by Swish Assistant</span>
         )}

@@ -35,7 +35,7 @@ export default function Profile() {
             <p className="sa-eyebrow mb-2">Account</p>
             <h1 className="text-4xl md:text-5xl font-bold">Profile &amp; account</h1>
             <p className="text-muted-foreground mt-1">
-              Your account details for Swish Stats.
+              Your account details for Scorers Table.
             </p>
           </div>
 

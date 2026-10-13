@@ -149,7 +149,7 @@ export default function LeaguesHub() {
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <p className="sa-eyebrow mb-2">Swish Stats</p>
+              <p className="sa-eyebrow mb-2">Scorers Table</p>
               <h1 className="text-4xl md:text-5xl font-bold">League hub</h1>
               <p className="text-muted-foreground mt-1">
                 {hasLeagues

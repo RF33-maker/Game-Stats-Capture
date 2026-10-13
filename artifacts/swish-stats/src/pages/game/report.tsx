@@ -175,7 +175,7 @@ export default function GameReport() {
           </div>
         </section>
 
-        <p className="text-[10px] text-neutral-500 text-center pt-2">Captured with Swish Stats · swishassistant.com</p>
+        <p className="text-[10px] text-neutral-500 text-center pt-2">Captured with Scorers Table · swishassistant.com</p>
       </main>
     </div>
   );

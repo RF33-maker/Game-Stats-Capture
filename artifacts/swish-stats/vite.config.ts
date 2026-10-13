@@ -26,8 +26,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "apple-touch-icon.png", "icon-192.png"],
       manifest: {
-        name: "Swish Stats",
-        short_name: "Swish Stats",
+        name: "Scorers Table",
+        short_name: "Scorers Table",
         description: "Live basketball stat capture by Swish Assistant.",
         theme_color: "#08090b",
         background_color: "#08090b",
