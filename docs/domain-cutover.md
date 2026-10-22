@@ -11,7 +11,7 @@ has been changed, and no account was created on production while checking.
 | --- | --- |
 | Hosting | Static Vercel project `swish-stats-capture` (team `rhys-farrells-projects`), deployed with `scripts/deploy-capture.sh` |
 | Hostnames on the project | `scorerstable.swishassistant.com` (the canonical one in the page), `table.swishassistant.com`, `capture.swishassistant.com`, `swish-stats-capture.vercel.app` |
-| DNS for swishassistant.com | Registrar and nameservers are third party (Vercel DNS holds no records), so DNS edits happen at that provider |
+| DNS for swishassistant.com | Namecheap (nameservers `dns1/dns2.registrar-servers.com`); Vercel DNS holds no records. The new domain goes at Namecheap too, to keep everything in one place |
 | Accounts | Supabase Auth in project `omkwqpcgttrgvbhcxgqf`, **shared with the live swishassistant.com** |
 | Auth public settings (read from `/auth/v1/settings`) | email sign-up on, email confirmation required, no Google/Apple/etc., no anonymous users |
 | Not readable by me (needs the dashboard) | Site URL, redirect allow-list, email templates, SMTP sender |
@@ -31,7 +31,7 @@ has been changed, and no account was created on production while checking.
 
 ### 0. Decide first
 
-- [ ] **The domain name.** Buy it (Vercel > Domains, or any registrar). Send me the name and I will prepare the exact commands; I will not add it to Vercel or touch Supabase until you say yes.
+- [ ] **The domain name.** Buy it at Namecheap (same account as swishassistant.com). Leave it on Namecheap's default nameservers (Domain > Nameservers: "Namecheap BasicDNS"), so DNS stays in Advanced DNS. Send me the name and I will prepare the exact commands; I will not add it to Vercel or touch Supabase until you say yes.
 - [ ] **One shared login or its own?** Today anyone who signs up here gets a real swishassistant.com account, and the other way round. For a sale, a buyer will want their own Supabase project. The capture tables are in `supabase/migrations/` and can be applied to a new project, but publishing a game and the team/player directory read the Swish site's tables, so that is a bigger piece of work. If it is not done before launch, tell the buyer plainly.
 - [ ] **Keep "by Swish Assistant"?** It is in the logo lockup, the share image (`public/opengraph.jpg` has it drawn in, so it needs re-exporting if you change it), the menu and the legal pages. Text is now driven by `VITE_OPERATOR_NAME`; the hoop logo file (`src/assets/swish-assistant-logo.png`, `public/*.png` icons) is still the Swish mark.
 
@@ -56,14 +56,14 @@ I will run, from `~/Developer/Game-Stats-Capture`:
 vercel domains add NEWDOMAIN swish-stats-capture
 ```
 
-Then at the DNS provider for NEWDOMAIN (if you bought it through Vercel this is automatic):
+Then in Namecheap: Domain List > Manage NEWDOMAIN > **Advanced DNS** > Host Records. Delete the default parking records first (the `CNAME www` pointing to `parkingpage.namecheap.com` and any `URL Redirect Record` on `@`), then add:
 
-| Host | Type | Value |
-| --- | --- | --- |
-| `@` (apex) | A | `76.76.21.21` |
-| `www` | CNAME | `cname.vercel-dns.com` |
+| Host | Type | Value | TTL |
+| --- | --- | --- | --- |
+| `@` | A Record | `76.76.21.21` | Automatic |
+| `www` | CNAME Record | `cname.vercel-dns.com` | Automatic |
 
-Vercel prints the exact values when the domain is added (newer projects get project-specific names); use those if they differ. For a subdomain of a domain you already own, only the CNAME row. Wait until Vercel shows the domain as Valid; the certificate is issued automatically.
+Vercel prints the exact values when the domain is added (newer projects get project-specific names); use those if they differ. Namecheap needs the host as `@`/`www`, not the full name. Wait until Vercel shows the domain as Valid; the certificate is issued automatically.
 
 ### 3. Point the build at the new address and deploy
 
