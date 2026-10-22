@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
@@ -20,6 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { SITE } from "@/lib/site";
 import { Brand as SharedBrand } from "@/components/brand";
 
 const HERO_HIGHLIGHTS = [
@@ -126,12 +127,12 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
         <div className="border-b border-white/5 bg-white/[0.02] px-6 py-2 text-center text-xs text-white/60">
           Part of{" "}
           <a
-            href="https://www.swishassistant.com"
+            href={SITE.partnerUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
           >
-            Swish Assistant
+            {SITE.partnerName}
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
@@ -216,7 +217,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
               <div className="space-y-4">
                 <div className="inline-flex items-center gap-2 text-primary text-xs font-bold tracking-[0.18em] uppercase">
                   <Sparkles className="w-3.5 h-3.5" />
-                  Built for Swish Assistant
+                  Built for {SITE.partnerName}
                 </div>
                 <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white leading-tight">
                   A complete package to <span className="text-primary">capture, host, and share</span>.
@@ -224,12 +225,12 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                 <p className="text-white/60 leading-relaxed">
                   Scorers Table is built into{" "}
                   <a
-                    href="https://www.swishassistant.com"
+                    href={SITE.partnerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary font-semibold hover:underline inline-flex items-center gap-1"
                   >
-                    Swish Assistant
+                    {SITE.partnerName}
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                   . Capture stats courtside, push them straight to your Swish
@@ -237,12 +238,12 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                   community — all from one connected workflow.
                 </p>
                 <a
-                  href="https://www.swishassistant.com"
+                  href={SITE.partnerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-primary transition-colors pt-2"
                 >
-                  Visit swishassistant.com
+                  Visit {SITE.partnerUrl.replace(/^https?:\/\/(www\.)?/, "")}
                   <ArrowRight className="w-4 h-4" />
                 </a>
               </div>
@@ -259,7 +260,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                     icon: Cloud,
                     step: "02",
                     title: "Host",
-                    desc: "Stats sync into your Swish Assistant league.",
+                    desc: `Stats sync into your ${SITE.partnerName} league.`,
                   },
                   {
                     icon: Share2,
@@ -320,16 +321,16 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
               <span>
                 A product of{" "}
                 <a
-                  href="https://www.swishassistant.com"
+                  href={SITE.partnerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline font-semibold"
                 >
-                  Swish Assistant
+                  {SITE.partnerName}
                 </a>
               </span>
               <span className="hidden sm:inline text-white/20">·</span>
-              <span>&copy; {new Date().getFullYear()} Swish Assistant. All rights reserved.</span>
+              <span>&copy; {new Date().getFullYear()} {SITE.operator}. All rights reserved. <Link href="/terms" className="hover:underline">Terms</Link> · <Link href="/privacy" className="hover:underline">Privacy</Link></span>
             </div>
           </div>
         </footer>

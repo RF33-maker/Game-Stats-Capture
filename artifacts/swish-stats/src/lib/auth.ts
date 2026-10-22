@@ -5,6 +5,7 @@ import { LOCAL_MODE_ENABLED } from "./local-mode";
 import { store } from "./local-store";
 import { pullFromServer } from "./remote";
 import { queryClient } from "./query-client";
+import { LEGAL_VERSION, appUrl } from "./site";
 
 // Accounts are the same Supabase accounts as swishassistant.com.
 //
@@ -93,9 +94,73 @@ export async function signInWithPassword(email: string, password: string): Promi
   return error ? error.message : null;
 }
 
+// Where the emailed links come back to. Each address has to be on the Supabase
+// Auth redirect allow-list; one that is not falls back to the project's Site
+// URL, which is why docs/domain-cutover.md has the owner add it first.
 export async function sendPasswordReset(email: string): Promise<string | null> {
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: appUrl("/reset-password"),
+  });
   return error ? error.message : null;
+}
+
+export type SignUpResult = { error: string } | { error: null; needsConfirmation: boolean; alreadyRegistered: boolean };
+
+export async function signUpWithPassword(email: string, password: string, name?: string): Promise<SignUpResult> {
+  const { data, error } = await supabase.auth.signUp({
+    email: email.trim(),
+    password,
+    options: {
+      emailRedirectTo: appUrl("/auth/confirm"),
+      data: {
+        ...(name?.trim() ? { full_name: name.trim() } : {}),
+        // The accounts are shared with swishassistant.com, whose own register
+        // endpoint also writes a consent row; this is the record we can keep.
+        terms_accepted_at: new Date().toISOString(),
+        terms_version: LEGAL_VERSION,
+        signed_up_via: "scorers-table",
+      },
+    },
+  });
+  if (error) return { error: error.message };
+  // Supabase answers a sign-up for an already-confirmed address with a user
+  // that has no identities (and sends no email), so say so rather than wait.
+  const alreadyRegistered = !!data.user && (data.user.identities?.length ?? 0) === 0;
+  return { error: null, needsConfirmation: !data.session, alreadyRegistered };
+}
+
+export async function resendConfirmation(email: string): Promise<string | null> {
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: email.trim(),
+    options: { emailRedirectTo: appUrl("/auth/confirm") },
+  });
+  return error ? error.message : null;
+}
+
+// Sign-in link by email. It never creates an account (sign-up has the terms
+// checkbox); an unknown address gets Supabase's "signups not allowed" error.
+export async function sendMagicLink(email: string): Promise<string | null> {
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim(),
+    options: { shouldCreateUser: false, emailRedirectTo: appUrl("/auth/confirm") },
+  });
+  return error ? error.message : null;
+}
+
+export async function updatePassword(password: string): Promise<string | null> {
+  const { error } = await supabase.auth.updateUser({ password });
+  return error ? error.message : null;
+}
+
+/** Clear a sign-in error for people: Supabase's own wording is terse. */
+export function friendlyAuthError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("invalid login credentials")) return "That email and password don't match. If you've just signed up, confirm your email first.";
+  if (m.includes("email not confirmed")) return "Confirm your email first: open the link we sent you, or ask for a new one.";
+  if (m.includes("signups not allowed") || m.includes("signup is disabled")) return "There's no account for that email yet. Create one first.";
+  if (m.includes("rate limit") || m.includes("too many")) return "Too many attempts. Wait a minute and try again.";
+  return message;
 }
 
 export function useAuth() {

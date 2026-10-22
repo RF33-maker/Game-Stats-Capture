@@ -1,3 +1,5 @@
+import { Link } from "wouter";
+import { SITE } from "@/lib/site";
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -19,7 +21,7 @@ const STEPS = [
   {
     icon: Cloud,
     title: "Host",
-    desc: "Stats sync straight into your Swish Assistant league so standings stay up to date.",
+    desc: `Stats sync straight into your ${SITE.partnerName} league so standings stay up to date.`,
   },
   {
     icon: Share2,
@@ -34,7 +36,7 @@ const FAQ = [
     a: "Your home base. Create leagues, invite scorers and admins, schedule games, and jump into live capture.",
   },
   {
-    q: "What is the SwishStats Organizer?",
+    q: "What is the Organiser?",
     a: "A single place to manage teams and player rosters across all of your leagues and games.",
   },
   {
@@ -131,28 +133,28 @@ export default function Help() {
           <Card className="bg-gradient-to-br from-card to-primary/5 border-primary/20">
             <CardContent className="p-6 sm:p-8 space-y-3">
               <h2 className="text-2xl font-bold">
-                In partnership with Swish Assistant
+                In partnership with {SITE.partnerName}
               </h2>
               <p className="text-muted-foreground leading-relaxed">
-                Scorers Table works hand-in-hand with Swish Assistant. Capture
-                stats courtside, push them straight to your Swish Assistant
+                Scorers Table works hand-in-hand with {SITE.partnerName}. Capture
+                stats courtside, push them straight to your {SITE.partnerName}
                 league, and share box scores with your community — all from one
                 connected workflow.
               </p>
               <a
-                href="https://www.swishassistant.com"
+                href={SITE.partnerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
               >
-                Visit swishassistant.com
+                Visit {SITE.partnerUrl.replace(/^https?:\/\/(www\.)?/, "")}
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </CardContent>
           </Card>
 
           <p className="text-xs text-muted-foreground text-center">
-            &copy; {new Date().getFullYear()} Swish Assistant. All rights reserved.
+            &copy; {new Date().getFullYear()} {SITE.operator}. All rights reserved. <Link href="/terms" className="hover:underline">Terms</Link> · <Link href="/privacy" className="hover:underline">Privacy</Link>
           </p>
         </div>
       </main>

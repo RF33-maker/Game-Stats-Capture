@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AppHeader } from "@/components/app-header";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { SITE } from "@/lib/site";
 import { ORGANISER_AVAILABLE } from "@/lib/organiser";
 import { JoinGameDialog } from "@/components/organiser/game-day";
 
@@ -183,7 +184,7 @@ export default function LeaguesHub() {
                 <Trophy className="w-7 h-7" />
               </span>
               <div>
-                <h2 className="text-2xl font-bold">No leagues yet</h2>
+                <h2 className="text-2xl font-bold">Welcome to {SITE.name}</h2>
                 <p className="text-muted-foreground mt-1 max-w-xs mx-auto">
                   {LOCAL_MODE_ENABLED
                     ? "Local mode is active — leagues you create live in this browser."
@@ -196,6 +197,20 @@ export default function LeaguesHub() {
                   Create first league
                 </Button>
               )}
+              <ol className="text-left text-sm max-w-sm w-full space-y-2.5 border-t border-border pt-5" data-testid="getting-started">
+                {[
+                  ["Create a league", "Name it and pick a season."],
+                  ["Add teams and players", "Type them in, or link teams already on " + SITE.partnerName + "."],
+                  ["Schedule a game", "Pick the teams, date and venue."],
+                  ["Score it", "Open the game on a tablet. It keeps working with no wifi, and syncs when you're back."],
+                  ["Someone else scoring?", "Give them the game's six-character code. They choose \u201cJoin with a game code\u201d above."],
+                ].map(([title, desc], i) => (
+                  <li key={title} className="flex gap-3">
+                    <span className="mt-0.5 w-5 h-5 shrink-0 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                    <span><strong className="font-semibold">{title}</strong> <span className="text-muted-foreground">{desc}</span></span>
+                  </li>
+                ))}
+              </ol>
             </div>
           ) : (
             <>

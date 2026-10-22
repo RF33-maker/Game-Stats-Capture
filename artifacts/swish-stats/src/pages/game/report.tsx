@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { ArrowLeft, Loader2, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMinutes, periodLabel } from "@/lib/game-state";
+import { SITE } from "@/lib/site";
 import { ORGANISER_AVAILABLE, listOfficials, officialRoleName } from "@/lib/organiser";
 
 type Line = {
@@ -175,7 +176,7 @@ export default function GameReport() {
           </div>
         </section>
 
-        <p className="text-[10px] text-neutral-500 text-center pt-2">Captured with Scorers Table · swishassistant.com</p>
+        <p className="text-[10px] text-neutral-500 text-center pt-2">Captured with Scorers Table · {SITE.url.replace(/^https?:\/\//, "")}</p>
       </main>
     </div>
   );

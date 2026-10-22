@@ -37,7 +37,7 @@ const SIGNED_OUT_ITEMS: NavItem[] = [
 const SIGNED_IN_ITEMS: NavItem[] = [
   { label: "League Hub", href: "/leagues", icon: Trophy },
   { label: "Stats / Analytics", href: "/stats", icon: BarChart3 },
-  { label: "SwishStats Organizer", href: "/organizer", icon: ClipboardList },
+  { label: "Organiser", href: "/organizer", icon: ClipboardList },
   { label: "Profile / Account", href: "/profile", icon: UserIcon },
   { label: "Settings", href: "/settings", icon: SettingsIcon },
   { label: "Help / About", href: "/help", icon: HelpCircle },
@@ -105,7 +105,7 @@ export function AppMenu({ triggerClassName }: AppMenuProps) {
         <div className="px-6 pt-6 pb-5 border-b border-white/10">
           <div className="inline-flex items-center gap-2">
             <span className="text-lg font-black tracking-tight">
-              Swish<span className="text-primary">Stats</span>
+              Scorers<span className="text-primary">Table</span>
             </span>
           </div>
           {signedIn && displayName && (
