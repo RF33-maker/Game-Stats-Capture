@@ -82,7 +82,7 @@ Vercel prints the exact values when the domain is added (newer projects get proj
 
 ### 5. Before launch to the public
 
-- [ ] **Lawyer review of `/terms` and `/privacy`.** They are plain drafts written for this app (accounts, game data, offline storage, Supabase/Vercel/Google Fonts, under-18 players) and say so on the page. Bump `LEGAL_VERSION` in `src/lib/site.ts` when the text changes.
+- [ ] **Lawyer review of `/terms` and `/privacy`.** They are plain drafts written for this app (accounts, game data, offline storage, Supabase/Vercel/Google Fonts, under-18 players) and say so on the page. The sign-up tick box and its "Read the key points" summary (`src/components/signup-terms.tsx`) say the same things in short: review them with the pages. Bump `LEGAL_VERSION` in `src/lib/site.ts` when any of that text changes; it is stored with each sign-up and copied into swishassistant.com's consent record, so it is the record of which wording a person accepted. Decisions the drafts leave open: lawful bases, how long data is kept, international transfers, who controls player data entered by league organisers, and whether swishassistant.com should also ask these members to accept its own terms.
 - [ ] **Account deletion and data export:** not in the app. The privacy page tells people to email `VITE_CONTACT_EMAIL`; make sure someone answers it.
 - [ ] Confirm the company name and contact email in the legal pages are the ones you want a buyer to inherit.
 
