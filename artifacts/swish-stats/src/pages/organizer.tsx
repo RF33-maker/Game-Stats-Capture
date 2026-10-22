@@ -49,7 +49,7 @@ export default function Organizer() {
           <div>
             <p className="sa-eyebrow mb-2">Organiser</p>
             <h1 className="text-4xl md:text-5xl font-bold">
-              Swish Organiser
+              Teams &amp; rosters
             </h1>
             <p className="text-muted-foreground mt-1">
               Manage teams and player rosters across your leagues. Open a game

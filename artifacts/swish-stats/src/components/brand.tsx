@@ -1,4 +1,5 @@
 import logo from "@/assets/swish-assistant-logo.png";
+import { SITE } from "@/lib/site";
 
 /** The Swish hoop mark with the product wordmark — same logo as swishassistant.com. */
 export function Brand({ size = "md", showTagline = true, className = "" }: {
@@ -14,7 +15,7 @@ export function Brand({ size = "md", showTagline = true, className = "" }: {
       <span className="flex flex-col leading-none">
         <span className={`sa-display font-bold ${word} leading-none text-foreground`}>Scorers Table</span>
         {showTagline && (
-          <span className="mt-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">by Swish Assistant</span>
+          <span className="mt-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">by {SITE.operator}</span>
         )}
       </span>
     </span>
@@ -22,5 +23,5 @@ export function Brand({ size = "md", showTagline = true, className = "" }: {
 }
 
 export function BrandMark({ className = "h-9" }: { className?: string }) {
-  return <img src={logo} alt="Swish Assistant" className={`${className} w-auto select-none`} draggable={false} />;
+  return <img src={logo} alt={SITE.operator} className={`${className} w-auto select-none`} draggable={false} />;
 }

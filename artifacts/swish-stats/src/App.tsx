@@ -19,6 +19,10 @@ import Settings from "@/pages/settings";
 import Stats from "@/pages/stats";
 import Help from "@/pages/help";
 import Organizer from "@/pages/organizer";
+import AuthConfirm from "@/pages/auth-confirm";
+import ResetPassword from "@/pages/reset-password";
+import Terms from "@/pages/terms";
+import Privacy from "@/pages/privacy";
 import { ProtectedRoute } from "@/components/protected-route";
 import { RequireLeagueRole } from "@/components/require-league-role";
 import { LocalModeBadge } from "@/components/local-mode-badge";
@@ -29,6 +33,10 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/login" component={Login} />
+      <Route path="/auth/confirm" component={AuthConfirm} />
+      <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/terms" component={Terms} />
+      <Route path="/privacy" component={Privacy} />
       <Route path="/leagues">
         <ProtectedRoute>
           <LeaguesHub />
