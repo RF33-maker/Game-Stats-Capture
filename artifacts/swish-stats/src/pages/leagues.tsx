@@ -38,6 +38,8 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AppHeader } from "@/components/app-header";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { useOrganiserAccess } from "@/hooks/use-organiser-access";
+import { RequestOrganiserAccess } from "@/components/request-organiser-access";
 import { SITE } from "@/lib/site";
 import { ORGANISER_AVAILABLE } from "@/lib/organiser";
 import { JoinGameDialog } from "@/components/organiser/game-day";
@@ -140,7 +142,7 @@ export default function LeaguesHub() {
   const leagueMap = new Map((leagues ?? []).map((l) => [l.id, l]));
 
   const hasLeagues = (leagues?.length ?? 0) > 0;
-  const canCreateLeague = true;
+  const { canCreate: canCreateLeague, isLoading: accessLoading } = useOrganiserAccess();
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
@@ -197,6 +199,7 @@ export default function LeaguesHub() {
                   Create first league
                 </Button>
               )}
+              {!canCreateLeague && !accessLoading && <RequestOrganiserAccess />}
               <ol className="text-left text-sm max-w-sm w-full space-y-2.5 border-t border-border pt-5" data-testid="getting-started">
                 {[
                   ["Create a league", "Name it and pick a season."],
