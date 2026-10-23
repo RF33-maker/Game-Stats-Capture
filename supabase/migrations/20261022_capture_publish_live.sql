@@ -289,7 +289,9 @@ begin
          row_number() over (partition by gt.uid order by gp.created_at, gp.uid)::int,
          gp.is_starter, gp.is_active, (pid_of->>gp.uid::text)::uuid
     from capture.game_players gp
-    join capture.game_teams gt on gt.uid = gp.team_uid and gt.game_uid = p_game;
+    join capture.game_teams gt on gt.uid = gp.team_uid and gt.game_uid = p_game
+   order by gp.is_starter desc, gp.created_at, gp.uid
+  on conflict do nothing;
 
   -- ---- Team totals (players + anything credited to the team itself).
   insert into public.team_stats (

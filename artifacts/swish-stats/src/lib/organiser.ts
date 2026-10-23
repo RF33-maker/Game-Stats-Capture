@@ -252,6 +252,44 @@ export async function createFixtures(leagueUid: string, fixtures: FixtureInput[]
   return made;
 }
 
+// ---------- Games already on the site ----------
+
+export type SiteFixture = {
+  gameKey: string;
+  matchtime: string;
+  home: string;
+  away: string;
+  status: string;
+  /** Stats from another source are already on the site for this game. */
+  hasStats: boolean;
+  /** Already being scored in Scorers Table. */
+  captured: boolean;
+};
+
+/** Games of the league's linked Swish competition, unplayed ones first. */
+export async function searchSiteFixtures(leagueUid: string, query: string): Promise<SiteFixture[]> {
+  requireOnline();
+  const rows = check(await supabase.rpc("search_site_fixtures", {
+    p_league: leagueUid, p_query: query.trim() || null, p_limit: 40,
+  })) as Row[] | null;
+  return (rows ?? []).map(r => ({
+    gameKey: r.game_key, matchtime: r.matchtime, home: r.hometeam, away: r.awayteam, status: r.status,
+    hasStats: !!r.has_stats, captured: !!r.captured,
+  }));
+}
+
+/**
+ * Start scoring a game that is already on the site: both teams and their
+ * squads are copied in from the site, and publishing fills that game's place
+ * on the site. Returns the new game's uid (and brings it onto this device).
+ */
+export async function startSiteGame(leagueUid: string, gameKey: string): Promise<string> {
+  requireOnline();
+  const uid = check(await supabase.rpc("start_site_game", { p_league: leagueUid, p_game_key: gameKey })) as string;
+  await pullFromServer();
+  return uid;
+}
+
 /**
  * Round-robin pairings (circle method). Every team meets every other once
  * per leg; in the second leg home and away swap. With an odd number of
