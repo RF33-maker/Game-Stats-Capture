@@ -67,6 +67,7 @@ import {
   UserCheck,
   CheckCircle2,
   CalendarPlus,
+  Download,
   Radio,
   CalendarRange,
   KeyRound,
@@ -81,6 +82,7 @@ import { TeamsTab } from "@/components/organiser/teams-tab";
 import { RulesTab, VenuesTab } from "@/components/organiser/venues-rules";
 import { NewFixtureDialog, ScheduleDialog, SiteGameDialog, type ScheduledGame } from "@/components/organiser/fixtures";
 import { store } from "@/lib/local-store";
+import { downloadScheduleCsv, type ScheduleGame } from "@/lib/schedule-csv";
 import { GameDayDialog, prettyCode, type GameDayGame } from "@/components/organiser/game-day";
 import type { LeagueRules } from "@/lib/local-store";
 import { listPendingCorrections } from "@/lib/organiser";
@@ -396,6 +398,14 @@ export default function LeagueDetail() {
                       <Button variant="secondary" onClick={() => setSiteGameOpen(true)} data-testid="score-site-game">
                         <Radio className="w-4 h-4 mr-2" />
                         Score a site game
+                      </Button>
+                    )}
+                    {scheduled.length > 0 && (
+                      <Button variant="secondary" data-testid="download-schedule"
+                        title="Every game with its date, teams, venue and the game key a scorer types to unlock it"
+                        onClick={() => downloadScheduleCsv(league.name, (games ?? []) as unknown as ScheduleGame[])}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Download schedule
                       </Button>
                     )}
                     <Button variant="secondary" onClick={() => setScheduleOpen(true)} data-testid="build-schedule">

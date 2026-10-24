@@ -614,7 +614,7 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/teams\/(\d+)\/players$/);
   if (m === "POST" && match) {
     const teamId = Number(match[1]);
-    const data = (body ?? {}) as Partial<{ jerseyNumber: string; firstName: string; lastName: string; position: string | null; headshotUrl: string | null; isStarter: boolean; sitePlayerId: string | null }>;
+    const data = (body ?? {}) as Partial<{ jerseyNumber: string; firstName: string; lastName: string; position: string | null; headshotUrl: string | null; isStarter: boolean; isActive: boolean; sitePlayerId: string | null }>;
     const player = store.players.create({
       sitePlayerId: data.sitePlayerId ?? null,
       teamId,
@@ -624,7 +624,7 @@ export async function handleLocalRequest(
       position: data.position ?? null,
       headshotUrl: data.headshotUrl ?? null,
       isStarter: data.isStarter ?? false,
-      isActive: true,
+      isActive: data.isActive ?? true,
     });
     return ok(player, 201);
   }

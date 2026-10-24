@@ -92,7 +92,7 @@ export function PlayerSearchDialog({
   description?: string;
 }) {
   const [query, setQuery] = useState(initialQuery);
-  const [scope, setScope] = useState<"team" | "competition" | "all">(teamId ? "team" : competitionId ? "competition" : "all");
+  const [scope, setScope] = useState<"team" | "past" | "competition" | "all">(teamId ? "team" : competitionId ? "competition" : "all");
   useEffect(() => {
     if (open) {
       setQuery(initialQuery);
@@ -101,11 +101,12 @@ export function PlayerSearchDialog({
   }, [open, initialQuery, teamId, competitionId]);
   const q = useDebounced(query.trim());
 
-  const enabled = open && (q.length >= 2 || (scope === "team" && !!teamId));
+  const enabled = open && (q.length >= 2 || ((scope === "team" || scope === "past") && !!teamId));
   const { data, isLoading, error } = useQuery({
     queryKey: ["site-players", q, scope, competitionId, teamId],
     queryFn: () => searchPlayers(q, {
-      teamId: scope === "team" ? teamId : null,
+      teamId: scope === "team" || scope === "past" ? teamId : null,
+      includePast: scope === "past",
       competitionId: scope === "competition" ? competitionId : null,
       limit: 40,
     }),
@@ -115,10 +116,11 @@ export function PlayerSearchDialog({
   });
 
   const scopes = [
-    teamId ? { id: "team" as const, label: "This team" } : null,
+    teamId ? { id: "team" as const, label: "This season" } : null,
+    teamId ? { id: "past" as const, label: "Earlier seasons" } : null,
     competitionId ? { id: "competition" as const, label: "This competition" } : null,
     { id: "all" as const, label: "All of Swish" },
-  ].filter(Boolean) as { id: "team" | "competition" | "all"; label: string }[];
+  ].filter(Boolean) as { id: "team" | "past" | "competition" | "all"; label: string }[];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -63,6 +63,8 @@ export type LSGame = {
   // Six-character code a volunteer types to score this game. Made by the
   // server; never sent from the device.
   gameCode?: string | null;
+  // The Swish site fixture this game fills in, once linked.
+  siteGameKey?: string | null;
   // Rules, copied from the league when the game is created.
   overtimeDurationMins?: number;
   foulLimit?: number;
