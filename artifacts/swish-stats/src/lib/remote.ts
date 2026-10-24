@@ -145,7 +145,7 @@ async function pullGame(g: Row, access: LSGame["myAccess"]) {
       timeoutsOvertime: g.timeouts_overtime,
     };
     // Set by the server only; safe to refresh even while the game has unsent changes.
-    const serverOwned: Partial<LSGame> = { gameCode: g.game_code, myAccess: access };
+    const serverOwned: Partial<LSGame> = { gameCode: g.game_code, siteGameKey: g.site_game_key ?? null, myAccess: access };
     let gameId: number;
     if (!local) {
       gameId = store.games.create({ uid: g.uid, ...gameFields, ...serverOwned }).id;
