@@ -34,6 +34,8 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
   const deletePlayer = useDeletePlayer();
   
   const startersCount = players.filter(p => p.isStarter).length;
+  // "Playing" = on this game's roster (the bench and the box score use it); a starter is always playing.
+  const playingCount = players.filter(p => p.isActive).length;
   // null = closed; "add" = add a Swish player; otherwise the roster row being linked
   const [searching, setSearching] = useState<"add" | LinkedPlayer | null>(null);
   const [importing, setImporting] = useState(false);
@@ -81,16 +83,17 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
           await localApi(`/api/players/${sameName.id}`, "PATCH", { sitePlayerId: sp.playerId });
           linked++;
         } else {
+          // A bulk import is the pool to choose from: nobody is ticked as playing yet.
           await localApi(`/api/teams/${team.id}/players`, "POST", {
             jerseyNumber: sp.shirtNumber ?? "", firstName, lastName,
-            position: sp.position ?? null, headshotUrl: sp.photoUrl, isStarter: false, sitePlayerId: sp.playerId,
+            position: sp.position ?? null, headshotUrl: sp.photoUrl, isStarter: false, isActive: false, sitePlayerId: sp.playerId,
           });
           added++;
         }
       }
       refresh();
       toast.success(roster.length === 0 ? "That Swish team has no players yet"
-        : `Imported ${added} player${added === 1 ? "" : "s"}${linked ? `, linked ${linked}` : ""}`);
+        : `Imported ${added} player${added === 1 ? "" : "s"}${linked ? `, linked ${linked}` : ""}. Tick Play for everyone in this game.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't import the roster");
     } finally {
@@ -115,7 +118,36 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
     }
   };
 
+  const handleTogglePlaying = async (player: Player) => {
+    try {
+      await updatePlayer.mutateAsync({
+        playerId: player.id,
+        // Taking someone off the game roster takes them out of the starting five too.
+        data: { isActive: !player.isActive, ...(player.isActive && player.isStarter ? { isStarter: false } : {}) },
+      });
+      queryClient.invalidateQueries({ queryKey: getListGamePlayersQueryKey(gameId) });
+    } catch {
+      toast.error("Failed to update the game roster");
+    }
+  };
+
+  const setAllPlaying = async (value: boolean) => {
+    try {
+      for (const p of players) {
+        if (p.isActive === value) continue;
+        await localApi(`/api/players/${p.id}`, "PATCH", { isActive: value, ...(!value && p.isStarter ? { isStarter: false } : {}) });
+      }
+      refresh();
+    } catch {
+      toast.error("Failed to update the game roster");
+    }
+  };
+
   const handleToggleStarter = async (player: Player) => {
+    if (!player.isActive) {
+      toast.error("Tick Play for this player first, then pick the starters");
+      return;
+    }
     if (!player.isStarter && startersCount >= 5) {
       toast.error("Maximum 5 starters allowed");
       return;
@@ -149,10 +181,10 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
       >
         <div>
           <h3 className="font-bold text-lg">{team.name}</h3>
-          <p className="text-xs opacity-90">{team.abbreviation} • {players.length} Players</p>
+          <p className="text-xs opacity-90">{team.abbreviation} • {players.length} on the list</p>
         </div>
         <div className={`px-3 py-1 rounded-full text-xs font-bold ${headerText === '#ffffff' ? 'bg-white/20' : 'bg-black/10'}`}>
-          {startersCount}/5 Starters
+          {playingCount} playing · {startersCount}/5 starters
         </div>
       </div>
 
@@ -167,6 +199,12 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
               {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               Import Swish roster
             </Button>
+          )}
+          {players.length > 0 && (
+            <div className="ml-auto flex gap-1">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setAllPlaying(true)} data-testid="select-all-playing">Select all</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setAllPlaying(false)} data-testid="clear-playing">Clear</Button>
+            </div>
           )}
         </div>
       )}
@@ -197,13 +235,30 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
           </div>
         ) : (
           players.sort((a, b) => parseInt(a.jerseyNumber) - parseInt(b.jerseyNumber)).map(p => (
-            <div key={p.id} className="flex items-center gap-3 p-2 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors border border-transparent hover:border-border">
-              <Checkbox 
-                checked={p.isStarter} 
-                onCheckedChange={() => handleToggleStarter(p)}
-                id={`starter-${p.id}`}
-                className={p.isStarter ? "border-primary bg-primary" : ""}
-              />
+            <div key={p.id} className={`flex items-center gap-3 p-2 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors border border-transparent hover:border-border ${p.isActive ? "" : "opacity-60"}`}>
+              <label className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold text-muted-foreground" title="Playing in this game">
+                <Checkbox
+                  checked={p.isActive}
+                  onCheckedChange={() => handleTogglePlaying(p)}
+                  id={`playing-${p.id}`}
+                  aria-label={`${p.firstName} ${p.lastName} is playing`}
+                  data-testid="player-playing"
+                />
+                Play
+              </label>
+              <label className={`flex items-center gap-1.5 shrink-0 text-[11px] font-semibold ${p.isActive ? "text-muted-foreground" : "text-muted-foreground/40"}`}
+                title={p.isActive ? "Starts the game" : "Tick Play first"}>
+                <Checkbox
+                  checked={p.isStarter}
+                  disabled={!p.isActive}
+                  onCheckedChange={() => handleToggleStarter(p)}
+                  id={`starter-${p.id}`}
+                  aria-label={`${p.firstName} ${p.lastName} starts`}
+                  data-testid="player-starter"
+                  className={p.isStarter ? "border-primary bg-primary" : ""}
+                />
+                Start
+              </label>
               <div className="w-8 h-8 rounded-md bg-background border flex items-center justify-center font-mono font-bold text-sm shrink-0">
                 {p.jerseyNumber}
               </div>
@@ -297,6 +352,14 @@ export default function SetupPlayers() {
     const homePlayers = players?.filter(p => p.teamId === homeTeam.id) || [];
     const awayPlayers = players?.filter(p => p.teamId === awayTeam.id) || [];
     
+    if (homePlayers.filter(p => p.isActive).length < 5) {
+      toast.error(`Tick Play for at least 5 players on ${homeTeam.name}`);
+      return;
+    }
+    if (awayPlayers.filter(p => p.isActive).length < 5) {
+      toast.error(`Tick Play for at least 5 players on ${awayTeam.name}`);
+      return;
+    }
     if (homePlayers.filter(p => p.isStarter).length !== 5) {
       toast.error(`Please select exactly 5 starters for ${homeTeam.name}`);
       return;
