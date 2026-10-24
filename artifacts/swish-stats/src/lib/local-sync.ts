@@ -19,12 +19,18 @@ export type SyncStatus = {
   failed: number;
   lastSyncAt: string | null;
   lastError: string | null;
+  // Last time a game being scored was pushed to swishassistant.com, and why
+  // the last push failed (if it did).
+  livePublishedAt: string | null;
+  livePublishError: string | null;
 };
 
 let _syncing = false;
 let _signedIn = false;
 let _lastSyncAt: string | null = null;
 let _lastError: string | null = null;
+let _livePublishedAt: string | null = null;
+let _livePublishError: string | null = null;
 let _retryTimer: ReturnType<typeof setTimeout> | null = null;
 let _backoffMs = 2000;
 
@@ -44,6 +50,8 @@ function computeStatus(): SyncStatus {
     failed: SYNC_REMOTE_ENABLED ? store.outbox.failedCount() : 0,
     lastSyncAt: _lastSyncAt,
     lastError: _lastError,
+    livePublishedAt: _livePublishedAt,
+    livePublishError: _livePublishError,
   };
 }
 
@@ -254,7 +262,9 @@ async function send(item: OutboxItem): Promise<void> {
     // Only league admins may create a game row, and an upsert is checked as
     // a create even when the row exists. Scorers (league scorers, and
     // volunteers who joined with a game code) change the existing row instead.
-    if (error?.code === "42501" && item.table === "games") {
+    // The same goes for a league: creating one needs organiser approval, but a
+    // league admin who was invited (and isn't approved) can still edit it.
+    if (error?.code === "42501" && (item.table === "games" || item.table === "leagues")) {
       const { uid, league_uid: _league, ...changes } = row as Record<string, unknown>;
       const res = await db.update(changes).eq("uid", uid as string).select("uid");
       ({ error, status } = res);
@@ -274,6 +284,78 @@ async function send(item: OutboxItem): Promise<void> {
     if (error.code === "23503") throw new Error(error.message);
     // Anything else (permissions, validation) won't fix itself.
     throw new PermanentError(error.message);
+  }
+}
+
+// ---------- Live publishing ----------
+//
+// Once a game's changes have reached the server, ask it to republish the game
+// into the tables swishassistant.com reads (capture.publish_game rewrites that
+// one game's rows, so repeating it is harmless). The site polls every 5-15s,
+// so pushing at most every LIVE_PUBLISH_MS keeps the game live on the site
+// without hammering the database. Failures never block syncing: the scorer's
+// data is already safe on the server.
+
+const LIVE_PUBLISH_MS = 8_000;
+const LIVE_PUBLISH_RETRY_MS = 30_000;
+
+const _dirtyGames = new Set<string>();
+const _lastPublishedAt = new Map<string, number>();
+let _publishTimer: ReturnType<typeof setTimeout> | null = null;
+let _publishing = false;
+
+function gameUidOf(item: OutboxItem): string | null {
+  switch (item.table) {
+    case "games": return item.uid;
+    case "game_teams": { const t = store.teams.getByUid(item.uid); return t ? store.games.get(t.gameId)?.uid ?? null : null; }
+    case "game_players": { const p = store.players.getByUid(item.uid); const t = p && store.teams.get(p.teamId ?? -1); return t ? store.games.get(t.gameId)?.uid ?? null : null; }
+    case "stat_events": { const e = store.statEvents.getByUid(item.uid); return e ? store.games.get(e.gameId)?.uid ?? null : null; }
+    default: return null;
+  }
+}
+
+function schedulePublish(ms: number) {
+  if (_publishTimer) return;
+  _publishTimer = setTimeout(() => { _publishTimer = null; void flushLivePublish(); }, ms);
+}
+
+async function flushLivePublish(): Promise<void> {
+  if (_publishing || !SYNC_REMOTE_ENABLED || !_signedIn) return;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
+  _publishing = true;
+  try {
+    for (const uid of [..._dirtyGames]) {
+      const g = store.games.getByUid(uid);
+      const league = g?.leagueId != null ? store.leagues.get(g.leagueId) : null;
+      // Not started, not linked to a Swish competition, or a team manager
+      // watching someone else's game: nothing to put on the site.
+      if (!g || g.status === "setup" || !league?.siteLeagueId || g.myAccess === "manager") {
+        _dirtyGames.delete(uid);
+        continue;
+      }
+      // Anything still queued for this game must land first, or the site
+      // would show a snapshot that is older than what the scorer sees.
+      if (store.outbox.pending().some(i => gameUidOf(i) === uid)) continue;
+
+      const wait = (_lastPublishedAt.get(uid) ?? 0) + LIVE_PUBLISH_MS - Date.now();
+      if (wait > 0 && g.status !== "final") { schedulePublish(wait); continue; }
+
+      const { error } = await supabase.rpc("publish_game", { p_game: uid, p_listed: true });
+      if (error) {
+        _livePublishError = error.message;
+        // Not allowed (not this game's scorer / admin) won't fix itself; anything else may.
+        if (error.code === "42501") _dirtyGames.delete(uid);
+        else schedulePublish(LIVE_PUBLISH_RETRY_MS);
+      } else {
+        _dirtyGames.delete(uid);
+        _lastPublishedAt.set(uid, Date.now());
+        _livePublishedAt = new Date().toISOString();
+        _livePublishError = null;
+      }
+      notify();
+    }
+  } finally {
+    _publishing = false;
   }
 }
 
@@ -300,7 +382,9 @@ export async function syncNow(): Promise<void> {
       if (!item) break;
       try {
         await send(item);
+        const touched = gameUidOf(item);
         store.outbox.remove(item.id);
+        if (touched && item.op !== "delete") _dirtyGames.add(touched);
         _lastError = null;
         _backoffMs = 2000;
       } catch (e) {
@@ -322,6 +406,7 @@ export async function syncNow(): Promise<void> {
   } finally {
     _syncing = false;
     notify();
+    if (_dirtyGames.size > 0) void flushLivePublish();
   }
 }
 

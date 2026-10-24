@@ -175,6 +175,8 @@ export type LSLeague = {
   logoUrl: string | null;
   // This user's role in the league (from the server once synced).
   role: LeagueRole;
+  // 'personal' is the account's private league of one-off games; it never publishes.
+  kind?: "league" | "personal";
   // The site competition (public.competitions.league_id) games publish into.
   siteLeagueId?: string | null;
   siteLeagueName?: string | null;
@@ -332,7 +334,7 @@ export const store = {
     save(leagues: LSLeague[]) { save("leagues", leagues); },
     get(id: number) { return this.list().find(l => l.id === id) ?? null; },
     getByUid(uid: string) { return this.list().find(l => l.uid === uid) ?? null; },
-    create(input: { name: string; season?: string | null; logoUrl?: string | null; uid?: string; role?: LeagueRole; createdAt?: string; siteLeagueId?: string | null } & Partial<LeagueRules>): LSLeague {
+    create(input: { name: string; season?: string | null; logoUrl?: string | null; uid?: string; role?: LeagueRole; createdAt?: string; siteLeagueId?: string | null; kind?: "league" | "personal" } & Partial<LeagueRules>): LSLeague {
       const now = new Date().toISOString();
       const id = nextId("league");
       const league: LSLeague = {
@@ -342,6 +344,7 @@ export const store = {
         season: input.season ?? null,
         logoUrl: input.logoUrl ?? null,
         role: input.role ?? "admin",
+        kind: input.kind ?? "league",
         siteLeagueId: input.siteLeagueId ?? null,
         ...leagueRules(input),
         createdAt: input.createdAt ?? now,

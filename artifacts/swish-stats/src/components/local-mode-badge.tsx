@@ -91,6 +91,13 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
         {status.failed > 0 && <div>Failed: <span className="font-mono">{status.failed}</span></div>}
         {!status.signedIn && <div>Sign in to send them.</div>}
         <div>Last sync: <span className="font-mono">{formatRelative(status.lastSyncAt)}</span></div>
+        {status.livePublishedAt && <div>On the Swish site: <span className="font-mono">{formatRelative(status.livePublishedAt)}</span></div>}
+        {status.livePublishError && (
+          <div className="flex items-start gap-1 text-amber-300">
+            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+            <span className="break-all">Not on the site yet: {status.livePublishError}</span>
+          </div>
+        )}
         {status.lastError && (
           <div className="flex items-start gap-1 text-amber-300">
             <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />

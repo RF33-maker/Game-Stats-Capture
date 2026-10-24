@@ -7,7 +7,8 @@
 // device like any other.
 
 import { supabase } from "./supabase";
-import { SYNC_REMOTE_ENABLED } from "./local-sync";
+import { SYNC_REMOTE_ENABLED, syncNow } from "./local-sync";
+import { store } from "./local-store";
 import { pullFromServer } from "./remote";
 
 export const ORGANISER_AVAILABLE = SYNC_REMOTE_ENABLED;
@@ -252,6 +253,74 @@ export async function createFixtures(leagueUid: string, fixtures: FixtureInput[]
   return made;
 }
 
+// ---------- Single games ----------
+
+/** The account's private league of one-off games (made on first use), brought onto this device. Returns its local id. */
+export async function singleGamesLeagueId(): Promise<number> {
+  requireOnline();
+  const uid = check(await supabase.rpc("my_single_games_league")) as string;
+  await pullFromServer();
+  const local = store.leagues.getByUid(uid);
+  if (!local) throw new Error("Couldn't open your single games. Try again in a moment.");
+  return local.id;
+}
+
+/**
+ * Move a game into a league the caller runs, link it to one of that league's
+ * competition fixtures (or leave it as a new game on the site), and publish it
+ * now. Everything the device holds for the game must have synced first.
+ */
+export async function assignGameToLeague(gameUid: string, leagueUid: string, gameKey: string | null): Promise<string> {
+  requireOnline();
+  await syncNow();
+  if (store.outbox.pendingCount() + store.outbox.failedCount() > 0) {
+    throw new Error("Some changes haven't reached the server yet. Wait for ALL SYNCED, then try again.");
+  }
+  const key = check(await supabase.rpc("assign_game_to_league", {
+    p_game: gameUid, p_league: leagueUid, p_game_key: gameKey,
+  })) as string;
+  await pullFromServer();
+  return key;
+}
+
+// ---------- Games already on the site ----------
+
+export type SiteFixture = {
+  gameKey: string;
+  matchtime: string;
+  home: string;
+  away: string;
+  status: string;
+  /** Stats from another source are already on the site for this game. */
+  hasStats: boolean;
+  /** Already being scored in Scorers Table. */
+  captured: boolean;
+};
+
+/** Games of the league's linked Swish competition, unplayed ones first. */
+export async function searchSiteFixtures(leagueUid: string, query: string): Promise<SiteFixture[]> {
+  requireOnline();
+  const rows = check(await supabase.rpc("search_site_fixtures", {
+    p_league: leagueUid, p_query: query.trim() || null, p_limit: 40,
+  })) as Row[] | null;
+  return (rows ?? []).map(r => ({
+    gameKey: r.game_key, matchtime: r.matchtime, home: r.hometeam, away: r.awayteam, status: r.status,
+    hasStats: !!r.has_stats, captured: !!r.captured,
+  }));
+}
+
+/**
+ * Start scoring a game that is already on the site: both teams and their
+ * squads are copied in from the site, and publishing fills that game's place
+ * on the site. Returns the new game's uid (and brings it onto this device).
+ */
+export async function startSiteGame(leagueUid: string, gameKey: string): Promise<string> {
+  requireOnline();
+  const uid = check(await supabase.rpc("start_site_game", { p_league: leagueUid, p_game_key: gameKey })) as string;
+  await pullFromServer();
+  return uid;
+}
+
 /**
  * Round-robin pairings (circle method). Every team meets every other once
  * per leg; in the second leg home and away swap. With an odd number of
@@ -294,6 +363,12 @@ export async function listGameScorers(gameUid: string): Promise<AccessEntry[]> {
   requireOnline();
   const rows = check(await supabase.rpc("list_game_scorers", { p_game: gameUid }));
   return (rows as Row[] ?? []).map(r => ({ userId: r.user_id, email: r.email, viaCode: r.via_code, createdAt: r.created_at }));
+}
+
+/** Invite someone with an account to score this game only. */
+export async function addGameScorer(gameUid: string, email: string): Promise<void> {
+  requireOnline();
+  check(await supabase.rpc("add_game_scorer", { p_game: gameUid, p_email: email.trim() }));
 }
 
 export async function removeGameScorer(gameUid: string, userId: string): Promise<void> {

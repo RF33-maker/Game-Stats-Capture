@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format, addDays, parseISO } from "date-fns";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { createFixtures, listLeagueTeams, listVenues, roundRobin, type FixtureInput, type LeagueTeam } from "@/lib/organiser";
+import { createFixtures, listLeagueTeams, listVenues, roundRobin, searchSiteFixtures, startSiteGame, type FixtureInput, type LeagueTeam, type SiteFixture } from "@/lib/organiser";
 import { teamsKey } from "./teams-tab";
 import { venuesKey } from "./venues-rules";
 
@@ -130,6 +130,65 @@ export function NewFixtureDialog({ leagueUid, games, onClose, onCreated }: {
             {busy && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Schedule game
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Pick a game that is already on the site and score it; its place on the site is filled in. */
+export function SiteGameDialog({ leagueUid, competitionName, onClose, onStarted }: {
+  leagueUid: string;
+  competitionName?: string | null;
+  onClose: () => void;
+  onStarted: (gameUid: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  useEffect(() => { const t = setTimeout(() => setDebounced(query), 250); return () => clearTimeout(t); }, [query]);
+  const games = useQuery({ queryKey: ["site-fixtures", leagueUid, debounced], queryFn: () => searchSiteFixtures(leagueUid, debounced) });
+
+  const start = async (g: SiteFixture) => {
+    setBusyKey(g.gameKey);
+    try { onStarted(await startSiteGame(leagueUid, g.gameKey)); }
+    catch (e) { err(e); setBusyKey(null); }
+  };
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-xl max-h-[90dvh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Score a game from the site</DialogTitle>
+          <DialogDescription>
+            Games in {competitionName ?? "your linked competition"}. Pick one and its teams and squads are filled in;
+            the stats you capture go straight into that game on Swish Assistant.
+          </DialogDescription>
+        </DialogHeader>
+        <Input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by team" data-testid="site-game-search" autoFocus />
+        <div className="space-y-2 min-h-24">
+          {games.isLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>}
+          {games.error && <p className="text-sm text-destructive">{games.error instanceof Error ? games.error.message : "Couldn't load games"}</p>}
+          {games.data?.length === 0 && <p className="text-sm text-muted-foreground py-4">No games found.</p>}
+          {games.data?.map(g => {
+            const blocked = g.hasStats ? "Already has stats" : g.captured ? "Already being scored" : null;
+            return (
+              <div key={g.gameKey} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3" data-testid="site-game-row">
+                <div className="min-w-0">
+                  <div className="font-semibold truncate">{g.home} <span className="text-muted-foreground font-normal">v</span> {g.away}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {format(new Date(g.matchtime), "EEE d MMM yyyy, HH:mm")}
+                    {g.status === "error" && " · LiveStats stopped"}
+                    {blocked && ` · ${blocked}`}
+                  </div>
+                </div>
+                <Button size="sm" disabled={!!blocked || !!busyKey} onClick={() => start(g)} data-testid="site-game-start">
+                  {busyKey === g.gameKey && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Score
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+        <DialogFooter><Button variant="ghost" onClick={onClose}>Cancel</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

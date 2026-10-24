@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { localApi } from "@/lib/directory";
 import { store } from "@/lib/local-store";
 import {
-  OFFICIAL_ROLES, ORGANISER_AVAILABLE, addOfficial, fetchGameCode, joinGameByCode, listGameScorers, listOfficials,
+  OFFICIAL_ROLES, ORGANISER_AVAILABLE, addGameScorer, addOfficial, fetchGameCode, joinGameByCode, listGameScorers, listOfficials,
   listVenues, officialRoleName, removeGameScorer, removeOfficial, type OfficialRole,
 } from "@/lib/organiser";
 import { venuesKey } from "./venues-rules";
@@ -123,6 +123,8 @@ export function GameDayDialog({ game, leagueUid, title, onClose, onChanged }: {
   const [number, setNumber] = useState(game.gameNumber != null ? String(game.gameNumber) : "");
   const [venue, setVenue] = useState(game.venueUid ?? NONE);
   const [busy, setBusy] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviting, setInviting] = useState(false);
   const dirty = date !== game.date.slice(0, 10) || time !== (game.tipoffTime?.slice(0, 5) ?? "") || round !== (game.roundLabel ?? "")
     || number !== (game.gameNumber != null ? String(game.gameNumber) : "") || venue !== (game.venueUid ?? NONE);
 
@@ -161,12 +163,29 @@ export function GameDayDialog({ game, leagueUid, title, onClose, onChanged }: {
             <p className="text-xs text-muted-foreground">
               Give this to whoever is scoring. They sign in to Scorers Table, choose <strong>Join with a game code</strong> and get this game only — no access to the rest of your league. It stops working once the game is final.
             </p>
+            <form className="flex gap-2 pt-1" data-testid="invite-scorer" onSubmit={async e => {
+              e.preventDefault();
+              if (!inviteEmail.trim()) return;
+              setInviting(true);
+              try {
+                await addGameScorer(game.uid, inviteEmail);
+                toast.success(`${inviteEmail.trim()} can now score this game`);
+                setInviteEmail("");
+                await qc.invalidateQueries({ queryKey: scorersKey });
+              } catch (e2) { err(e2); } finally { setInviting(false); }
+            }}>
+              <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="Or invite by email"
+                className="h-9" aria-label="Email of the person to invite" autoComplete="off" />
+              <Button type="submit" size="sm" variant="secondary" disabled={inviting || !inviteEmail.trim()} data-testid="invite-scorer-send">
+                {inviting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Plus className="w-3.5 h-3.5 mr-1" />Invite</>}
+              </Button>
+            </form>
             {!!scorers?.length && (
               <div className="pt-1 space-y-1">
                 {scorers.map(s => (
                   <div key={s.userId} className="flex items-center gap-2 text-sm">
                     <span className="flex-1 truncate">{s.email ?? s.userId}</span>
-                    <span className="text-xs text-muted-foreground">joined with the code</span>
+                    <span className="text-xs text-muted-foreground">{s.viaCode ? "joined with the code" : "invited"}</span>
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label="Remove scorer"
                       onClick={async () => { try { await removeGameScorer(game.uid, s.userId); await qc.invalidateQueries({ queryKey: scorersKey }); } catch (e) { err(e); } }}>
                       <Trash2 className="w-3.5 h-3.5" />

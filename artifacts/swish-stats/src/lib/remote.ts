@@ -68,11 +68,12 @@ async function doPull() {
       if (local) {
         store.leagues.update(local.id, {
           ...(store.outbox.hasPendingFor("leagues", l.uid) ? {} : { name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id, ...rulesOf(l) }),
+          kind: l.kind ?? "league",
           role: roleOf.get(l.uid) ?? "viewer",
         });
       } else {
         store.leagues.create({
-          uid: l.uid, name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id,
+          uid: l.uid, name: l.name, season: l.season, logoUrl: l.logo_url, siteLeagueId: l.site_league_id, kind: l.kind ?? "league",
           role: roleOf.get(l.uid) ?? "viewer", createdAt: l.created_at, ...rulesOf(l),
         });
       }

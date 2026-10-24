@@ -6,14 +6,31 @@ export default function Terms() {
     <LegalPage title="Terms of use">
       <p>
         {SITE.name} is operated by {SITE.operatorLegal} (trading as {SITE.operator}), "we", "us". By creating an account or using
-        the app you agree to these terms and to our <a href="/privacy">privacy policy</a>.
+        the app you agree to these terms and to our <a href="/privacy">privacy policy</a>. We handle your personal data under the UK
+        General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018, as the privacy policy explains.
       </p>
 
       <h2>Your account</h2>
       <ul>
         <li>You must be 18 or over, or old enough to consent to online services where you live, whichever is higher.</li>
         <li>Give a real email address you can read. You are responsible for your password and for what happens under your account.</li>
-        <li>Accounts are shared with {SITE.partnerName}: the same email and password work on both, and signing out of one does not sign you out of the other.</li>
+        <li>Your account is a single {SITE.partnerName} account that also works on {SITE.name}. See "One account, two products" below.</li>
+        <li>When you sign up here we record, with your account, the date you accepted these terms and the version number shown at the top of this page.</li>
+      </ul>
+
+      <h2>One account, two products</h2>
+      <ul>
+        <li>
+          {SITE.name} and {SITE.partnerName} ({SITE.partnerHost}) use the same accounts. Creating an account here creates a {SITE.partnerName} account,
+          and the same email and password work on both. You sign in on each separately, and signing in on one does not sign you out of the other.
+        </li>
+        <li>It is one account, so changing the password, or closing the account, applies to both.</li>
+        <li>Games you publish from {SITE.name} are shown on {SITE.partnerName} (see "Your leagues and games").</li>
+        <li>
+          {SITE.partnerName} keeps its own member profile and consent record for the account. The date and version of the terms you accept here
+          are recorded with the account, and {SITE.partnerName} can copy them into its record.
+        </li>
+        <li>{SITE.partnerName} has its own terms of use and privacy policy for the use of that site.</li>
       </ul>
 
       <h2>Your leagues and games</h2>
@@ -39,7 +56,8 @@ export default function Terms() {
 
       <h2>Changes and contact</h2>
       <p>
-        We may update these terms and will change the version number when we do. Questions, or want your account closed:
+        We may update these terms and will change the version number when we do. The version you accepted is recorded with your account.
+        Questions, or want your account closed:
         {" "}<a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
       </p>
     </LegalPage>
