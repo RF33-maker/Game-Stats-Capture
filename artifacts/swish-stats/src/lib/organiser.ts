@@ -334,6 +334,12 @@ export async function listGameScorers(gameUid: string): Promise<AccessEntry[]> {
   return (rows as Row[] ?? []).map(r => ({ userId: r.user_id, email: r.email, viaCode: r.via_code, createdAt: r.created_at }));
 }
 
+/** Invite someone with an account to score this game only. */
+export async function addGameScorer(gameUid: string, email: string): Promise<void> {
+  requireOnline();
+  check(await supabase.rpc("add_game_scorer", { p_game: gameUid, p_email: email.trim() }));
+}
+
 export async function removeGameScorer(gameUid: string, userId: string): Promise<void> {
   requireOnline();
   mustChange(check(await supabase.from("game_scorers").delete()
