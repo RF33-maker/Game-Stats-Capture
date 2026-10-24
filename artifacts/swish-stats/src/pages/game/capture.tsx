@@ -1,3 +1,4 @@
+import { clockAfter, parseClock } from "@/lib/game-clock";
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation, useSearch } from "wouter";
 import { 
@@ -95,12 +96,6 @@ type FtSeq = { teamId: number; playerId: number; total: number; index: number; n
 
 type FoulChoice = 'personal' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
 
-// "7:42" or "742" → seconds; null if it isn't a clock.
-function parseClock(text: string): number | null {
-  const m = text.trim().match(/^(\d{1,2}):?([0-5]\d)$/);
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-}
-
 type ShotEvent = { id: number; eventType: string; teamId: number | null; period: number; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
 export default function GameCapture() {
@@ -163,53 +158,93 @@ export default function GameCapture() {
   const homeTeam = teams?.find(t => t.isHome);
   const awayTeam = teams?.find(t => !t.isHome);
 
-  // Sync clock
+  // The clock on this screen is the scorer's own: it is copied from the game
+  // once, when the game loads, and never again from the saved game. (It used
+  // to be copied back every time the clock stopped, and the saved value is only
+  // refreshed every few seconds, so stopping snapped the clock back to where it
+  // had started.) Period changes set it explicitly where they happen.
+  const clockLoadedFor = useRef<number | null>(null);
   useEffect(() => {
-    if (game?.clockSeconds !== undefined && !isRunning) {
+    if (!game || isRunning) return;
+    if (clockLoadedFor.current !== game.id) {
+      clockLoadedFor.current = game.id;
       setLocalClock(game.clockSeconds);
     }
-  }, [game?.clockSeconds, isRunning]);
+  }, [game?.id, game?.clockSeconds, isRunning]);
 
-  // Timer
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Timer. While running, the time is worked out from when the clock started
+  // (see lib/game-clock.ts), so it neither drifts nor stalls in a background tab.
   const lastSyncRef = useRef<number>(Date.now());
   const transitioningRef = useRef<boolean>(false);
   // Only a running → paused transition should write the clock back. Without
   // this, the first render (localClock still 0, game just loaded) wrote 0
   // over the saved clock every time the capture screen was opened.
   const wasRunningRef = useRef<boolean>(false);
-  
+  const runRef = useRef<{ startedAt: number; from: number } | null>(null);
+  const localClockRef = useRef(localClock);
+  localClockRef.current = localClock;
+  const gameRef = useRef(game);
+  gameRef.current = game;
+  /** The clock right now, to the second, even between timer ticks. */
+  const nowClock = () => (runRef.current ? clockAfter(runRef.current.from, runRef.current.startedAt, Date.now()) : localClockRef.current);
+
   useEffect(() => {
     if (isRunning) {
       wasRunningRef.current = true;
-      timerRef.current = setInterval(() => {
-        setLocalClock(prev => Math.max(0, prev - 1));
-        
-        // Sync every 5 seconds
+      runRef.current = { startedAt: Date.now(), from: localClockRef.current };
+      const timer = setInterval(() => {
+        const next = nowClock();
+        setLocalClock(next);
+        // Save every 5 seconds
         if (Date.now() - lastSyncRef.current > 5000 && !transitioningRef.current) {
-          updateClock.mutate({ 
-            gameId, 
-            data: { clockSeconds: localClock, currentPeriod: game?.currentPeriod } 
-          });
+          updateClock.mutate({ gameId, data: { clockSeconds: next, currentPeriod: gameRef.current?.currentPeriod } });
           lastSyncRef.current = Date.now();
         }
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      // Final sync on pause — but skip if we're in the middle of a period transition
-      // because handleEndPeriod will issue its own authoritative clock+period write.
-      if (wasRunningRef.current && game && localClock !== game.clockSeconds && !transitioningRef.current) {
-        updateClock.mutate({ 
-          gameId, 
-          data: { clockSeconds: localClock, currentPeriod: game.currentPeriod } 
-        });
-      }
-      wasRunningRef.current = false;
+        if (next === 0) setIsRunning(false); // the horn: a period clock stops at zero
+      }, 250);
+      return () => {
+        clearInterval(timer);
+        // Settle on the exact time the clock was stopped at.
+        const stoppedAt = nowClock();
+        runRef.current = null;
+        localClockRef.current = stoppedAt;
+        setLocalClock(stoppedAt);
+      };
     }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRunning, localClock, gameId, game, updateClock]);
+    // Final save on pause, unless we're in the middle of a period transition
+    // (handleEndPeriod issues its own authoritative clock + period write).
+    if (wasRunningRef.current && !transitioningRef.current) {
+      updateClock.mutate({ gameId, data: { clockSeconds: localClockRef.current, currentPeriod: gameRef.current?.currentPeriod } });
+    }
+    wasRunningRef.current = false;
+    return undefined;
+  }, [isRunning, gameId]);
+
+  // Type the clock in (the scorer reads it off the scoreboard or the video).
+  const [editingClock, setEditingClock] = useState(false);
+  const setClockTo = (seconds: number) => {
+    runRef.current = null;
+    localClockRef.current = seconds;
+    setLocalClock(seconds);
+    updateClock.mutate({ gameId, data: { clockSeconds: seconds, currentPeriod: gameRef.current?.currentPeriod } });
+    lastSyncRef.current = Date.now();
+  };
+  const clockEditCancelled = useRef(false);
+  const startEditingClock = () => {
+    setIsRunning(false); // stop it first; the typed time is where it resumes from
+    clockEditCancelled.current = false;
+    setEditingClock(true);
+  };
+  const finishEditingClock = (text: string, cancel = false) => {
+    if (clockEditCancelled.current) return;
+    clockEditCancelled.current = true; // one result per edit, whichever of Enter / blur comes first
+    if (!cancel) {
+      const sec = parseClock(text);
+      if (sec != null && sec !== localClockRef.current) setClockTo(sec);
+      else if (sec == null && text.trim() !== '') toast.error("Enter the clock as minutes:seconds, e.g. 7:42");
+    }
+    setEditingClock(false);
+  };
 
   // Before the first play of a full-court game, check the teams are shown
   // attacking the right baskets — every shot location depends on it.
@@ -344,7 +379,7 @@ export default function GameCapture() {
           teamId: selectedTeamId,
           playerId: selectedPlayerId,
           period: game.currentPeriod,
-          clockSeconds: localClock,
+          clockSeconds: nowClock(),
           eventType,
           value,
           shotZone: null,
@@ -364,7 +399,7 @@ export default function GameCapture() {
       // Foul trouble: say so the moment it happens.
       if (eventPlayerId != null && ['pf', 'tf', 'flagrant'].includes(eventType)) {
         const after = playerFouls(
-          [...evAsc, { id: -1, teamId: eventTeamId, playerId: eventPlayerId, period: game.currentPeriod, clockSeconds: localClock, eventType, qualifiers: ftData?.qualifiers }],
+          [...evAsc, { id: -1, teamId: eventTeamId, playerId: eventPlayerId, period: game.currentPeriod, clockSeconds: nowClock(), eventType, qualifiers: ftData?.qualifiers }],
           eventPlayerId, rules);
         if (after.out === 'ejected') toast.error(`${playerName(eventPlayerId)} is ejected — substitute them now`, { duration: 8000 });
         else if (after.out === 'fouls') toast.error(`${playerName(eventPlayerId)} has fouled out (${after.total}) — substitute them now`, { duration: 8000 });
@@ -670,7 +705,7 @@ export default function GameCapture() {
           outPlayerId: onCourtPlayerId,
           inPlayerId: benchPlayerId,
           period: game.currentPeriod,
-          clockSeconds: localClock,
+          clockSeconds: nowClock(),
         },
       });
       setSubMode(null);
@@ -780,7 +815,7 @@ export default function GameCapture() {
           teamId: null,
           playerId: null,
           period: game.currentPeriod,
-          clockSeconds: localClock,
+          clockSeconds: nowClock(),
           eventType: 'period_start' as StatEventType,
           value: 0,
         },
@@ -1099,9 +1134,27 @@ export default function GameCapture() {
           )}
           
           <div className="bg-[#0b0d10] border border-white/10 rounded-xl px-4 py-1 flex items-center gap-4">
-            <span className="text-4xl font-bold font-mono text-amber-400 tabular-nums">
-              {formatClock(localClock)}
-            </span>
+            {editingClock ? (
+              <input
+                autoFocus
+                defaultValue={formatClock(localClock)}
+                inputMode="numeric"
+                aria-label="Set the game clock"
+                data-testid="game-clock-input"
+                onFocus={e => e.currentTarget.select()}
+                onBlur={e => finishEditingClock(e.currentTarget.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') finishEditingClock(e.currentTarget.value);
+                  else if (e.key === 'Escape') finishEditingClock('', true);
+                }}
+                className="w-28 bg-transparent text-4xl font-bold font-mono text-amber-400 tabular-nums outline-none border-b border-amber-400/60"
+              />
+            ) : (
+              <button type="button" onClick={startEditingClock} title="Tap to type the time shown on the scoreboard or video"
+                data-testid="game-clock" className="text-4xl font-bold font-mono text-amber-400 tabular-nums hover:text-amber-300">
+                {formatClock(localClock)}
+              </button>
+            )}
             <Button 
               variant="outline" 
               size="icon" 
