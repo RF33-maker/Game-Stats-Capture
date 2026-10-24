@@ -39,6 +39,10 @@ import { format } from "date-fns";
 import { AppHeader } from "@/components/app-header";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import { useOrganiserAccess } from "@/hooks/use-organiser-access";
+import { SingleGames, type SingleGame } from "@/components/single-games";
+import { singleGamesLeagueId } from "@/lib/organiser";
+import { localApi } from "@/lib/directory";
+import { newGameDefaults } from "@/lib/app-settings";
 import { RequestOrganiserAccess } from "@/components/request-organiser-access";
 import { SITE } from "@/lib/site";
 import { ORGANISER_AVAILABLE } from "@/lib/organiser";
@@ -94,7 +98,11 @@ function roleBadge(role: string) {
 
 export default function LeaguesHub() {
   const queryClient = useQueryClient();
-  const { data: leagues, isLoading: leaguesLoading } = useListLeagues();
+  const { data: allLeagues, isLoading: leaguesLoading } = useListLeagues();
+  // The private "Single games" league is shown as its own section, not as a league card.
+  const kindOf = (l: unknown) => (l as { kind?: string }).kind;
+  const leagues = allLeagues?.filter(l => kindOf(l) !== "personal");
+  const personalLeague = allLeagues?.find(l => kindOf(l) === "personal");
   const { data: allGames, isLoading: gamesLoading } = useListGames();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -139,9 +147,26 @@ export default function LeaguesHub() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 10) ?? [];
 
-  const leagueMap = new Map((leagues ?? []).map((l) => [l.id, l]));
+  const leagueMap = new Map((allLeagues ?? []).map((l) => [l.id, l]));
 
-  const hasLeagues = (leagues?.length ?? 0) > 0;
+  const hasLeagues = (allLeagues?.length ?? 0) > 0;
+  const singleGames = (allGames ?? []).filter(g => personalLeague && g.leagueId === personalLeague.id);
+  const targetLeagues = (leagues ?? []).filter(l => l.viewerRole === "admin" && (l as { siteLeagueId?: string | null }).siteLeagueId)
+    .map(l => ({ id: l.id, uid: (l as unknown as { uid: string }).uid, name: l.name,
+      siteLeagueName: (l as { siteLeagueName?: string | null }).siteLeagueName, siteLeagueId: (l as { siteLeagueId?: string | null }).siteLeagueId }));
+  const [startingSingle, setStartingSingle] = useState(false);
+  const startSingleGame = async () => {
+    setStartingSingle(true);
+    try {
+      const leagueId = await singleGamesLeagueId();
+      const game = await localApi<{ id: number }>(`/api/leagues/${leagueId}/games`, "POST", newGameDefaults());
+      queryClient.invalidateQueries();
+      setLocation(`/setup/${game.id}/info?league=${leagueId}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't start a single game");
+      setStartingSingle(false);
+    }
+  };
   const { canCreate: canCreateLeague, isLoading: accessLoading } = useOrganiserAccess();
 
   return (
@@ -165,6 +190,12 @@ export default function LeaguesHub() {
                 <Button variant="secondary" onClick={() => setJoinOpen(true)} data-testid="join-with-code">
                   <KeyRound className="w-4 h-4" />
                   Join with a game code
+                </Button>
+              )}
+              {ORGANISER_AVAILABLE && canCreateLeague && (
+                <Button onClick={startSingleGame} disabled={startingSingle} data-testid="stat-single-game">
+                  {startingSingle ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                  Stat a single game
                 </Button>
               )}
               {canCreateLeague && hasLeagues && (
@@ -338,6 +369,10 @@ export default function LeaguesHub() {
                   </div>
                 )}
               </section>
+
+              {personalLeague && (
+                <SingleGames games={singleGames as unknown as SingleGame[]} personalLeagueId={personalLeague.id} leagues={targetLeagues} />
+              )}
 
               <section className="space-y-4">
                 <div className="flex items-center justify-between">

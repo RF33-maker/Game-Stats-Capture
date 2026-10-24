@@ -7,7 +7,8 @@
 // device like any other.
 
 import { supabase } from "./supabase";
-import { SYNC_REMOTE_ENABLED } from "./local-sync";
+import { SYNC_REMOTE_ENABLED, syncNow } from "./local-sync";
+import { store } from "./local-store";
 import { pullFromServer } from "./remote";
 
 export const ORGANISER_AVAILABLE = SYNC_REMOTE_ENABLED;
@@ -250,6 +251,36 @@ export async function createFixtures(leagueUid: string, fixtures: FixtureInput[]
     if (made) await pullFromServer();
   }
   return made;
+}
+
+// ---------- Single games ----------
+
+/** The account's private league of one-off games (made on first use), brought onto this device. Returns its local id. */
+export async function singleGamesLeagueId(): Promise<number> {
+  requireOnline();
+  const uid = check(await supabase.rpc("my_single_games_league")) as string;
+  await pullFromServer();
+  const local = store.leagues.getByUid(uid);
+  if (!local) throw new Error("Couldn't open your single games. Try again in a moment.");
+  return local.id;
+}
+
+/**
+ * Move a game into a league the caller runs, link it to one of that league's
+ * competition fixtures (or leave it as a new game on the site), and publish it
+ * now. Everything the device holds for the game must have synced first.
+ */
+export async function assignGameToLeague(gameUid: string, leagueUid: string, gameKey: string | null): Promise<string> {
+  requireOnline();
+  await syncNow();
+  if (store.outbox.pendingCount() + store.outbox.failedCount() > 0) {
+    throw new Error("Some changes haven't reached the server yet. Wait for ALL SYNCED, then try again.");
+  }
+  const key = check(await supabase.rpc("assign_game_to_league", {
+    p_game: gameUid, p_league: leagueUid, p_game_key: gameKey,
+  })) as string;
+  await pullFromServer();
+  return key;
 }
 
 // ---------- Games already on the site ----------
