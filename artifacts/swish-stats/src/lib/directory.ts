@@ -94,7 +94,7 @@ export async function searchTeams(query: string, competitionId?: string | null, 
 
 export async function searchPlayers(
   query: string,
-  opts: { competitionId?: string | null; teamId?: string | null; limit?: number } = {},
+  opts: { competitionId?: string | null; teamId?: string | null; limit?: number; /** Include the team's players from earlier seasons. */ includePast?: boolean } = {},
 ): Promise<SitePlayer[]> {
   requireOnline();
   const { data, error } = await supabase.rpc("search_site_players", {
@@ -102,6 +102,7 @@ export async function searchPlayers(
     p_competition: opts.competitionId ?? null,
     p_team: opts.teamId ?? null,
     p_limit: opts.limit ?? 25,
+    p_include_past: opts.includePast ?? false,
   });
   if (error) throw new Error(error.message);
   return (data as Row[] ?? []).map(r => ({
