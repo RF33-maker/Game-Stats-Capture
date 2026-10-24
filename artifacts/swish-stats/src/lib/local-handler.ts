@@ -1,5 +1,12 @@
-import { store, type LSGame, type LSStatEvent } from "./local-store";
+import { store, byOrder, type LSGame, type LSStatEvent, type LeagueRole, leagueRules } from "./local-store";
 import { computePossessionEffect, applyScoreDelta, describeEvent } from "./local-possession";
+
+import { gameRules, inGameOrder, playingTime } from "./game-state";
+import { listMembers, addMember, updateMemberRole, removeMember, OfflineError } from "./remote";
+
+// Local-only dev mode seeds a "Local Games" league; signed-in mode uses the
+// user's real leagues pulled from the server.
+const LOCAL_ONLY = import.meta.env.VITE_LOCAL_MODE === "true";
 
 type HandlerResult = { status: number; body: unknown };
 
@@ -92,7 +99,7 @@ function teamTotals(lines: StatLine[], teamId: number): StatLine {
   return total;
 }
 
-function rebuildPlayByPlay(gameId: number): void {
+export function rebuildPlayByPlay(gameId: number): void {
   const game = store.games.get(gameId);
   if (!game) return;
 
@@ -105,16 +112,20 @@ function rebuildPlayByPlay(gameId: number): void {
   const playerMap = new Map(players.map(p => [p.id, p]));
   const teamMap = new Map(teams.map(t => [t.id, t]));
 
-  const events = store.statEvents.forGame(gameId).sort((a, b) => a.id - b.id);
+  const events = store.statEvents.forGame(gameId).sort(byOrder);
 
   store.playByPlay.deleteForGame(gameId);
 
   let homeScore = 0;
   let awayScore = 0;
   let possessionTeamId: number | null = null;
+  // Alternating possession: the opening tip's loser holds the arrow, and it
+  // flips each time it is used (see arrowTeam in game-state.ts).
+  let arrow: number | null = null;
+  const otherTeamId = (id: number) => (id === home.id ? away.id : home.id);
 
   for (const ev of events) {
-    const effect = computePossessionEffect({
+    let effect = computePossessionEffect({
       eventType: ev.eventType,
       eventTeamId: ev.teamId,
       ftSequenceIndex: ev.ftSequenceIndex,
@@ -123,6 +134,13 @@ function rebuildPlayByPlay(gameId: number): void {
       awayTeamId: away.id,
       currentPossessionTeamId: possessionTeamId,
     });
+
+    if (ev.eventType === "jump_ball" && ev.teamId != null) {
+      arrow = otherTeamId(ev.teamId);
+    } else if (ev.eventType === "period_start" && ev.period > 1 && arrow != null) {
+      effect = { ...effect, nextPossessionTeamId: arrow };
+      arrow = otherTeamId(arrow);
+    }
 
     const next = applyScoreDelta(effect.scoreDelta, ev.teamId, home.id, homeScore, awayScore);
     homeScore = next.homeScore;
@@ -144,6 +162,8 @@ function rebuildPlayByPlay(gameId: number): void {
       ftSequenceIndex: ev.ftSequenceIndex,
       ftSequenceTotal: ev.ftSequenceTotal,
       otherPlayer,
+      qualifiers: ev.qualifiers,
+      periodCount: game.periodCount,
     });
 
     store.playByPlay.create({
@@ -187,8 +207,18 @@ function buildBoxScore(gameId: number): HandlerResult {
   for (const p of allPlayers) {
     lineByPlayer.set(p.id, emptyStatLine(p));
   }
+  // Stats credited to the team rather than a player (team rebounds, team
+  // turnovers, bench technicals) get their own line, so totals include them.
+  const teamLineByTeam = new Map<number, StatLine>();
+  for (const t of teams) {
+    teamLineByTeam.set(t.id, emptyStatLine({ id: 0, teamId: t.id, firstName: "", lastName: "Team", jerseyNumber: "" }));
+  }
   for (const ev of events) {
-    if (ev.playerId == null) continue;
+    if (ev.playerId == null) {
+      const teamLine = ev.teamId != null ? teamLineByTeam.get(ev.teamId) : undefined;
+      if (teamLine) applyEvent(teamLine, ev);
+      continue;
+    }
     const line = lineByPlayer.get(ev.playerId);
     if (!line) continue;
     applyEvent(line, ev);
@@ -201,11 +231,19 @@ function buildBoxScore(gameId: number): HandlerResult {
   const homePoints = lastPbp?.homeScore ?? 0;
   const awayPoints = lastPbp?.awayScore ?? 0;
 
+  const time = playingTime(inGameOrder(events), allPlayers, gameRules(game),
+    { period: game.currentPeriod, clockSeconds: game.status === "setup" ? game.periodDurationMins * 60 : game.clockSeconds });
+
   const buildTeam = (team: typeof home, totalPoints: number) => {
     const lines = allPlayers
       .filter(p => p.teamId === team.id)
-      .map(p => lineByPlayer.get(p.id)!)
-      .filter(Boolean);
+      .filter(p => lineByPlayer.has(p.id))
+      .map(p => ({
+        ...lineByPlayer.get(p.id)!,
+        isStarter: p.isStarter,
+        secondsPlayed: time.get(p.id)?.seconds ?? 0,
+        plusMinus: time.get(p.id)?.plusMinus ?? 0,
+      }));
     return {
       teamId: team.id,
       name: team.name,
@@ -214,7 +252,8 @@ function buildBoxScore(gameId: number): HandlerResult {
       totalPoints,
       possessions: possessionsForTeam(team.id),
       players: lines,
-      teamTotals: teamTotals(lines, team.id),
+      teamLine: teamLineByTeam.get(team.id)!,
+      teamTotals: teamTotals([...lines, teamLineByTeam.get(team.id)!], team.id),
     };
   };
 
@@ -408,6 +447,16 @@ function seedSampleGame(): HandlerResult {
   return ok(store.games.get(game.id), 201);
 }
 
+/** Games with the two team names attached, for lists ("Hawks v Wolves"). */
+function gamesWithTeams(games: LSGame[]) {
+  const teams = store.teams.list();
+  return games.map((g) => ({
+    ...g,
+    homeTeamName: teams.find(t => t.gameId === g.id && t.isHome)?.name ?? null,
+    awayTeamName: teams.find(t => t.gameId === g.id && !t.isHome)?.name ?? null,
+  }));
+}
+
 // URL pattern matching
 const patterns = {
   listGames: /^\/api\/games$/,
@@ -454,7 +503,7 @@ export async function handleLocalRequest(
 
   // List games
   if (m === "GET" && patterns.listGames.test(pathname)) {
-    return ok(store.games.list());
+    return ok(gamesWithTeams(store.games.list()));
   }
 
   // Create game
@@ -481,6 +530,13 @@ export async function handleLocalRequest(
     const game = store.games.get(gameId);
     if (!game) return notFound("Game not found");
     return ok(game);
+  }
+
+  // Delete game (league admins; the server enforces it when the delete syncs)
+  match = pathname.match(/^\/api\/games\/(\d+)$/);
+  if (m === "DELETE" && match) {
+    if (!store.games.delete(Number(match[1]))) return notFound("Game not found");
+    return { status: 204, body: null };
   }
 
   // Update game
@@ -516,8 +572,9 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/games\/(\d+)\/teams$/);
   if (m === "POST" && match) {
     const gameId = Number(match[1]);
-    const data = (body ?? {}) as Partial<{ name: string; abbreviation: string; colorPrimary: string; colorSecondary: string; logoUrl: string | null; isHome: boolean }>;
+    const data = (body ?? {}) as Partial<{ name: string; abbreviation: string; colorPrimary: string; colorSecondary: string; logoUrl: string | null; isHome: boolean; siteTeamId: string | null }>;
     const team = store.teams.create({
+      siteTeamId: data.siteTeamId ?? null,
       gameId,
       name: data.name ?? "",
       abbreviation: data.abbreviation ?? "",
@@ -540,6 +597,7 @@ export async function handleLocalRequest(
       colorSecondary: string;
       logoUrl: string | null;
       isHome: boolean;
+      siteTeamId: string | null;
     }>;
     const updated = store.teams.update(teamId, data);
     if (!updated) return notFound("Team not found");
@@ -556,8 +614,9 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/teams\/(\d+)\/players$/);
   if (m === "POST" && match) {
     const teamId = Number(match[1]);
-    const data = (body ?? {}) as Partial<{ jerseyNumber: string; firstName: string; lastName: string; position: string | null; headshotUrl: string | null; isStarter: boolean }>;
+    const data = (body ?? {}) as Partial<{ jerseyNumber: string; firstName: string; lastName: string; position: string | null; headshotUrl: string | null; isStarter: boolean; sitePlayerId: string | null }>;
     const player = store.players.create({
+      sitePlayerId: data.sitePlayerId ?? null,
       teamId,
       jerseyNumber: data.jerseyNumber ?? "",
       firstName: data.firstName ?? "",
@@ -582,6 +641,7 @@ export async function handleLocalRequest(
       headshotUrl: string | null;
       isActive: boolean;
       isStarter: boolean;
+      sitePlayerId: string | null;
     }>;
     const updated = store.players.update(playerId, data);
     if (!updated) return notFound("Player not found");
@@ -592,6 +652,13 @@ export async function handleLocalRequest(
   match = pathname.match(/^\/api\/players\/(\d+)$/);
   if (m === "DELETE" && match) {
     const playerId = Number(match[1]);
+    const p = store.players.get(playerId);
+    if (p) {
+      const gameId = store.teams.get(p.teamId)?.gameId;
+      if (gameId != null && store.statEvents.allForGame(gameId).some(e => e.playerId === playerId)) {
+        return badRequest("This player has recorded stats — mark them inactive instead of removing them");
+      }
+    }
     const deleted = store.players.delete(playerId);
     if (!deleted) return notFound("Player not found");
     return { status: 204, body: null };
@@ -600,7 +667,7 @@ export async function handleLocalRequest(
   // List stat events — newest first so statEvents[0] is the latest (used by undo)
   match = pathname.match(/^\/api\/games\/(\d+)\/stats$/);
   if (m === "GET" && match) {
-    const events = store.statEvents.forGame(Number(match[1])).sort((a, b) => b.id - a.id);
+    const events = store.statEvents.forGame(Number(match[1])).sort((a, b) => byOrder(b, a));
     return ok(events);
   }
 
@@ -617,6 +684,10 @@ export async function handleLocalRequest(
       value?: number;
       ftSequenceIndex?: number | null;
       ftSequenceTotal?: number | null;
+      shotZone?: string | null;
+      shotX?: number | null;
+      shotY?: number | null;
+      qualifiers?: string[] | null;
     };
 
     // Substitutions are an indivisible pair validated against the live
@@ -653,6 +724,7 @@ export async function handleLocalRequest(
     const prevAway = lastPbp?.awayScore ?? 0;
     const { homeScore, awayScore } = applyScoreDelta(effect.scoreDelta, data.teamId ?? null, home.id, prevHome, prevAway);
 
+    const hasXY = typeof data.shotX === "number" && typeof data.shotY === "number";
     const statEvent = store.statEvents.create({
       gameId,
       teamId: data.teamId ?? null,
@@ -661,8 +733,12 @@ export async function handleLocalRequest(
       clockSeconds: data.clockSeconds,
       eventType: data.eventType,
       value: data.value ?? 0,
+      shotZone: data.shotZone ?? null,
+      shotX: hasXY ? data.shotX! : null,
+      shotY: hasXY ? data.shotY! : null,
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
+      qualifiers: (data.qualifiers ?? []).filter(q => /^[a-z0-9_]+$/.test(q)).slice(0, 6),
       possessionTeamId: game.possessionTeamId,
       pairEventId: null,
       needsReview: false,
@@ -679,6 +755,8 @@ export async function handleLocalRequest(
       clockSeconds: data.clockSeconds,
       ftSequenceIndex: data.ftSequenceIndex ?? null,
       ftSequenceTotal: data.ftSequenceTotal ?? null,
+      qualifiers: statEvent.qualifiers,
+      periodCount: game.periodCount,
     });
 
     const pbp = store.playByPlay.create({
@@ -703,7 +781,13 @@ export async function handleLocalRequest(
     if (effect.nextPossessionTeamId !== undefined) {
       gameUpdates.possessionTeamId = effect.nextPossessionTeamId;
     }
-    const updatedGame = store.games.update(gameId, gameUpdates)!;
+    let updatedGame = store.games.update(gameId, gameUpdates)!;
+    // The possession arrow depends on the whole sequence, so replay it when
+    // one of the two events that use it comes in.
+    if (data.eventType === "jump_ball" || data.eventType === "period_start") {
+      rebuildPlayByPlay(gameId);
+      updatedGame = store.games.get(gameId)!;
+    }
 
     return ok({ statEvent, playByPlay: pbp, game: updatedGame }, 201);
   }
@@ -722,6 +806,9 @@ export async function handleLocalRequest(
       period: number;
       clockSeconds: number;
       value: number;
+      shotZone: string | null;
+      shotX: number | null;
+      shotY: number | null;
       needsReview: boolean;
     }>;
 
@@ -772,16 +859,39 @@ export async function handleLocalRequest(
       }
     }
 
-    const patch: Partial<LSStatEvent> = {};
-    if (data.teamId !== undefined) patch.teamId = data.teamId;
-    if (data.playerId !== undefined) patch.playerId = data.playerId;
-    if (data.eventType !== undefined) patch.eventType = data.eventType;
-    if (data.period !== undefined) patch.period = data.period;
-    if (data.clockSeconds !== undefined) patch.clockSeconds = data.clockSeconds;
-    if (data.value !== undefined) patch.value = data.value;
-    if (data.needsReview !== undefined) patch.needsReview = data.needsReview;
+    if (target.voidedAt) return badRequest("This event was already removed or corrected");
 
-    const updated = store.statEvents.update(statEventId, patch);
+    // Events are never edited in place (the server rejects it too): the
+    // review flag is advisory metadata, anything else voids the event and
+    // records a corrected copy in the same position in the sequence.
+    let updated;
+    if (isReviewFlagOnlyPatch) {
+      updated = store.statEvents.update(statEventId, { needsReview: data.needsReview });
+    } else {
+      const changes: Parameters<typeof store.statEvents.replace>[1] = {};
+      if (data.teamId !== undefined) changes.teamId = data.teamId;
+      if (data.playerId !== undefined) changes.playerId = data.playerId;
+      if (data.eventType !== undefined) changes.eventType = data.eventType;
+      // Tags describe the original kind of event; they don't carry over to a different one.
+      if (data.eventType !== undefined && data.eventType !== target.eventType) changes.qualifiers = [];
+      if (data.period !== undefined) changes.period = data.period;
+      if (data.clockSeconds !== undefined) changes.clockSeconds = data.clockSeconds;
+      if (data.value !== undefined) changes.value = data.value;
+      if (data.shotZone !== undefined) changes.shotZone = data.shotZone;
+      if (data.shotX !== undefined && data.shotY !== undefined) {
+        changes.shotX = data.shotX;
+        changes.shotY = data.shotY;
+      }
+      // A shot location only belongs on a field-goal attempt.
+      const finalType = changes.eventType ?? target.eventType;
+      if (!["2ptm", "2pta", "3ptm", "3pta"].includes(finalType)) {
+        changes.shotZone = null;
+        changes.shotX = null;
+        changes.shotY = null;
+      }
+      if (data.needsReview !== undefined) changes.needsReview = data.needsReview;
+      updated = store.statEvents.replace(statEventId, changes);
+    }
     if (!updated) return notFound("Stat event not found");
 
     rebuildPlayByPlay(target.gameId);
@@ -799,9 +909,9 @@ export async function handleLocalRequest(
     // Substitutions are an indivisible pair: deleting one side without the
     // other would leave a dangling sub_in/sub_out event and desync the
     // derived on-court lineup, so always delete both rows together.
-    store.statEvents.delete(statEventId);
+    store.statEvents.void(statEventId, "removed");
     if ((ev.eventType === "sub_in" || ev.eventType === "sub_out") && ev.pairEventId != null) {
-      store.statEvents.delete(ev.pairEventId);
+      store.statEvents.void(ev.pairEventId, "removed");
     }
     rebuildPlayByPlay(gameId);
 
@@ -860,7 +970,7 @@ export async function handleLocalRequest(
     const subEvents = store.statEvents
       .forGame(gameId)
       .filter(e => e.teamId === data.teamId)
-      .sort((a, b) => a.id - b.id);
+      .sort(byOrder);
     for (const e of subEvents) {
       if (e.eventType === "sub_in" && e.playerId != null) onCourt.add(e.playerId);
       else if (e.eventType === "sub_out" && e.playerId != null) onCourt.delete(e.playerId);
@@ -1018,12 +1128,12 @@ export async function handleLocalRequest(
 
   // Leagues — real local CRUD backed by store.leagues.
   if (m === "GET" && pathname === "/api/leagues") {
-    store.leagues.ensureSeed();
+    if (LOCAL_ONLY) store.leagues.ensureSeed();
     return ok(
       store.leagues.list().map((l) => ({
         ...l,
         ownerUserId: "local",
-        viewerRole: "admin" as const,
+        viewerRole: l.role as LeagueRole,
       })),
     );
   }
@@ -1038,15 +1148,16 @@ export async function handleLocalRequest(
   }
   if (m === "GET" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
-    const league = store.leagues.get(id) ?? store.leagues.ensureSeed();
-    return ok({ ...league, ownerUserId: "local", viewerRole: "admin" as const });
+    const league = store.leagues.get(id) ?? (LOCAL_ONLY ? store.leagues.ensureSeed() : null);
+    if (!league) return notFound("League not found");
+    return ok({ ...league, ownerUserId: "local", viewerRole: league.role });
   }
   if (m === "PATCH" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
-    const data = (body ?? {}) as Partial<{ name: string; season: string | null; logoUrl: string | null }>;
+    const data = (body ?? {}) as Partial<{ name: string; season: string | null; logoUrl: string | null; siteLeagueId: string | null; siteLeagueName: string | null }>;
     const updated = store.leagues.update(id, data);
     if (!updated) return notFound("League not found");
-    return ok({ ...updated, ownerUserId: "local", viewerRole: "admin" as const });
+    return ok({ ...updated, ownerUserId: "local", viewerRole: updated.role });
   }
   if (m === "DELETE" && /^\/api\/leagues\/\d+$/.test(pathname)) {
     const id = Number(pathname.split("/")[3]);
@@ -1054,11 +1165,12 @@ export async function handleLocalRequest(
     return ok({ ok: true });
   }
   if (m === "GET" && pathname === "/api/games") {
-    return ok(store.games.list());
+    return ok(gamesWithTeams(store.games.list()));
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
     const leagueId = Number(pathname.split("/")[3]);
-    return ok(store.games.list().filter((g) => g.leagueId === leagueId || g.leagueId == null));
+    return ok(gamesWithTeams(store.games.list()
+      .filter((g) => g.leagueId === leagueId || (LOCAL_ONLY && g.leagueId == null))));
   }
   if (m === "GET" && /^\/api\/leagues\/\d+\/activity$/.test(pathname)) {
     const leagueId = Number(pathname.split("/")[3]);
@@ -1090,6 +1202,36 @@ export async function handleLocalRequest(
     void leagueId;
     return ok(finalized);
   }
+  // League members: real accounts, so these go to the server (online only).
+  const memberMatch = pathname.match(/^\/api\/leagues\/(\d+)\/members(?:\/([^/]+))?$/);
+  if (memberMatch && !LOCAL_ONLY) {
+    const league = store.leagues.get(Number(memberMatch[1]));
+    if (!league) return notFound("League not found");
+    const userId = memberMatch[2] ? decodeURIComponent(memberMatch[2]) : null;
+    const data = (body ?? {}) as { email?: string; role?: LeagueRole };
+    try {
+      if (m === "GET" && !userId) return ok(await listMembers(league.uid, league.id));
+      if (m === "POST" && !userId) {
+        if (!data.email || !data.role) return badRequest("Email and role are required");
+        await addMember(league.uid, data.email, data.role);
+        const members = await listMembers(league.uid, league.id);
+        return ok(members.find((x: { email: string | null }) => x.email?.toLowerCase() === data.email!.trim().toLowerCase()) ?? null, 201);
+      }
+      if ((m === "PATCH" || m === "PUT") && userId) {
+        if (!data.role) return badRequest("Role is required");
+        await updateMemberRole(league.uid, userId, data.role);
+        const members = await listMembers(league.uid, league.id);
+        return ok(members.find((x: { userId: string }) => x.userId === userId) ?? null);
+      }
+      if (m === "DELETE" && userId) {
+        await removeMember(league.uid, userId);
+        return { status: 204, body: null };
+      }
+    } catch (e) {
+      const offline = e instanceof OfflineError;
+      return { status: offline ? 503 : 400, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+  }
   if (m === "GET" && /^\/api\/leagues\/\d+\/members$/.test(pathname)) {
     return ok([
       {
@@ -1106,9 +1248,24 @@ export async function handleLocalRequest(
   }
   // Create a game inside a league — fall through to normal create flow.
   if (m === "POST" && /^\/api\/leagues\/\d+\/games$/.test(pathname)) {
+    const leagueId = Number(pathname.split("/")[3]);
+    const league = store.leagues.get(leagueId);
+    // The league's competition rules win over the device's own defaults.
+    const r = leagueRules(league);
     const created = store.games.create({
-      leagueId: Number(pathname.split("/")[3]),
       ...(body as Record<string, unknown>),
+      leagueId,
+      competition: league?.name ?? null,
+      captureMode: r.defaultCaptureMode,
+      periodCount: r.periodCount,
+      periodDurationMins: r.periodDurationMins,
+      clockSeconds: r.periodDurationMins * 60,
+      overtimeDurationMins: r.overtimeDurationMins,
+      foulLimit: r.foulLimit,
+      bonusAfterTeamFouls: r.bonusAfterTeamFouls,
+      timeoutsFirstHalf: r.timeoutsFirstHalf,
+      timeoutsSecondHalf: r.timeoutsSecondHalf,
+      timeoutsOvertime: r.timeoutsOvertime,
     });
     return ok(created, 201);
   }

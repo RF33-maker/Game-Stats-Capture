@@ -1,4 +1,5 @@
 import { useRoute, Link, useSearch } from "wouter";
+import { formatMinutes } from "@/lib/game-state";
 import { 
   useGetGame, 
   useListTeams, 
@@ -7,9 +8,26 @@ import {
   getListTeamsQueryKey,
   getGetBoxScoreQueryKey
 } from "@workspace/api-client-react";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Printer } from "lucide-react";
+import { useGetLeague, getGetLeagueQueryKey } from "@workspace/api-client-react";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { Corrections } from "@/components/organiser/corrections";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
+import { teamTextColor, textOnColor, appSurface } from "@/lib/team-colors";
+
+// Stats credited to the team rather than a player (e.g. team rebounds).
+// Only shown when there is something in it.
+function teamRow<P extends { playerId: number }>(stats: { players: P[] }): P[] {
+  const line = (stats as unknown as { teamLine?: P }).teamLine;
+  if (!line) return [];
+  const hasAnything = Object.entries(line as Record<string, unknown>)
+    .some(([k, v]) => typeof v === "number" && v > 0 && k !== "playerId" && k !== "teamId");
+  return hasAnything ? [line] : [];
+}
+
+// Minutes and plus/minus come from the on-device engine; the generated client doesn't know them.
+const extra = (p: unknown) => p as { secondsPlayed?: number; plusMinus?: number };
 
 export default function BoxScore() {
   const [, params] = useRoute("/game/:gameId/box");
@@ -33,6 +51,10 @@ export default function BoxScore() {
 
   const { data: boxScore, isLoading: boxLoading } = useGetBoxScore(gameId, {
     query: { enabled: !!gameId, queryKey: getGetBoxScoreQueryKey(gameId) }
+  });
+
+  const { data: league } = useGetLeague(game?.leagueId ?? 0, {
+    query: { enabled: game?.leagueId != null, queryKey: getGetLeagueQueryKey(game?.leagueId ?? 0), retry: false },
   });
 
   if (gameLoading || teamsLoading || boxLoading) {
@@ -68,15 +90,18 @@ export default function BoxScore() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-8 text-3xl font-black font-mono">
               <div className="flex items-center gap-4">
-                <span style={{ color: awayTeam.colorPrimary }}>{awayTeam.abbreviation}</span>
+                <span style={{ color: teamTextColor(awayTeam.colorPrimary, appSurface()) }}>{awayTeam.abbreviation}</span>
                 <span>{boxScore.away.totalPoints}</span>
               </div>
               <span className="text-muted-foreground">-</span>
               <div className="flex items-center gap-4">
                 <span>{boxScore.home.totalPoints}</span>
-                <span style={{ color: homeTeam.colorPrimary }}>{homeTeam.abbreviation}</span>
+                <span style={{ color: teamTextColor(homeTeam.colorPrimary, appSurface()) }}>{homeTeam.abbreviation}</span>
               </div>
             </div>
+            <Link href={`/game/${gameId}/report${effectiveLeagueId ? `?league=${effectiveLeagueId}` : ""}`}>
+              <Button variant="outline" size="sm" data-testid="open-report"><Printer className="w-4 h-4 mr-2" />Game report</Button>
+            </Link>
             <AppMenu />
           </div>
         </header>
@@ -86,10 +111,10 @@ export default function BoxScore() {
             { team: awayTeam, stats: boxScore.away },
             { team: homeTeam, stats: boxScore.home }
           ].map(({ team, stats }) => (
-            <div key={team.id} className="bg-card border rounded-xl overflow-hidden shadow-sm">
+            <div key={team.id} className="sa-card overflow-hidden">
               <div 
-                className="px-4 py-3 font-bold text-lg text-white" 
-                style={{ backgroundColor: team.colorPrimary }}
+                className="px-4 py-3 font-bold text-lg"
+                style={{ backgroundColor: team.colorPrimary, color: textOnColor(team.colorPrimary) }}
               >
                 {team.name}
               </div>
@@ -112,16 +137,19 @@ export default function BoxScore() {
                       <th className="px-2 py-3 text-right">BLK</th>
                       <th className="px-2 py-3 text-right">TOV</th>
                       <th className="px-2 py-3 text-right">PF</th>
+                      <th className="px-2 py-3 text-right">+/-</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {stats.players.map((p) => (
+                    {[...stats.players, ...teamRow(stats)].map((p) => (
                       <tr key={p.playerId} className="hover:bg-muted/20">
                         <td className="px-4 py-3 font-medium">
                           <span className="text-muted-foreground text-xs w-6 inline-block">{p.jerseyNumber}</span>
-                          {p.lastName}, {p.firstName[0]}.
+                          {p.playerId === 0 ? <span className="italic text-muted-foreground">Team</span> : <>{p.lastName}, {p.firstName[0]}.</>}
                         </td>
-                        <td className="px-2 py-3 text-right text-muted-foreground">-</td>
+                        <td className="px-2 py-3 text-right text-muted-foreground tabular-nums">
+                          {p.playerId === 0 ? "" : formatMinutes(extra(p).secondsPlayed ?? 0)}
+                        </td>
                         <td className="px-2 py-3 text-right font-bold">{p.points}</td>
                         <td className="px-2 py-3 text-right">{p.fgMade}-{p.fgAttempted}</td>
                         <td className="px-2 py-3 text-right">{p.twoPtMade}-{p.twoPtAttempted}</td>
@@ -134,7 +162,10 @@ export default function BoxScore() {
                         <td className="px-2 py-3 text-right">{p.steals}</td>
                         <td className="px-2 py-3 text-right">{p.blocks}</td>
                         <td className="px-2 py-3 text-right">{p.turnovers}</td>
-                        <td className="px-2 py-3 text-right">{p.personalFouls}</td>
+                        <td className="px-2 py-3 text-right">{p.personalFouls + p.technicalFouls + p.flagrantFouls}</td>
+                        <td className="px-2 py-3 text-right tabular-nums text-muted-foreground">
+                          {p.playerId === 0 ? "" : `${(extra(p).plusMinus ?? 0) > 0 ? "+" : ""}${extra(p).plusMinus ?? 0}`}
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-muted/10 font-bold border-t-2 border-border">
@@ -152,13 +183,17 @@ export default function BoxScore() {
                       <td className="px-2 py-3 text-right">{stats.teamTotals.steals}</td>
                       <td className="px-2 py-3 text-right">{stats.teamTotals.blocks}</td>
                       <td className="px-2 py-3 text-right">{stats.teamTotals.turnovers}</td>
-                      <td className="px-2 py-3 text-right">{stats.teamTotals.personalFouls}</td>
+                      <td className="px-2 py-3 text-right">{stats.teamTotals.personalFouls + stats.teamTotals.technicalFouls + stats.teamTotals.flagrantFouls}</td>
+                      <td className="px-2 py-3 text-right" />
                     </tr>
                   </tbody>
                 </table>
               </div>
             </div>
           ))}
+          {ORGANISER_AVAILABLE && game?.status === "final" && (
+            <Corrections gameUid={(game as typeof game & { uid: string }).uid} canAdmin={league?.viewerRole === "admin"} />
+          )}
         </div>
       </div>
     </div>

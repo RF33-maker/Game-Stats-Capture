@@ -1,14 +1,16 @@
 import { handleLocalRequest } from "./local-handler";
-import { store } from "./local-store";
-import { enqueueIfMutation, initLocalSync } from "./local-sync";
+import { store, setOutboxEnabled } from "./local-store";
+import { initLocalSync, SYNC_REMOTE_ENABLED } from "./local-sync";
 
-// Login is required by default: the app runs against the real API and Replit
-// Auth. Local mode (auth bypass + in-browser data) is now strictly opt-in for
-// development by setting VITE_LOCAL_MODE=true.
+// The app always runs on the on-device engine (local-handler + IndexedDB):
+// every request is answered locally, so capture never waits on the network.
+// Signed-in mode also queues each change in the outbox and syncs it to
+// Supabase in the background. VITE_LOCAL_MODE=true is a development mode with
+// no account and no sync.
 export const LOCAL_MODE_ENABLED = import.meta.env.VITE_LOCAL_MODE === "true";
 
-export function resetLocalData() {
-  store.reset();
+export async function resetLocalData() {
+  await store.reset();
   window.location.reload();
 }
 
@@ -55,15 +57,9 @@ export function installLocalFetchInterceptor() {
 
     const result = await handleLocalRequest(method, path, body);
 
-    // Mirror successful mutations into the offline sync queue so they can be
-    // flushed to the real server once a connection is available.
-    enqueueIfMutation({
-      method,
-      path,
-      body,
-      responseStatus: result.status,
-      responseBody: result.body,
-    });
+    // Don't tell the UI it happened until it's on disk: a tap the scorer has
+    // seen confirmed survives the app being killed straight after.
+    if (method !== "GET") await store.persist();
 
     const responseBody = result.body == null ? null : JSON.stringify(result.body);
     const headers: HeadersInit = { "Content-Type": "application/json" };
@@ -74,6 +70,7 @@ export function installLocalFetchInterceptor() {
     });
   };
 
-  // Set up online/offline detection and queue draining.
+  // Queue changes for the server and drain the queue in the background.
+  setOutboxEnabled(SYNC_REMOTE_ENABLED);
   initLocalSync();
 }

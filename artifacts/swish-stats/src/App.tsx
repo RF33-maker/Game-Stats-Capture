@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
@@ -12,11 +12,17 @@ import SetupPlayers from "@/pages/setup/players";
 import SetupExtras from "@/pages/setup/extras";
 import GameCapture from "@/pages/game/capture";
 import BoxScore from "@/pages/game/box-score";
+import LinkPlayers from "@/pages/game/link-players";
+import GameReport from "@/pages/game/report";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import Stats from "@/pages/stats";
 import Help from "@/pages/help";
 import Organizer from "@/pages/organizer";
+import AuthConfirm from "@/pages/auth-confirm";
+import ResetPassword from "@/pages/reset-password";
+import Terms from "@/pages/terms";
+import Privacy from "@/pages/privacy";
 import { ProtectedRoute } from "@/components/protected-route";
 import { RequireLeagueRole } from "@/components/require-league-role";
 import { LocalModeBadge } from "@/components/local-mode-badge";
@@ -27,6 +33,10 @@ function Router() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/login" component={Login} />
+      <Route path="/auth/confirm" component={AuthConfirm} />
+      <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/terms" component={Terms} />
+      <Route path="/privacy" component={Privacy} />
       <Route path="/leagues">
         <ProtectedRoute>
           <LeaguesHub />
@@ -67,21 +77,21 @@ function Router() {
       </Route>
       <Route path="/setup/:gameId/teams">
         <ProtectedRoute>
-          <RequireLeagueRole min="admin">
+          <RequireLeagueRole min="scorer">
             <SetupTeams />
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>
       <Route path="/setup/:gameId/players">
         <ProtectedRoute>
-          <RequireLeagueRole min="admin">
+          <RequireLeagueRole min="scorer">
             <SetupPlayers />
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>
       <Route path="/setup/:gameId/extras">
         <ProtectedRoute>
-          <RequireLeagueRole min="admin">
+          <RequireLeagueRole min="scorer">
             <SetupExtras />
           </RequireLeagueRole>
         </ProtectedRoute>
@@ -90,6 +100,20 @@ function Router() {
         <ProtectedRoute>
           <RequireLeagueRole min="scorer">
             <GameCapture />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/game/:gameId/link">
+        <ProtectedRoute>
+          <RequireLeagueRole min="scorer">
+            <LinkPlayers />
+          </RequireLeagueRole>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/game/:gameId/report">
+        <ProtectedRoute>
+          <RequireLeagueRole min="viewer">
+            <GameReport />
           </RequireLeagueRole>
         </ProtectedRoute>
       </Route>
@@ -105,12 +129,20 @@ function Router() {
   );
 }
 
+// The capture screen shows the badge inline in its header instead.
+function FloatingLocalModeBadge() {
+  const [onCapture] = useRoute("/game/:gameId");
+  const [onReport] = useRoute("/game/:gameId/report");
+  if (onCapture || onReport) return null;
+  return <LocalModeBadge />;
+}
+
 function App() {
   return (
     <TooltipProvider>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
-        {LOCAL_MODE_ENABLED && <LocalModeBadge />}
+        <FloatingLocalModeBadge />
       </WouterRouter>
     </TooltipProvider>
   );

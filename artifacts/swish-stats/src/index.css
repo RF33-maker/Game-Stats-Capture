@@ -42,6 +42,7 @@
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
   --font-mono: var(--app-font-mono);
+  --font-display: var(--app-font-display);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -49,80 +50,193 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
-  --background: 220 10% 8%;
-  --foreground: 0 0% 100%;
-  --border: 220 10% 20%;
-  --card: 220 10% 10%;
-  --card-foreground: 0 0% 100%;
-  --card-border: 220 10% 20%;
-  --sidebar: 220 10% 10%;
-  --sidebar-foreground: 0 0% 100%;
-  --sidebar-border: 220 10% 20%;
-  --sidebar-primary: 25 95% 53%; /* Basketball Orange */
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 10% 15%;
-  --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 25 95% 53%;
-  --popover: 220 10% 10%;
-  --popover-foreground: 0 0% 100%;
-  --popover-border: 220 10% 20%;
-  --primary: 25 95% 53%; /* Basketball Orange */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 10% 15%;
-  --secondary-foreground: 0 0% 100%;
-  --muted: 220 10% 15%;
-  --muted-foreground: 220 10% 60%;
-  --accent: 220 10% 20%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-  --input: 220 10% 20%;
-  --ring: 25 95% 53%;
+/* ==========================================================================
+   Swish Assistant look — the same "Pro" design system as swishassistant.com
+   (see .sa-pro in the site's index.css): near-black surfaces, hairline
+   borders, Swish orange, Inter for text and Barlow Condensed for display type
+   and numbers, 14px cards.
 
-  --app-font-sans: 'Inter', sans-serif;
-  --app-font-serif: Georgia, serif;
-  --app-font-mono: 'Space Mono', Menlo, monospace;
-  --radius: 0.25rem;
-}
-
-.dark {
-  --background: 220 10% 8%;
-  --foreground: 0 0% 100%;
-  --border: 220 10% 20%;
-  --card: 220 10% 10%;
-  --card-foreground: 0 0% 100%;
-  --card-border: 220 10% 20%;
-  --sidebar: 220 10% 10%;
-  --sidebar-foreground: 0 0% 100%;
-  --sidebar-border: 220 10% 20%;
+   Dark is the default (the site's own default). `.light` on <html> switches
+   to the site's light palette for bright gyms.
+   ========================================================================== */
+/* .sa-force-dark keeps a section dark even in light mode (the landing page). */
+:root,
+.sa-force-dark {
+  --background: 220 16% 4%;        /* #08090b */
+  --foreground: 220 14% 96%;       /* #f3f4f6 */
+  --border: 220 9% 14%;            /* ~rgba(255,255,255,.07) on surface */
+  --border-strong: 220 9% 20%;
+  --card: 220 15% 8%;              /* #111317 */
+  --card-foreground: 220 14% 96%;
+  --card-border: 220 9% 14%;
+  --sidebar: 220 15% 8%;
+  --sidebar-foreground: 220 14% 96%;
+  --sidebar-border: 220 9% 14%;
   --sidebar-primary: 25 95% 53%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 10% 15%;
-  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-accent: 216 15% 13%;
+  --sidebar-accent-foreground: 220 14% 96%;
   --sidebar-ring: 25 95% 53%;
-  --popover: 220 10% 10%;
-  --popover-foreground: 0 0% 100%;
-  --popover-border: 220 10% 20%;
-  --primary: 25 95% 53%;
+  --popover: 220 15% 8%;
+  --popover-foreground: 220 14% 96%;
+  --popover-border: 220 9% 20%;
+  --primary: 25 95% 53%;           /* Swish orange #f97316 */
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 10% 15%;
-  --secondary-foreground: 0 0% 100%;
-  --muted: 220 10% 15%;
-  --muted-foreground: 220 10% 60%;
-  --accent: 220 10% 20%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
+  --secondary: 216 15% 13%;        /* #1c2026 */
+  --secondary-foreground: 220 14% 96%;
+  --muted: 218 15% 10%;            /* #16191e */
+  --muted-foreground: 217 13% 68%; /* #a3abb8 */
+  --accent: 216 15% 13%;
+  --accent-foreground: 220 14% 96%;
+  --destructive: 350 89% 60%;      /* site "loss" rose */
   --destructive-foreground: 0 0% 100%;
-  --input: 220 10% 20%;
+  --input: 220 9% 18%;
   --ring: 25 95% 53%;
+  --win: 142 71% 45%;
+
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card-lg: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+
+  --app-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --app-font-serif: Georgia, serif;
+  /* Scores, clocks and jersey numbers use the display face with tabular
+     figures rather than a true monospace — it's the site's scoreboard look. */
+  --app-font-mono: 'Barlow Condensed', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --app-font-display: 'Barlow Condensed', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --radius: 0.875rem;              /* 14px cards */
+}
+
+.light {
+  --background: 220 18% 97%;       /* #f5f6f8 */
+  --foreground: 220 49% 8%;        /* #0b1220 */
+  --border: 220 13% 91%;
+  --border-strong: 220 13% 84%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 49% 8%;
+  --card-border: 220 13% 91%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 220 49% 8%;
+  --sidebar-border: 220 13% 91%;
+  --sidebar-accent: 216 22% 95%;
+  --sidebar-accent-foreground: 220 49% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 49% 8%;
+  --popover-border: 220 13% 84%;
+  --secondary: 216 22% 95%;        /* #f1f3f6 */
+  --secondary-foreground: 220 49% 8%;
+  --muted: 220 20% 98%;            /* #f8f9fb */
+  --muted-foreground: 217 19% 34%; /* #475467 */
+  --accent: 216 22% 95%;
+  --accent-foreground: 220 49% 8%;
+  --destructive: 347 77% 50%;
+  --input: 220 13% 84%;
+  --win: 142 76% 36%;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow-card-lg: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -12px rgba(16, 24, 40, 0.18);
 }
 
 @layer base {
   * {
     @apply border-border;
   }
+  html {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
+  }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: 'cv11', 'ss01', 'ss03';
+    letter-spacing: -0.006em;
   }
+  /* Display type: condensed capitals, like the site's page and section titles. */
+  h1, h2 {
+    font-family: var(--app-font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.005em;
+    line-height: 1.02;
+  }
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+}
+
+@layer components {
+  /* Thin brand line across the very top of every page. */
+  .sa-topline {
+    height: 1px;
+    background: linear-gradient(to right, #fb923c, #fbbf24);
+  }
+  /* Orange small-caps label above a heading ("DASHBOARD"). */
+  .sa-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+  }
+  .sa-eyebrow-muted {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .sa-display {
+    font-family: var(--app-font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.005em;
+  }
+  .sa-num {
+    font-family: var(--app-font-display);
+    font-variant-numeric: tabular-nums;
+  }
+  .sa-card {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+  }
+  .sa-card-hover {
+    transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  }
+  .sa-card-hover:hover {
+    border-color: hsl(var(--border-strong));
+    box-shadow: var(--shadow-card-lg);
+  }
+  /* Rounded icon tile tinted with the accent, as on the dashboard cards. */
+  .sa-icon-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 10px;
+    background: color-mix(in srgb, hsl(var(--primary)) 16%, transparent);
+    color: hsl(var(--primary));
+    flex-shrink: 0;
+  }
+  .sa-glass {
+    background: color-mix(in srgb, hsl(var(--background)) 82%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    backdrop-filter: saturate(180%) blur(16px);
+  }
+  /* Orange text link with a trailing arrow ("Manage leagues →"). */
+  .sa-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: hsl(var(--primary));
+    transition: gap .15s ease, filter .15s ease;
+  }
+  .sa-link:hover { gap: 0.6rem; filter: brightness(1.12); }
+
+  @keyframes sa-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .sa-rise { animation: sa-rise .38s cubic-bezier(.2,.7,.2,1) both; }
+  @media (prefers-reduced-motion: reduce) { .sa-rise { animation: none; } }
 }

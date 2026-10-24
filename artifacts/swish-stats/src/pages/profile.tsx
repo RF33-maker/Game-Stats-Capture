@@ -1,4 +1,4 @@
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@/lib/auth";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,9 +32,10 @@ export default function Profile() {
       <main className="flex-1">
         <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Profile &amp; account</h1>
+            <p className="sa-eyebrow mb-2">Account</p>
+            <h1 className="text-4xl md:text-5xl font-bold">Profile &amp; account</h1>
             <p className="text-muted-foreground mt-1">
-              Your account details for Swish Stats.
+              Your account details for Scorers Table.
             </p>
           </div>
 
@@ -58,7 +59,7 @@ export default function Profile() {
                     </div>
                   )}
                   <div className="min-w-0">
-                    <h2 className="text-xl font-bold truncate">
+                    <h2 className="text-xl font-bold truncate font-sans normal-case tracking-tight">
                       {displayName ?? "Unknown user"}
                     </h2>
                     {user?.email && (

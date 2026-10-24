@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight,
@@ -17,10 +17,11 @@ import {
   Cloud,
   Share2,
 } from "lucide-react";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useAuth } from "@/lib/auth";
 import { AppMenu } from "@/components/app-menu";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
-import logoUrl from "@assets/ChatGPT_Image_Jul_5,_2025,_09_52_53_PM_(1)_1777802723071.png";
+import { SITE } from "@/lib/site";
+import { Brand as SharedBrand } from "@/components/brand";
 
 const HERO_HIGHLIGHTS = [
   {
@@ -102,7 +103,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
         : "Sign In";
 
   return (
-    <div className="min-h-[100dvh] bg-[#0d0d0f] text-foreground relative overflow-hidden">
+    <div className="sa-force-dark min-h-[100dvh] bg-background text-foreground relative overflow-hidden">
       {/* Background ambience */}
       <div
         className="pointer-events-none absolute inset-0 opacity-60"
@@ -121,16 +122,17 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
       />
 
       <div className="relative">
-        {/* Partnership banner */}
+        <div className="sa-topline" />
+        {/* Product family banner */}
         <div className="border-b border-white/5 bg-white/[0.02] px-6 py-2 text-center text-xs text-white/60">
-          In partnership with{" "}
+          Part of{" "}
           <a
-            href="https://www.swishassistant.com"
+            href={SITE.partnerUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="font-semibold text-primary hover:underline inline-flex items-center gap-1"
           >
-            Swish Assistant
+            {SITE.partnerName}
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
@@ -170,7 +172,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
               </h1>
 
               <p className="text-base md:text-lg text-white/60 max-w-xl leading-relaxed">
-                Swish Stats helps leagues and teams capture every game, manage
+                Scorers Table helps leagues and teams capture every game, manage
                 their league hub, and share box scores in just a few taps.
               </p>
 
@@ -215,20 +217,20 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
               <div className="space-y-4">
                 <div className="inline-flex items-center gap-2 text-primary text-xs font-bold tracking-[0.18em] uppercase">
                   <Sparkles className="w-3.5 h-3.5" />
-                  Built for Swish Assistant
+                  Built for {SITE.partnerName}
                 </div>
                 <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white leading-tight">
                   A complete package to <span className="text-primary">capture, host, and share</span>.
                 </h2>
                 <p className="text-white/60 leading-relaxed">
-                  Swish Stats works hand-in-hand with{" "}
+                  Scorers Table is built into{" "}
                   <a
-                    href="https://www.swishassistant.com"
+                    href={SITE.partnerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary font-semibold hover:underline inline-flex items-center gap-1"
                   >
-                    Swish Assistant
+                    {SITE.partnerName}
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                   . Capture stats courtside, push them straight to your Swish
@@ -236,12 +238,12 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                   community — all from one connected workflow.
                 </p>
                 <a
-                  href="https://www.swishassistant.com"
+                  href={SITE.partnerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-primary transition-colors pt-2"
                 >
-                  Visit swishassistant.com
+                  Visit {SITE.partnerUrl.replace(/^https?:\/\/(www\.)?/, "")}
                   <ArrowRight className="w-4 h-4" />
                 </a>
               </div>
@@ -252,13 +254,13 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                     icon: Camera,
                     step: "01",
                     title: "Capture",
-                    desc: "Track every play live with Swish Stats.",
+                    desc: "Track every play live with Scorers Table.",
                   },
                   {
                     icon: Cloud,
                     step: "02",
                     title: "Host",
-                    desc: "Stats sync into your Swish Assistant league.",
+                    desc: `Stats sync into your ${SITE.partnerName} league.`,
                   },
                   {
                     icon: Share2,
@@ -269,7 +271,7 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
                 ].map(({ icon: Icon, step, title, desc }) => (
                   <div
                     key={step}
-                    className="rounded-xl border border-white/10 bg-[#15151a]/60 p-5"
+                    className="rounded-xl border border-white/10 bg-card p-5"
                   >
                     <div className="flex items-center justify-between mb-4">
                       <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -317,18 +319,18 @@ function LandingPage({ mode, onCta }: { mode: Mode; onCta: () => void }) {
             <Brand small />
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
               <span>
-                In partnership with{" "}
+                A product of{" "}
                 <a
-                  href="https://www.swishassistant.com"
+                  href={SITE.partnerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline font-semibold"
                 >
-                  Swish Assistant
+                  {SITE.partnerName}
                 </a>
               </span>
               <span className="hidden sm:inline text-white/20">·</span>
-              <span>&copy; {new Date().getFullYear()} Swish Stats. All rights reserved.</span>
+              <span>&copy; {new Date().getFullYear()} {SITE.operator}. All rights reserved. <Link href="/terms" className="hover:underline">Terms</Link> · <Link href="/privacy" className="hover:underline">Privacy</Link></span>
             </div>
           </div>
         </footer>
@@ -417,7 +419,7 @@ function LiveScoreMockup() {
 
   return (
     <div
-      className="hidden lg:block rounded-2xl border border-white/10 bg-gradient-to-br from-[#15151a]/95 to-[#0d0d0f]/95 backdrop-blur-sm p-5 shadow-2xl shadow-black/50 relative overflow-hidden"
+      className="hidden lg:block rounded-2xl border border-white/10 bg-gradient-to-br from-card to-background backdrop-blur-sm p-5 shadow-2xl shadow-black/50 relative overflow-hidden"
       aria-hidden="true"
     >
       {/* Court accent in background */}
@@ -493,22 +495,5 @@ function LiveScoreMockup() {
 }
 
 function Brand({ small = false }: { small?: boolean }) {
-  return (
-    <div className="inline-flex items-center gap-2.5">
-      <img
-        src={logoUrl}
-        alt="Swish Stats logo"
-        className={small ? "w-6 h-6 object-contain" : "w-9 h-9 object-contain"}
-      />
-      <span
-        className={
-          small
-            ? "text-sm font-bold tracking-tight text-white/70"
-            : "text-xl font-bold tracking-tight text-white"
-        }
-      >
-        Swish<span className="text-primary">Stats</span>
-      </span>
-    </div>
-  );
+  return <SharedBrand size={small ? "sm" : "md"} showTagline={!small} />;
 }

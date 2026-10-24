@@ -1,3 +1,5 @@
+import { format } from "date-fns";
+import { CAPTURE_MODES } from "@/lib/app-settings";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, getGetGameQueryKey } from "@workspace/api-client-react";
@@ -48,7 +50,7 @@ export default function SetupInfo() {
     defaultValues: {
       competition: "",
       venue: "",
-      date: new Date().toISOString().split("T")[0],
+      date: format(new Date(), "yyyy-MM-dd"), // local date, not UTC
       captureMode: "complex",
       periodCount: 4,
       periodDurationMins: 10,
@@ -78,7 +80,7 @@ export default function SetupInfo() {
 
   return (
     <SetupLayout gameId={String(gameId)} title="Game Information" step={1} leagueId={leagueQuery}>
-      <div className="bg-card border rounded-xl p-8 shadow-sm">
+      <div className="sa-card p-8">
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => updateGame.mutate({ gameId, data }))} className="space-y-6">
             
@@ -140,8 +142,11 @@ export default function SetupInfo() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="simple">Simple (Basic Stats)</SelectItem>
-                        <SelectItem value="complex">Complex (Full FIBA Stats)</SelectItem>
+                        {(["complex", "simple"] as const).map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {CAPTURE_MODES[m].name} — {CAPTURE_MODES[m].description}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />

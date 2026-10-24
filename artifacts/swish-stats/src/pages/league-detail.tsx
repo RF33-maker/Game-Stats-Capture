@@ -19,6 +19,9 @@ import {
   type LeagueRole,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { CompetitionSearchDialog } from "@/components/directory-search";
+import { DIRECTORY_AVAILABLE, localApi } from "@/lib/directory";
+import { toast as sonnerToast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { newGameDefaults } from "@/lib/app-settings";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,10 +66,32 @@ import {
   Activity,
   UserCheck,
   CheckCircle2,
+  CalendarPlus,
+  Radio,
+  CalendarRange,
+  KeyRound,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { AppHeader } from "@/components/app-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { TeamsTab } from "@/components/organiser/teams-tab";
+import { RulesTab, VenuesTab } from "@/components/organiser/venues-rules";
+import { NewFixtureDialog, ScheduleDialog, SiteGameDialog, type ScheduledGame } from "@/components/organiser/fixtures";
+import { store } from "@/lib/local-store";
+import { GameDayDialog, prettyCode, type GameDayGame } from "@/components/organiser/game-day";
+import type { LeagueRules } from "@/lib/local-store";
+import { listPendingCorrections } from "@/lib/organiser";
+import { useQuery } from "@tanstack/react-query";
+
+// Fields the on-device engine adds that the generated client doesn't know about.
+type GameExtras = ScheduledGame & GameDayGame & {
+  homeTeamName?: string | null;
+  awayTeamName?: string | null;
+  myAccess?: "scorer" | "manager" | null;
+};
 
 const ROLES: LeagueRole[] = ["viewer", "scorer", "admin"];
 
@@ -240,7 +265,20 @@ export default function LeagueDetail() {
     },
   });
 
+  const pendingLeagueUid = league?.viewerRole === "admin" ? (league as unknown as { uid?: string }).uid : undefined;
+  const { data: pendingCorrections } = useQuery({
+    queryKey: ["organiser", "pending-corrections", pendingLeagueUid],
+    queryFn: () => listPendingCorrections(pendingLeagueUid!),
+    enabled: !!pendingLeagueUid,
+  });
+
   const [memberOpen, setMemberOpen] = useState(false);
+  const [competitionOpen, setCompetitionOpen] = useState(false);
+  const [tab, setTab] = useState("games");
+  const [fixtureOpen, setFixtureOpen] = useState(false);
+  const [siteGameOpen, setSiteGameOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [gameDay, setGameDay] = useState<{ game: GameDayGame; title: string } | null>(null);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<LeagueRole>("viewer");
   const [confirmDeleteGame, setConfirmDeleteGame] = useState<{
@@ -261,7 +299,7 @@ export default function LeagueDetail() {
       <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
         <AppHeader />
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-sm w-full text-center space-y-4 border rounded-xl bg-card p-8">
+          <div className="max-w-sm w-full text-center space-y-4 sa-card p-8">
             <h1 className="text-xl font-bold">League unavailable</h1>
             <p className="text-sm text-muted-foreground">
               This league has been deleted or you no longer have access to it.
@@ -275,11 +313,26 @@ export default function LeagueDetail() {
     );
   }
 
+  const leagueUid = (league as typeof league & { uid: string }).uid;
+  const scheduled = (games ?? []) as unknown as ScheduledGame[];
+  const refreshGames = () => {
+    queryClient.invalidateQueries({ queryKey: getListLeagueGamesQueryKey(leagueId) });
+    invalidateActivity();
+  };
+
+  const pendingByGame = new Map<number, number>();
+  for (const c of pendingCorrections ?? []) {
+    const g = (games ?? []).find(x => (x as unknown as GameExtras).uid === c.gameUid);
+    if (g) pendingByGame.set(g.id, (pendingByGame.get(g.id) ?? 0) + 1);
+  }
+
   const sortedGames = [...(games ?? [])].sort((a, b) => {
     const order = { active: 0, setup: 1, final: 2 };
     const statusDiff = order[a.status] - order[b.status];
     if (statusDiff !== 0) return statusDiff;
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
+    const when = (g: typeof a) => `${g.date.slice(0, 10)}T${(g as unknown as GameExtras).tipoffTime ?? "00:00"}`;
+    // Upcoming fixtures soonest first; finished games newest first.
+    return a.status === "setup" ? when(a).localeCompare(when(b)) : when(b).localeCompare(when(a));
   });
 
   return (
@@ -290,8 +343,9 @@ export default function LeagueDetail() {
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-3xl font-bold tracking-tight">
+              <p className="sa-eyebrow">League</p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-4xl md:text-5xl font-bold">
                   {league.name}
                 </h1>
                 {roleBadge(league.viewerRole)}
@@ -299,6 +353,24 @@ export default function LeagueDetail() {
               {league.season && (
                 <p className="text-muted-foreground">{league.season}</p>
               )}
+              {DIRECTORY_AVAILABLE && (() => {
+                const site = league as typeof league & { siteLeagueId?: string | null; siteLeagueName?: string | null };
+                return (
+                  <div className="flex items-center gap-2 text-sm" data-testid="league-site-link">
+                    <span className="text-muted-foreground">Publishes to Swish:</span>
+                    {site.siteLeagueId ? (
+                      <span className="font-medium">{site.siteLeagueName ?? "Linked competition"}</span>
+                    ) : (
+                      <span className="text-muted-foreground italic">not linked yet</span>
+                    )}
+                    {canAdmin && (
+                      <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setCompetitionOpen(true)}>
+                        {site.siteLeagueId ? "Change" : "Link a competition"}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Users className="w-4 h-4" />
@@ -313,28 +385,60 @@ export default function LeagueDetail() {
               </div>
             </div>
             {canAdmin && (
-              <Button
-                onClick={() =>
-                  createGame.mutate({
-                    leagueId,
-                    data: newGameDefaults(),
-                  })
-                }
-                disabled={createGame.isPending}
-              >
-                {createGame.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4 mr-2" />
+              <div className="flex items-center gap-2 flex-wrap">
+                {ORGANISER_AVAILABLE && (
+                  <>
+                    <Button onClick={() => setFixtureOpen(true)} data-testid="schedule-game">
+                      <CalendarPlus className="w-4 h-4 mr-2" />
+                      Schedule game
+                    </Button>
+                    {(league as typeof league & { siteLeagueId?: string | null }).siteLeagueId && (
+                      <Button variant="secondary" onClick={() => setSiteGameOpen(true)} data-testid="score-site-game">
+                        <Radio className="w-4 h-4 mr-2" />
+                        Score a site game
+                      </Button>
+                    )}
+                    <Button variant="secondary" onClick={() => setScheduleOpen(true)} data-testid="build-schedule">
+                      <CalendarRange className="w-4 h-4 mr-2" />
+                      Build schedule
+                    </Button>
+                  </>
                 )}
-                New game
-              </Button>
+                <Button
+                  variant={ORGANISER_AVAILABLE ? "outline" : "default"}
+                  title="Start a one-off game and type the teams in yourself"
+                  onClick={() =>
+                    createGame.mutate({
+                      leagueId,
+                      data: newGameDefaults(),
+                    })
+                  }
+                  disabled={createGame.isPending}
+                >
+                  {createGame.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-2" />
+                  )}
+                  Quick game
+                </Button>
+              </div>
             )}
           </div>
 
+          <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+            <TabsList className="flex-wrap h-auto">
+              <TabsTrigger value="games" data-testid="tab-games">Games</TabsTrigger>
+              {ORGANISER_AVAILABLE && <TabsTrigger value="teams" data-testid="tab-teams">Teams</TabsTrigger>}
+              {ORGANISER_AVAILABLE && <TabsTrigger value="venues" data-testid="tab-venues">Venues</TabsTrigger>}
+              <TabsTrigger value="rules" data-testid="tab-rules">Rules</TabsTrigger>
+              <TabsTrigger value="members" data-testid="tab-members">Members</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="games" className="space-y-10 mt-0">
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-2xl font-bold">
                 Games
                 {(games?.length ?? 0) > 0 && (
                   <span className="text-muted-foreground font-normal text-base ml-2">
@@ -345,7 +449,7 @@ export default function LeagueDetail() {
             </div>
 
             {!games || games.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-4 text-center border border-dashed rounded-xl bg-card/40 text-muted-foreground">
+              <div className="flex flex-col items-center justify-center py-16 gap-4 text-center sa-card text-muted-foreground">
                 <Play className="w-8 h-8 opacity-40" />
                 <div>
                   <p className="font-medium text-foreground">No games yet</p>
@@ -378,23 +482,29 @@ export default function LeagueDetail() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {sortedGames.map((game) => {
+                  const x = game as unknown as GameExtras;
+                  const canScore = league.viewerRole !== "viewer" || x.myAccess === "scorer";
+                  const title = x.homeTeamName && x.awayTeamName
+                    ? `${x.homeTeamName} v ${x.awayTeamName}`
+                    : game.competition || "Exhibition game";
+                  const meta = [x.roundLabel, x.gameNumber != null ? `Game ${x.gameNumber}` : null].filter(Boolean).join(" · ");
                   const target =
                     game.status === "setup"
-                      ? `/setup/${game.id}/info?league=${leagueId}`
+                      ? `/setup/${game.id}/${canAdmin ? "info" : "players"}?league=${leagueId}`
                       : game.status === "final"
                         ? `/game/${game.id}/box?league=${leagueId}`
                         : `/game/${game.id}?league=${leagueId}`;
                   const allowed =
                     game.status === "final"
                       ? true
-                      : game.status === "active"
-                        ? canScore
-                        : canAdmin;
+                      : canScore;
                   const label =
                     game.status === "setup"
                       ? canAdmin
                         ? "Finish setup"
-                        : "Awaiting setup"
+                        : canScore
+                          ? "Check rosters & start"
+                          : "Awaiting setup"
                       : game.status === "final"
                         ? "Box score"
                         : canScore
@@ -416,14 +526,26 @@ export default function LeagueDetail() {
                         <div className="flex items-center justify-between">
                           {statusBadge(game.status)}
                           <span className="text-xs text-muted-foreground font-mono">
-                            {format(new Date(game.date), "MMM d, yyyy")}
+                            {format(new Date(game.date), "EEE d MMM yyyy")}
+                            {x.tipoffTime && (
+                              <span className="ml-1.5 inline-flex items-center gap-0.5">
+                                <Clock className="w-3 h-3" />
+                                {x.tipoffTime.slice(0, 5)}
+                              </span>
+                            )}
                           </span>
                         </div>
 
                         <div className="flex-1">
-                          <h3 className="font-semibold leading-tight">
-                            {game.competition || "Exhibition game"}
+                          <h3 className="font-semibold leading-tight" data-testid="game-card-title">
+                            {title}
                           </h3>
+                          {meta && <p className="text-xs text-muted-foreground mt-1">{meta}</p>}
+                          {pendingByGame.has(game.id) && (
+                            <Link href={`/game/${game.id}/box?league=${leagueId}`} className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-500 hover:underline" data-testid="pending-corrections">
+                              {pendingByGame.get(game.id)} correction request{pendingByGame.get(game.id) === 1 ? "" : "s"} waiting
+                            </Link>
+                          )}
                           {game.venue && (
                             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
@@ -433,6 +555,21 @@ export default function LeagueDetail() {
                         </div>
 
                         <div className="space-y-2 pt-1">
+                          {ORGANISER_AVAILABLE && canAdmin && (
+                            <Button size="sm" variant="ghost" className="w-full gap-1.5 text-xs justify-between" data-testid="game-day"
+                              onClick={() => setGameDay({ game: x, title })}>
+                              <span className="inline-flex items-center gap-1.5"><KeyRound className="w-3.5 h-3.5" />Code, officials &amp; details</span>
+                              {x.gameCode && game.status !== "final" && <span className="font-mono font-bold tracking-wider">{prettyCode(x.gameCode)}</span>}
+                            </Button>
+                          )}
+                          {DIRECTORY_AVAILABLE && canScore && game.status !== "setup" && (
+                            <Link href={`/game/${game.id}/link?league=${leagueId}`} className="block">
+                              <Button size="sm" variant="ghost" className="w-full gap-1.5 text-xs" data-testid="link-players">
+                                <Users className="w-3.5 h-3.5" />
+                                Link players to Swish
+                              </Button>
+                            </Link>
+                          )}
                           {game.status === "final" && canAdmin ? (
                             <div className="grid grid-cols-2 gap-2">
                               <Link href={target} className="contents">
@@ -506,8 +643,7 @@ export default function LeagueDetail() {
                               onClick={() =>
                                 setConfirmDeleteGame({
                                   id: game.id,
-                                  label:
-                                    game.competition || "Exhibition game",
+                                  label: title,
                                 })
                               }
                             >
@@ -531,14 +667,14 @@ export default function LeagueDetail() {
 
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
                 <Activity className="w-4 h-4 text-muted-foreground" />
                 Recent activity
               </h2>
             </div>
 
             {!activity || activity.length === 0 ? (
-              <div className="text-center py-10 border border-dashed rounded-xl bg-card/40 text-muted-foreground text-sm">
+              <div className="text-center py-10 sa-card text-muted-foreground text-sm">
                 No activity yet. Finalize a game or add members to see updates here.
               </div>
             ) : (
@@ -627,9 +763,28 @@ export default function LeagueDetail() {
             )}
           </section>
 
+            </TabsContent>
+
+            {ORGANISER_AVAILABLE && (
+              <TabsContent value="teams" className="mt-0">
+                <TeamsTab leagueUid={leagueUid} canAdmin={canAdmin} canScore={canScore}
+                  siteLeagueId={(league as typeof league & { siteLeagueId?: string | null }).siteLeagueId} />
+              </TabsContent>
+            )}
+            {ORGANISER_AVAILABLE && (
+              <TabsContent value="venues" className="mt-0">
+                <VenuesTab leagueUid={leagueUid} canAdmin={canAdmin} />
+              </TabsContent>
+            )}
+            <TabsContent value="rules" className="mt-0">
+              <RulesTab leagueId={leagueId} league={league as Partial<LeagueRules>} canAdmin={canAdmin}
+                onSaved={() => queryClient.invalidateQueries({ queryKey: getGetLeagueQueryKey(leagueId) })} />
+            </TabsContent>
+
+            <TabsContent value="members" className="mt-0">
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-2xl font-bold">
                 Members
                 {(members?.length ?? 0) > 0 && (
                   <span className="text-muted-foreground font-normal text-base ml-2">
@@ -650,7 +805,7 @@ export default function LeagueDetail() {
             </div>
 
             {!members || members.length === 0 ? (
-              <div className="text-center py-10 border border-dashed rounded-xl bg-card/40 text-muted-foreground text-sm">
+              <div className="text-center py-10 sa-card text-muted-foreground text-sm">
                 No members found.
               </div>
             ) : (
@@ -724,10 +879,54 @@ export default function LeagueDetail() {
               </Card>
             )}
           </section>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
 
+      {fixtureOpen && (
+        <NewFixtureDialog leagueUid={leagueUid} games={scheduled} onClose={() => setFixtureOpen(false)}
+          onCreated={() => { setFixtureOpen(false); refreshGames(); }} />
+      )}
+      {siteGameOpen && (
+        <SiteGameDialog leagueUid={leagueUid}
+          competitionName={(league as typeof league & { siteLeagueName?: string | null }).siteLeagueName}
+          onClose={() => setSiteGameOpen(false)}
+          onStarted={uid => {
+            setSiteGameOpen(false);
+            refreshGames();
+            const local = store.games.getByUid(uid);
+            if (local) setLocation(`/setup/${local.id}/info?league=${leagueId}`);
+          }} />
+      )}
+      {scheduleOpen && (
+        <ScheduleDialog leagueUid={leagueUid} games={scheduled} onClose={() => setScheduleOpen(false)}
+          onCreated={() => { setScheduleOpen(false); refreshGames(); }} />
+      )}
+      {gameDay && (
+        <GameDayDialog game={gameDay.game} title={gameDay.title} leagueUid={leagueUid} onClose={() => setGameDay(null)}
+          onChanged={() => { setGameDay(null); refreshGames(); }} />
+      )}
+
       {/* Add member dialog */}
+      <CompetitionSearchDialog
+        open={competitionOpen}
+        onOpenChange={setCompetitionOpen}
+        onPick={async (c) => {
+          try {
+            await localApi(`/api/leagues/${leagueId}`, "PATCH", {
+              siteLeagueId: c.competitionId,
+              siteLeagueName: c.season ? `${c.name} · ${c.season}` : c.name,
+            });
+            setCompetitionOpen(false);
+            sonnerToast.success(`Linked to ${c.name}`);
+            queryClient.invalidateQueries();
+          } catch (e) {
+            sonnerToast.error(e instanceof Error ? e.message : "Couldn't link the competition");
+          }
+        }}
+      />
+
       <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
         <DialogContent>
           <DialogHeader>
@@ -745,7 +944,7 @@ export default function LeagueDetail() {
                 autoFocus
               />
               <p className="text-xs text-muted-foreground">
-                The user must have already signed in to Swish Stats at least
+                The user must have already signed in to Scorers Table at least
                 once.
               </p>
             </div>

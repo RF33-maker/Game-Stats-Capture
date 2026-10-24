@@ -47,3 +47,8 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local env (Supabase keys etc.)
+.env
+.env.*.local
+.env.local

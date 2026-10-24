@@ -17,9 +17,11 @@ import {
   Calendar,
   MapPin,
   ChevronRight,
+  ArrowRight,
   Settings,
   Trophy,
   Zap,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +38,15 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AppHeader } from "@/components/app-header";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { useOrganiserAccess } from "@/hooks/use-organiser-access";
+import { SingleGames, type SingleGame } from "@/components/single-games";
+import { singleGamesLeagueId } from "@/lib/organiser";
+import { localApi } from "@/lib/directory";
+import { newGameDefaults } from "@/lib/app-settings";
+import { RequestOrganiserAccess } from "@/components/request-organiser-access";
+import { SITE } from "@/lib/site";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { JoinGameDialog } from "@/components/organiser/game-day";
 
 function statusLabel(status: Game["status"]) {
   if (status === "active") return "Live";
@@ -51,11 +62,12 @@ function statusClasses(status: Game["status"]) {
   return "bg-blue-500/20 text-blue-400 border-blue-500/30";
 }
 
-function gameAction(game: Game): { label: string; href: string } {
+function gameAction(game: Game, canAdmin = true): { label: string; href: string } {
   if (game.status === "setup")
     return {
       label: "Finish setup",
-      href: `/setup/${game.id}/info?league=${game.leagueId}`,
+      // Fixture details are the organiser's; a scorer goes straight to rosters.
+      href: `/setup/${game.id}/${canAdmin ? "info" : "players"}?league=${game.leagueId}`,
     };
   if (game.status === "final")
     return {
@@ -86,10 +98,15 @@ function roleBadge(role: string) {
 
 export default function LeaguesHub() {
   const queryClient = useQueryClient();
-  const { data: leagues, isLoading: leaguesLoading } = useListLeagues();
+  const { data: allLeagues, isLoading: leaguesLoading } = useListLeagues();
+  // The private "Single games" league is shown as its own section, not as a league card.
+  const kindOf = (l: unknown) => (l as { kind?: string }).kind;
+  const leagues = allLeagues?.filter(l => kindOf(l) !== "personal");
+  const personalLeague = allLeagues?.find(l => kindOf(l) === "personal");
   const { data: allGames, isLoading: gamesLoading } = useListGames();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
   const [name, setName] = useState("");
   const [season, setSeason] = useState("");
   const [, setLocation] = useLocation();
@@ -130,10 +147,27 @@ export default function LeaguesHub() {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 10) ?? [];
 
-  const leagueMap = new Map((leagues ?? []).map((l) => [l.id, l]));
+  const leagueMap = new Map((allLeagues ?? []).map((l) => [l.id, l]));
 
-  const hasLeagues = (leagues?.length ?? 0) > 0;
-  const canCreateLeague = true;
+  const hasLeagues = (allLeagues?.length ?? 0) > 0;
+  const singleGames = (allGames ?? []).filter(g => personalLeague && g.leagueId === personalLeague.id);
+  const targetLeagues = (leagues ?? []).filter(l => l.viewerRole === "admin" && (l as { siteLeagueId?: string | null }).siteLeagueId)
+    .map(l => ({ id: l.id, uid: (l as unknown as { uid: string }).uid, name: l.name,
+      siteLeagueName: (l as { siteLeagueName?: string | null }).siteLeagueName, siteLeagueId: (l as { siteLeagueId?: string | null }).siteLeagueId }));
+  const [startingSingle, setStartingSingle] = useState(false);
+  const startSingleGame = async () => {
+    setStartingSingle(true);
+    try {
+      const leagueId = await singleGamesLeagueId();
+      const game = await localApi<{ id: number }>(`/api/leagues/${leagueId}/games`, "POST", newGameDefaults());
+      queryClient.invalidateQueries();
+      setLocation(`/setup/${game.id}/info?league=${leagueId}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't start a single game");
+      setStartingSingle(false);
+    }
+  };
+  const { canCreate: canCreateLeague, isLoading: accessLoading } = useOrganiserAccess();
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col">
@@ -143,19 +177,34 @@ export default function LeaguesHub() {
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">League hub</h1>
+              <p className="sa-eyebrow mb-2">Scorers Table</p>
+              <h1 className="text-4xl md:text-5xl font-bold">League hub</h1>
               <p className="text-muted-foreground mt-1">
                 {hasLeagues
                   ? "Your active leagues and upcoming games"
                   : "Create your first league to start tracking games"}
               </p>
             </div>
-            {canCreateLeague && hasLeagues && (
-              <Button onClick={() => setCreateOpen(true)} size="sm">
-                <Plus className="w-4 h-4 mr-1.5" />
-                New league
-              </Button>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {ORGANISER_AVAILABLE && (
+                <Button variant="secondary" onClick={() => setJoinOpen(true)} data-testid="join-with-code">
+                  <KeyRound className="w-4 h-4" />
+                  Join with a game code
+                </Button>
+              )}
+              {ORGANISER_AVAILABLE && canCreateLeague && (
+                <Button onClick={startSingleGame} disabled={startingSingle} data-testid="stat-single-game">
+                  {startingSingle ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                  Stat a single game
+                </Button>
+              )}
+              {canCreateLeague && hasLeagues && (
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="w-4 h-4" />
+                  New league
+                </Button>
+              )}
+            </div>
           </div>
 
           {leaguesLoading ? (
@@ -163,16 +212,16 @@ export default function LeaguesHub() {
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : !hasLeagues ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-6 text-center border border-dashed rounded-2xl bg-card/40">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <Trophy className="w-8 h-8 text-primary" />
-              </div>
+            <div className="flex flex-col items-center justify-center py-24 gap-6 text-center sa-card">
+              <span className="sa-icon-tile !w-14 !h-14 !rounded-2xl">
+                <Trophy className="w-7 h-7" />
+              </span>
               <div>
-                <h2 className="text-xl font-bold">No leagues yet</h2>
+                <h2 className="text-2xl font-bold">Welcome to {SITE.name}</h2>
                 <p className="text-muted-foreground mt-1 max-w-xs mx-auto">
                   {LOCAL_MODE_ENABLED
                     ? "Local mode is active — leagues you create live in this browser."
-                    : "Create your first league and invite your team to start tracking games."}
+                    : "Running a league? Create it here. Scoring a game for someone else? Use the code your organiser gave you."}
                 </p>
               </div>
               {canCreateLeague && (
@@ -181,39 +230,50 @@ export default function LeaguesHub() {
                   Create first league
                 </Button>
               )}
+              {!canCreateLeague && !accessLoading && <RequestOrganiserAccess />}
+              <ol className="text-left text-sm max-w-sm w-full space-y-2.5 border-t border-border pt-5" data-testid="getting-started">
+                {[
+                  ["Create a league", "Name it and pick a season."],
+                  ["Add teams and players", "Type them in, or link teams already on " + SITE.partnerName + "."],
+                  ["Schedule a game", "Pick the teams, date and venue."],
+                  ["Score it", "Open the game on a tablet. It keeps working with no wifi, and syncs when you're back."],
+                  ["Someone else scoring?", "Give them the game's six-character code. They choose \u201cJoin with a game code\u201d above."],
+                ].map(([title, desc], i) => (
+                  <li key={title} className="flex gap-3">
+                    <span className="mt-0.5 w-5 h-5 shrink-0 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                    <span><strong className="font-semibold">{title}</strong> <span className="text-muted-foreground">{desc}</span></span>
+                  </li>
+                ))}
+              </ol>
             </div>
           ) : (
             <>
               <section className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">Upcoming games</h2>
+                  <h2 className="text-2xl font-bold">Upcoming games</h2>
                   {gamesLoading && (
                     <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                   )}
                 </div>
 
                 {!gamesLoading && upcomingGames.length === 0 ? (
-                  <div className="rounded-xl border border-dashed bg-card/40 px-6 py-10 text-center text-muted-foreground text-sm">
+                  <div className="sa-card px-6 py-10 text-center text-muted-foreground text-sm">
                     No upcoming games across your leagues. Open a league to
                     schedule one.
                   </div>
                 ) : (
-                  <div className="divide-y divide-border rounded-xl border bg-card overflow-hidden">
+                  <div className="divide-y divide-border sa-card overflow-hidden">
                     {upcomingGames.map((game) => {
                       const league = game.leagueId
                         ? leagueMap.get(game.leagueId)
                         : null;
                       const role = league?.viewerRole;
                       const canScore =
-                        role === "scorer" || role === "admin";
+                        role === "scorer" || role === "admin" ||
+                        (game as Game & { myAccess?: string | null }).myAccess === "scorer";
                       const canAdmin = role === "admin";
 
-                      const allowed =
-                        game.status === "active"
-                          ? canScore
-                          : game.status === "setup"
-                            ? canAdmin
-                            : true;
+                      const allowed = game.status === "final" ? true : canScore;
 
                       const actionLabel =
                         game.status === "active"
@@ -223,10 +283,12 @@ export default function LeaguesHub() {
                           : game.status === "setup"
                             ? canAdmin
                               ? "Finish setup"
-                              : "Awaiting setup"
+                              : canScore
+                                ? "Check rosters"
+                                : "Awaiting setup"
                             : "Box score";
 
-                      const { href } = gameAction(game);
+                      const { href } = gameAction(game, canAdmin);
 
                       return (
                         <div
@@ -243,7 +305,12 @@ export default function LeaguesHub() {
                           <div className="flex-1 min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium truncate">
-                                {game.competition || "Exhibition game"}
+                                {(() => {
+                                  const g = game as Game & { homeTeamName?: string | null; awayTeamName?: string | null };
+                                  return g.homeTeamName && g.awayTeamName
+                                    ? `${g.homeTeamName} v ${g.awayTeamName}`
+                                    : game.competition || "Exhibition game";
+                                })()}
                               </span>
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold border ${statusClasses(game.status)}`}
@@ -303,24 +370,18 @@ export default function LeaguesHub() {
                 )}
               </section>
 
+              {personalLeague && (
+                <SingleGames games={singleGames as unknown as SingleGame[]} personalLeagueId={personalLeague.id} leagues={targetLeagues} />
+              )}
+
               <section className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">
+                  <h2 className="text-2xl font-bold">
                     Your leagues{" "}
                     <span className="text-muted-foreground font-normal text-base">
                       ({leagues?.length ?? 0})
                     </span>
                   </h2>
-                  {canCreateLeague && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCreateOpen(true)}
-                    >
-                      <Plus className="w-3.5 h-3.5 mr-1" />
-                      New league
-                    </Button>
-                  )}
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -330,72 +391,52 @@ export default function LeaguesHub() {
                     );
                     const memberCount = memberCountMap.get(league.id);
                     return (
-                      <Card
+                      <Link
                         key={league.id}
-                        className="bg-card border hover:border-primary/40 transition-colors"
+                        href={`/leagues/${league.id}`}
+                        className="sa-card sa-card-hover group block p-5"
+                        data-testid="league-card"
                       >
-                        <CardContent className="p-5 space-y-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-semibold text-base leading-tight truncate">
-                                {league.name}
-                              </h3>
-                              {league.season && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {league.season}
-                                </p>
-                              )}
-                            </div>
-                            {roleBadge(league.viewerRole)}
+                        <div className="flex items-start gap-3">
+                          <span className="sa-icon-tile">
+                            <Trophy className="w-5 h-5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="sa-display text-2xl font-bold leading-none truncate">
+                              {league.name}
+                            </h3>
+                            <p className="text-xs text-muted-foreground mt-1.5 truncate">
+                              {league.season || "League"}
+                            </p>
                           </div>
+                          {roleBadge(league.viewerRole)}
+                        </div>
 
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Users className="w-3.5 h-3.5" />
-                              {memberCount == null ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <>
-                                  {memberCount} member
-                                  {memberCount !== 1 ? "s" : ""}
-                                </>
-                              )}
+                        <div className="mt-4 flex items-center gap-3 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1.5">
+                            <Users className="w-4 h-4" />
+                            {memberCount == null ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <>
+                                {memberCount} member
+                                {memberCount !== 1 ? "s" : ""}
+                              </>
+                            )}
+                          </span>
+                          {activeGame && (
+                            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                              Live now
                             </span>
-                            {activeGame && (
-                              <span className="flex items-center gap-1 text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                                Live now
-                              </span>
-                            )}
-                          </div>
+                          )}
+                        </div>
 
-                          <div className="flex gap-2 pt-1">
-                            <Link href={`/leagues/${league.id}`} className="flex-1">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="w-full gap-1.5"
-                              >
-                                Open
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </Button>
-                            </Link>
-                            {league.viewerRole === "admin" && (
-                              <Link href={`/leagues/${league.id}`}>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="px-2.5"
-                                  title="Manage league"
-                                >
-                                  <Settings className="w-3.5 h-3.5" />
-                                  <span className="sr-only">Manage</span>
-                                </Button>
-                              </Link>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
+                        <span className="sa-link mt-5">
+                          {league.viewerRole === "admin" ? "Manage league" : "Open league"}
+                          <ArrowRight className="w-4 h-4" />
+                        </span>
+                      </Link>
                     );
                   })}
                 </div>
@@ -404,6 +445,8 @@ export default function LeaguesHub() {
           )}
         </div>
       </main>
+
+      <JoinGameDialog open={joinOpen} onOpenChange={setJoinOpen} />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>

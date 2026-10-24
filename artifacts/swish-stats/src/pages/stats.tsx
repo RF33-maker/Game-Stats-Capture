@@ -61,7 +61,8 @@ export default function Stats() {
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
+            <p className="sa-eyebrow mb-2">Insights</p>
+            <h1 className="text-4xl md:text-5xl font-bold">
               Stats &amp; analytics
             </h1>
             <p className="text-muted-foreground mt-1">
@@ -74,12 +75,12 @@ export default function Stats() {
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : totals.games === 0 && totals.leagues === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-5 text-center border border-dashed rounded-2xl bg-card/40">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <div className="flex flex-col items-center justify-center py-24 gap-5 text-center sa-card">
+              <div className="sa-icon-tile !w-14 !h-14 !rounded-2xl">
                 <BarChart3 className="w-8 h-8 text-primary" />
               </div>
               <div>
-                <h2 className="text-xl font-bold">No data yet</h2>
+                <h2 className="text-2xl font-bold">No data yet</h2>
                 <p className="text-muted-foreground mt-1 max-w-xs mx-auto">
                   Create a league and capture a game to see your analytics here.
                 </p>
@@ -114,11 +115,11 @@ export default function Stats() {
               </div>
 
               <section className="space-y-4">
-                <h2 className="text-lg font-semibold">By league</h2>
+                <h2 className="text-2xl font-bold">By league</h2>
                 {perLeague.length === 0 ? (
                   <EmptyRow text="No leagues yet." />
                 ) : (
-                  <div className="divide-y divide-border rounded-xl border bg-card overflow-hidden">
+                  <div className="divide-y divide-border sa-card overflow-hidden">
                     {perLeague.map(({ league, total, live, final }) => (
                       <Link
                         key={league.id}
@@ -157,14 +158,14 @@ export default function Stats() {
               </section>
 
               <section className="space-y-4">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
+                <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Clock className="w-4 h-4 text-muted-foreground" />
                   Recent completed games
                 </h2>
                 {recentFinal.length === 0 ? (
                   <EmptyRow text="No completed games yet." />
                 ) : (
-                  <div className="divide-y divide-border rounded-xl border bg-card overflow-hidden">
+                  <div className="divide-y divide-border sa-card overflow-hidden">
                     {recentFinal.map((game) => (
                       <FinalGameRow
                         key={game.id}
@@ -270,7 +271,7 @@ function FinalGameRow({
 
 function EmptyRow({ text }: { text: string }) {
   return (
-    <div className="rounded-xl border border-dashed bg-card/40 px-6 py-10 text-center text-muted-foreground text-sm">
+    <div className="sa-card px-6 py-10 text-center text-muted-foreground text-sm">
       {text}
     </div>
   );

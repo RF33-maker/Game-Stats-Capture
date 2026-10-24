@@ -1,3 +1,4 @@
+import { captureModeName } from "@/lib/app-settings";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { SetupLayout } from "@/components/layout/setup-layout";
 import { useGetGame, useUpdateGame, useListTeams, useListGamePlayers, getGetGameQueryKey, getListTeamsQueryKey, getListGamePlayersQueryKey } from "@workspace/api-client-react";
@@ -5,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Play, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { teamTextColor, appSurface } from "@/lib/team-colors";
+import { ORGANISER_AVAILABLE } from "@/lib/organiser";
+import { OfficialsEditor } from "@/components/organiser/game-day";
 
 export default function SetupExtras() {
   const [, params] = useRoute("/setup/:gameId/extras");
@@ -56,7 +60,7 @@ export default function SetupExtras() {
   return (
     <SetupLayout gameId={String(gameId)} title="Review & Start" step={4} leagueId={leagueQuery}>
       <div className="space-y-8">
-        <div className="bg-card border rounded-xl p-8 shadow-sm">
+        <div className="sa-card p-8">
           <h2 className="text-2xl font-bold mb-6 border-b pb-4">Game Summary</h2>
           
           <div className="grid grid-cols-2 gap-8 mb-8">
@@ -64,9 +68,9 @@ export default function SetupExtras() {
               <div>
                 <p className="text-sm text-muted-foreground">Matchup</p>
                 <div className="text-xl font-bold flex items-center gap-2 mt-1">
-                  <span style={{ color: awayTeam?.colorPrimary }}>{awayTeam?.abbreviation || 'AWAY'}</span>
+                  <span style={{ color: teamTextColor(awayTeam?.colorPrimary, appSurface()) }}>{awayTeam?.abbreviation || 'AWAY'}</span>
                   <span className="text-muted-foreground text-sm font-normal">@</span>
-                  <span style={{ color: homeTeam?.colorPrimary }}>{homeTeam?.abbreviation || 'HOME'}</span>
+                  <span style={{ color: teamTextColor(homeTeam?.colorPrimary, appSurface()) }}>{homeTeam?.abbreviation || 'HOME'}</span>
                 </div>
               </div>
               <div>
@@ -89,7 +93,7 @@ export default function SetupExtras() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Mode</p>
-                <p className="font-medium capitalize">{game?.captureMode}</p>
+                <p className="font-medium">{captureModeName(game?.captureMode)}</p>
               </div>
             </div>
           </div>
@@ -129,6 +133,16 @@ export default function SetupExtras() {
             </div>
           </div>
         </div>
+
+        {ORGANISER_AVAILABLE && game && (
+          <div className="sa-card p-8 space-y-3">
+            <div>
+              <h2 className="text-xl font-bold">Officials</h2>
+              <p className="text-sm text-muted-foreground">Referees and table crew, for the game report. Optional — you can add them after the game too.</p>
+            </div>
+            <OfficialsEditor gameUid={(game as typeof game & { uid: string }).uid} gameDate={game.date} canEdit />
+          </div>
+        )}
 
         <div className="flex justify-center pt-4">
           <Button 
