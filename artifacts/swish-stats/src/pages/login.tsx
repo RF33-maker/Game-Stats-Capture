@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "wouter";
 import {
   useAuth, signInWithPassword, sendPasswordReset, signUpWithPassword, sendMagicLink, resendConfirmation, friendlyAuthError,
 } from "@/lib/auth";
@@ -13,6 +12,7 @@ import { LogIn, UserPlus, Loader2, BarChart3, Users, Zap, MailCheck, Mail } from
 import { AppMenu } from "@/components/app-menu";
 import { Brand } from "@/components/brand";
 import { LegalFooter } from "@/components/auth-shell";
+import { SignupTerms } from "@/components/signup-terms";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 
 const FEATURES = [
@@ -70,7 +70,7 @@ export default function Login() {
     const problem = validatePassword(password);
     if (problem) { setError(problem); return; }
     if (password !== confirmPassword) { setError("The two passwords don't match."); return; }
-    if (!agreed) { setError("Please accept the terms and privacy policy to create an account."); return; }
+    if (!agreed) { setError("Please tick the box to accept the terms and privacy policy and create your account."); return; }
     setSubmitting(true);
     const res = await signUpWithPassword(email, password, name);
     setSubmitting(false);
@@ -229,15 +229,7 @@ export default function Login() {
                       <Input id="confirm" type="password" autoComplete="new-password" required
                         value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                     </div>
-                    <label className="flex items-start gap-2.5 text-sm text-muted-foreground cursor-pointer">
-                      <input type="checkbox" className="mt-1 h-4 w-4 accent-[hsl(var(--primary))]" checked={agreed}
-                        onChange={(e) => setAgreed(e.target.checked)} data-testid="terms-checkbox" />
-                      <span>
-                        I'm 18 or over and accept the{" "}
-                        <Link href="/terms" className="font-medium text-primary hover:underline underline-offset-2">terms</Link> and{" "}
-                        <Link href="/privacy" className="font-medium text-primary hover:underline underline-offset-2">privacy policy</Link>.
-                      </span>
-                    </label>
+                    <SignupTerms agreed={agreed} onChange={setAgreed} />
                   </>
                 )}
                 {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
