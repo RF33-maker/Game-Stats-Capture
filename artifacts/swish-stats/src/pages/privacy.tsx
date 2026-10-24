@@ -27,11 +27,14 @@ export default function Privacy() {
 
       <h2>Services we use</h2>
       <ul>
-        <li>Supabase for sign-in and the database.</li>
-        <li>Vercel to host the app.</li>
+        <li>A database and sign-in provider, which stores your account and game data and lets you sign in.</li>
+        <li>A hosting provider, which serves the app to your device.</li>
         <li>Google Fonts for the typefaces, which means your device asks Google's servers for them when the page loads.</li>
         <li>Your email provider carries the confirmation and reset emails we send.</li>
       </ul>
+      <p>
+        The names of these providers, and where your data is held, are available on request: <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
+      </p>
 
       <h2>Children</h2>
       <p>
