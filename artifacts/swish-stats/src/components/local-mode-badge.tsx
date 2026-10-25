@@ -1,5 +1,6 @@
 import { HardDrive, RotateCcw, Wifi, WifiOff, RefreshCw, CloudUpload, CheckCircle2, AlertTriangle } from "lucide-react";
 import { resetLocalData, LOCAL_MODE_ENABLED } from "@/lib/local-mode";
+import { BUILD_ID } from "@/lib/site";
 import { syncNow, retryFailed } from "@/lib/local-sync";
 import { useSyncStatus } from "@/hooks/use-sync-status";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ export function LocalModeBadge({ inline = false }: { inline?: boolean }) {
         {status.failed > 0 && <div>Failed: <span className="font-mono">{status.failed}</span></div>}
         {!status.signedIn && <div>Sign in to send them.</div>}
         <div>Last sync: <span className="font-mono">{formatRelative(status.lastSyncAt)}</span></div>
+        <div className="text-muted-foreground">Version <span className="font-mono">{BUILD_ID}</span></div>
         {status.livePublishedAt && <div>On the Swish site: <span className="font-mono">{formatRelative(status.livePublishedAt)}</span></div>}
         {status.livePublishError && (
           <div className="flex items-start gap-1 text-amber-300">
