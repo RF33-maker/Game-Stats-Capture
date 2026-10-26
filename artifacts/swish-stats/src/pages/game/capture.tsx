@@ -89,7 +89,10 @@ type FollowUp =
   // After a turnover: who stole it. After a steal: who lost it.
   | { kind: 'steal' | 'turnover'; teamId: number }
   // After a foul: who was fouled, and how many free throws they get.
-  | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean };
+  | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean }
+  // After "foul drawn": who committed it (teamId = the fouling team). The free
+  // throws go to the player who was fouled.
+  | { kind: 'fouler'; teamId: number; choice: FoulChoice; victimTeamId: number; victimPlayerId: number; fts: number };
 
 // A trip to the line. total 0 = still asking how many shots.
 type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean };
@@ -115,7 +118,8 @@ export default function GameCapture() {
   const [isRunning, setIsRunning] = useState(false);
   const [localClock, setLocalClock] = useState(0);
   const [ftSeq, setFtSeq] = useState<FtSeq | null>(null);
-  const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
+  // drawn = the prompt is about the player who was FOULED (FOUL DRAWN); otherwise about the one who fouled.
+  const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean } | null>(null);
   const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
   const [endsOpen, setEndsOpen] = useState(false);
@@ -438,9 +442,45 @@ export default function GameCapture() {
     setFoulDialog({ teamId, playerId });
   };
 
+  // FOUL DRAWN: the scorer tapped the player who was fouled. Ask what kind of
+  // foul, then who committed it, then the free throws go to the fouled player.
+  const openFoulDrawn = (teamId: number, playerId: number) => {
+    setIsRunning(false); // a whistle stops the clock
+    setFollowUp(null);
+    setFoulDialog({ teamId, playerId, drawn: true });
+  };
+
+  const recordFoulDrawn = async (choice: FoulChoice) => {
+    const f = foulDialog;
+    if (!f || f.playerId == null) return;
+    setFoulDialog(null);
+    const foulerTeam = otherTeamId(f.teamId);
+    // In the penalty, even a non-shooting foul is two shots (judged before this foul counts, as for FOUL).
+    const fts = choice === 'shooting2' ? 2 : choice === 'shooting3' ? 3 : choice === 'and1' ? 1
+      : choice === 'personal' ? (inPenalty(foulerTeam) ? 2 : 0) : 0;
+    await handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.playerId },
+      { next: { kind: 'fouler', teamId: foulerTeam, choice, victimTeamId: f.teamId, victimPlayerId: f.playerId, fts } });
+  };
+
+  // Who committed a foul that was recorded from the fouled player's side.
+  const recordFouler = async (f: Extract<FollowUp, { kind: 'fouler' }>, foulerId: number | null) => {
+    const who = { teamId: f.teamId, playerId: foulerId };
+    if (f.choice === 'offensive') {
+      if (await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['offensive'] }, { next: null })) {
+        await handleStat('tov' as StatEventType, 0, { ...who, qualifiers: ['offensive_foul'] }, { next: null });
+      }
+    } else if (f.choice === 'shooting2' || f.choice === 'shooting3' || f.choice === 'and1') {
+      await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['shooting'] }, { next: null });
+    } else {
+      await handleStat('pf' as StatEventType, 0, who, { next: null });
+    }
+    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false });
+  };
+
   const recordFoul = async (choice: FoulChoice) => {
     const f = foulDialog;
     if (!f) return;
+    if (f.drawn) { await recordFoulDrawn(choice); return; }
     setFoulDialog(null);
     const who = { teamId: f.teamId, playerId: f.playerId };
     const victim = otherTeamId(f.teamId);
@@ -522,6 +562,7 @@ export default function GameCapture() {
       return;
     }
     if (eventType === 'pf') { openFoul(selectedTeamId, selectedPlayerId); return; }
+    if (eventType === 'fd') { openFoulDrawn(selectedTeamId, selectedPlayerId); return; }
     if (eventType === 'tov' && detail) { setTovDialog({ teamId: selectedTeamId, playerId: selectedPlayerId }); return; }
     if (eventType === 'blk' && followUp?.kind === 'rebound' && followUp.teamId !== selectedTeamId) {
       // A block on the shot that was just missed: keep asking for the rebound.
@@ -659,6 +700,10 @@ export default function GameCapture() {
       }
       if (f.kind === 'turnover' && teamId === f.teamId) {
         void handleStat('tov' as StatEventType, 0, { teamId, playerId }, { next: null });
+        return;
+      }
+      if (f.kind === 'fouler' && teamId === f.teamId) {
+        void recordFouler(f, playerId);
         return;
       }
       if (f.kind === 'fouled' && teamId === f.teamId) {
@@ -1073,6 +1118,15 @@ export default function GameCapture() {
     else if (f.kind === 'turnover') followUpBar = bar('sky', 'follow-up', f.kind, <>Turnover by? {dim(`Tap the ${who} player who lost it`)}</>, <>
         <Button variant="outline" size="sm" className="px-2" onClick={() => void handleStat('tov' as StatEventType, 0, { teamId: f.teamId, playerId: null }, { next: null })}>{who} team</Button>
         {skip('Skip')}
+      </>);
+    else if (f.kind === 'fouler') followUpBar = bar('sky', 'follow-up', f.kind,
+      <>Who committed it? {dim(`Tap the ${who} player${f.fts > 0 ? ` — then ${f.fts} free throw${f.fts === 1 ? '' : 's'}` : ''}`)}</>, <>
+        <Button variant="outline" size="sm" className="px-2" data-testid="fouler-team" title="Charge it to the team, not a player"
+          onClick={() => void recordFouler(f, null)}>{who} team</Button>
+        <Button variant="ghost" size="sm" className="px-2" data-testid="fouler-skip" title="Don't record who fouled"
+          onClick={() => { setFollowUp(null); if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false }); }}>
+          {f.fts > 0 ? 'Just the shots' : 'Skip'}
+        </Button>
       </>);
     else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
       f.fts > 0
@@ -1883,6 +1937,33 @@ export default function GameCapture() {
                 <div className="text-[11px] opacity-85 mt-1 leading-tight">{hint}</div>
               </button>
             );
+            if (foulDialog.drawn && foulDialog.playerId != null) {
+              // Prompt about the player who was fouled: what kind, then who did it.
+              const foulerTeam = foulDialog.teamId === homeTeam.id ? awayTeam : homeTeam;
+              const foulerPenalty = inPenalty(foulerTeam.id);
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tighter">{playerName(foulDialog.playerId)} was fouled</DialogTitle>
+                    <DialogDescription className="text-muted-foreground">
+                      Was it a shooting foul? {foulerTeam.abbreviation} team fouls this period: {teamFoulCount(foulerTeam.id)}
+                      {foulerPenalty && <span className="text-red-400 font-semibold"> — in the penalty, so any foul is two shots</span>}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2 mt-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      {option('shooting2', 'SHOOTING · 2', 'Fouled taking a 2 — 2 shots', 'bg-purple-700 hover:bg-purple-800')}
+                      {option('shooting3', 'SHOOTING · 3', 'Fouled taking a 3 — 3 shots', 'bg-purple-700 hover:bg-purple-800')}
+                      {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {option('personal', 'NOT SHOOTING', foulerPenalty ? 'Normal foul — 2 shots (penalty)' : 'Normal foul — no free throws')}
+                      {option('offensive', 'CHARGE', 'Offensive foul on the other team. Also their turnover. No free throws', 'bg-slate-600 hover:bg-slate-700')}
+                    </div>
+                  </div>
+                </>
+              );
+            }
             return (
               <>
                 <DialogHeader>
