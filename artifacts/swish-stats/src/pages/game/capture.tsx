@@ -1,4 +1,6 @@
 import { clockAfter, parseClock } from "@/lib/game-clock";
+import { localApi } from "@/lib/directory";
+import { onCourtAtTime } from "@/lib/local-store";
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation, useSearch } from "wouter";
 import { 
@@ -26,7 +28,7 @@ import {
   PlayByPlayEntry,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, ArrowLeftRight, BarChart2, ListOrdered, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
+import { Loader2, Plus, Play, Pause, Undo2, ArrowLeft, ArrowRight, ArrowLeftRight, BarChart2, ListOrdered, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { BrandMark } from "@/components/brand";
@@ -120,6 +122,9 @@ export default function GameCapture() {
   const [localClock, setLocalClock] = useState(0);
   const [ftSeq, setFtSeq] = useState<FtSeq | null>(null);
   // drawn = the prompt is about the player who was FOULED (FOUL DRAWN); otherwise about the one who fouled.
+  // "Add a missed play": a play (or sub) added at a past game time. It never touches the live clock.
+  const [addPlay, setAddPlay] = useState<{ type: string; teamId: number | null; playerId: number | null; inPlayerId: number | null; period: number; clock: string } | null>(null);
+  const [addingPlay, setAddingPlay] = useState(false);
   const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean } | null>(null);
   const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
@@ -313,10 +318,10 @@ export default function GameCapture() {
     let onCourtIds = new Set(teamPlayers.filter(p => p.isStarter).map(p => p.id));
     
     // Process sub events in order
-    const subs = statEvents?.filter(e => e.teamId === teamId && (e.eventType === 'sub_in' || e.eventType === 'sub_out'))
-      .sort((a, b) => a.id - b.id) || [];
-      
-    for (const sub of subs) {
+    const subs = statEvents?.filter(e => e.teamId === teamId && (e.eventType === 'sub_in' || e.eventType === 'sub_out')) ?? [];
+    const subsInOrder = inGameOrder((subs as unknown as GameEvent[])) as unknown as typeof subs;
+
+    for (const sub of subsInOrder) {
       if (sub.playerId) {
         if (sub.eventType === 'sub_in') onCourtIds.add(sub.playerId);
         if (sub.eventType === 'sub_out') onCourtIds.delete(sub.playerId);
@@ -942,8 +947,52 @@ export default function GameCapture() {
       invalidateData();
       toast.success("Play updated");
       closeEditPbp();
-    } catch {
-      toast.error("Failed to update play");
+    } catch (e) {
+      toast.error(e instanceof Error && e.message ? e.message : "Failed to update play");
+    }
+  };
+
+  // ---- Add a missed play: placed by its game time, the live game clock is left alone.
+
+  const PLAY_TYPES: [string, string][] = [
+    ['sub', 'Substitution'], ['2ptm', '2PT made'], ['2pta', '2PT missed'], ['3ptm', '3PT made'], ['3pta', '3PT missed'],
+    ['ftm', 'FT made'], ['fta', 'FT missed'], ['oreb', 'Off. rebound'], ['dreb', 'Def. rebound'], ['ast', 'Assist'],
+    ['stl', 'Steal'], ['blk', 'Block'], ['tov', 'Turnover'], ['pf', 'Foul'], ['fd', 'Foul drawn'], ['timeout', 'Timeout'],
+  ];
+  const openAddPlay = () => {
+    setPlaysOpen(false);
+    setAddPlay({ type: 'sub', teamId: null, playerId: null, inPlayerId: null, period: game.currentPeriod, clock: formatClock(nowClock()) });
+  };
+  const submitAddPlay = async () => {
+    const a = addPlay;
+    if (!a) return;
+    const clockSeconds = parseClock(a.clock);
+    if (clockSeconds == null) { toast.error("Enter the clock as minutes:seconds, e.g. 7:42"); return; }
+    if (a.teamId == null) { toast.error("Pick the team"); return; }
+    setAddingPlay(true);
+    try {
+      let warnings: string[] = [];
+      if (a.type === 'sub') {
+        if (a.playerId == null || a.inPlayerId == null) { toast.error("Pick who comes off and who goes on"); return; }
+        const res = await localApi<{ warnings?: string[] }>(`/api/games/${gameId}/substitutions`, 'POST', {
+          teamId: a.teamId, outPlayerId: a.playerId, inPlayerId: a.inPlayerId, period: a.period, clockSeconds, retro: true,
+        });
+        warnings = res.warnings ?? [];
+      } else {
+        if (a.type !== 'timeout' && a.playerId == null) { toast.error("Pick the player"); return; }
+        await localApi(`/api/games/${gameId}/stats`, 'POST', {
+          teamId: a.teamId, playerId: a.type === 'timeout' ? null : a.playerId, period: a.period, clockSeconds, eventType: a.type,
+          value: a.type === '2ptm' ? 2 : a.type === '3ptm' ? 3 : a.type === 'ftm' ? 1 : 0, retro: true,
+        });
+      }
+      invalidateData();
+      toast.success(`Added at ${gamePeriodLabel(a.period, game.periodCount)} ${formatClock(clockSeconds)}`);
+      if (warnings.length) toast.warning(`Check the other subs: ${warnings.slice(0, 3).join('; ')}`, { duration: 12000 });
+      setAddPlay(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add the play");
+    } finally {
+      setAddingPlay(false);
     }
   };
 
@@ -1313,6 +1362,10 @@ export default function GameCapture() {
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleJumpBall}>JUMP BALL</Button>
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleEndPeriod}>END PERIOD</Button>
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleStartPeriod}>START PERIOD</Button>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold gap-1" onClick={openAddPlay}
+                  title="Add a play or sub that was missed, at the time it happened" data-testid="add-missed-play-strip">
+                  <Plus className="w-3 h-3" /> ADD PLAY
+                </Button>
               </div>
               <Button size="sm" variant="outline" className="h-7 px-2.5 gap-1.5" onClick={() => setPlaysOpen(true)} data-testid="open-plays">
                 <ListOrdered className="w-4 h-4" /> Plays
@@ -1535,6 +1588,10 @@ export default function GameCapture() {
                   <X className="w-4 h-4" />
                 </Button>
               )}
+              <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={openAddPlay}
+                title="Add a play or sub that was missed, at the time it happened" data-testid="add-missed-play">
+                <Plus className="w-4 h-4 mr-1" /> Add play
+              </Button>
               <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={handleUndo}>
                 <Undo2 className="w-4 h-4 mr-2" /> Undo
               </Button>
@@ -1974,6 +2031,101 @@ export default function GameCapture() {
               Dismiss
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add a missed play (or sub) at a past time; the live clock is not touched */}
+      <Dialog open={!!addPlay} onOpenChange={(open) => !open && !addingPlay && setAddPlay(null)}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[600px] max-h-[90dvh] overflow-y-auto" data-testid="add-play-dialog">
+          {addPlay && (() => {
+            const clockSecs = parseClock(addPlay.clock);
+            const chip = (on: boolean) => `px-3 py-1.5 rounded-lg border text-sm font-semibold transition-colors ${on ? 'border-primary bg-primary/15 text-foreground' : 'border-border text-muted-foreground hover:bg-accent'}`;
+            const teamPlayers = addPlay.teamId != null ? (players ?? []).filter(p => p.teamId === addPlay.teamId && p.isActive) : [];
+            const onCourtThen = addPlay.teamId != null && clockSecs != null
+              ? onCourtAtTime(gameId, addPlay.teamId, addPlay.period, clockSecs) : new Set<number>();
+            const sorted = (list: typeof teamPlayers) => [...list].sort((a, b) => Number(a.jerseyNumber) - Number(b.jerseyNumber));
+            const playerChip = (p: typeof teamPlayers[number], picked: number | null, onPick: (id: number) => void, testId: string) => (
+              <button key={p.id} type="button" className={chip(picked === p.id)} onClick={() => onPick(p.id)} data-testid={testId}>
+                <span className="font-mono">{p.jerseyNumber}</span> {p.lastName}
+              </button>
+            );
+            const periods = Array.from({ length: Math.max(game.periodCount, game.currentPeriod) }, (_, i) => i + 1);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Add a missed play</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    It goes in at the time you choose, in game order, and updates the lineups, score and box score. The live clock is not changed.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">When it happened</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {periods.map(p => (
+                        <button key={p} type="button" className={chip(addPlay.period === p)} onClick={() => setAddPlay({ ...addPlay, period: p, playerId: null, inPlayerId: null })}>
+                          {gamePeriodLabel(p, game.periodCount)}
+                        </button>
+                      ))}
+                      <input value={addPlay.clock} onChange={e => setAddPlay({ ...addPlay, clock: e.target.value, playerId: null, inPlayerId: null })}
+                        inputMode="numeric" placeholder="7:42" aria-label="Clock when it happened" data-testid="add-play-clock"
+                        className={`w-24 h-9 rounded-md border bg-card px-3 font-mono text-sm ${clockSecs == null ? 'border-destructive' : 'border-[hsl(var(--border-strong))]'}`} />
+                      <span className="text-xs text-muted-foreground">on the game clock</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">What happened</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PLAY_TYPES.map(([key, label]) => (
+                        <button key={key} type="button" className={chip(addPlay.type === key)} data-testid={`add-play-type-${key}`}
+                          onClick={() => setAddPlay({ ...addPlay, type: key, playerId: null, inPlayerId: null })}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Team</div>
+                    <div className="flex gap-2">
+                      {[awayTeam, homeTeam].map(t => (
+                        <button key={t.id} type="button" className={chip(addPlay.teamId === t.id)} data-testid={`add-play-team-${t.isHome ? 'home' : 'away'}`}
+                          onClick={() => setAddPlay({ ...addPlay, teamId: t.id, playerId: null, inPlayerId: null })}>{t.abbreviation} · {t.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {addPlay.teamId != null && addPlay.type === 'sub' && (
+                    <>
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Comes off <span className="normal-case font-medium">(on the court then)</span></div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sorted(teamPlayers.filter(p => onCourtThen.has(p.id))).map(p => playerChip(p, addPlay.playerId, id => setAddPlay({ ...addPlay, playerId: id }), 'add-play-out'))}
+                          {clockSecs != null && !teamPlayers.some(p => onCourtThen.has(p.id)) && <span className="text-sm text-muted-foreground">Nobody on the court at that time. Check the clock and period.</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Goes on <span className="normal-case font-medium">(on the bench then)</span></div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sorted(teamPlayers.filter(p => !onCourtThen.has(p.id))).map(p => playerChip(p, addPlay.inPlayerId, id => setAddPlay({ ...addPlay, inPlayerId: id }), 'add-play-in'))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {addPlay.teamId != null && addPlay.type !== 'sub' && addPlay.type !== 'timeout' && (
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Player</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sorted(teamPlayers).map(p => playerChip(p, addPlay.playerId, id => setAddPlay({ ...addPlay, playerId: id }), 'add-play-player'))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setAddPlay(null)} disabled={addingPlay}>Cancel</Button>
+                  <Button onClick={() => void submitAddPlay()} disabled={addingPlay} data-testid="add-play-save">
+                    {addingPlay && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Add play
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

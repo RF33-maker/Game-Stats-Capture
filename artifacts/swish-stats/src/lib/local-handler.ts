@@ -1,4 +1,4 @@
-import { store, byOrder, type LSGame, type LSStatEvent, type LeagueRole, leagueRules } from "./local-store";
+import { store, byOrder, orderKeyForTime, onCourtAtTime, type LSGame, type LSStatEvent, type LeagueRole, leagueRules } from "./local-store";
 import { computePossessionEffect, applyScoreDelta, describeEvent } from "./local-possession";
 
 import { gameRules, inGameOrder, playingTime } from "./game-state";
@@ -97,6 +97,33 @@ function teamTotals(lines: StatLine[], teamId: number): StatLine {
     total.flagrantFouls += l.flagrantFouls;
   }
   return total;
+}
+
+/**
+ * Replay a team's substitutions in game order and say where they contradict
+ * each other (a player taken off who was not on, or put on who already was).
+ * Used after a missed sub is slotted into the past, so the scorer can check the
+ * later subs that were scored without it.
+ */
+export function lineupProblems(gameId: number, teamId: number): string[] {
+  const onCourt = new Set(store.players.forGame(gameId).filter(p => p.teamId === teamId && p.isStarter).map(p => p.id));
+  const name = (id: number | null) => { const p = id != null ? store.players.get(id) : null; return p ? `#${p.jerseyNumber} ${p.lastName}` : "A player"; };
+  const at = (e: LSStatEvent) => `Q${e.period} ${Math.floor(e.clockSeconds / 60)}:${String(e.clockSeconds % 60).padStart(2, "0")}`;
+  const problems: string[] = [];
+  const subs = store.statEvents.forGame(gameId)
+    .filter(e => e.teamId === teamId && (e.eventType === "sub_in" || e.eventType === "sub_out"))
+    .sort(byOrder);
+  for (const e of subs) {
+    if (e.playerId == null) continue;
+    if (e.eventType === "sub_out") {
+      if (!onCourt.has(e.playerId)) problems.push(`${name(e.playerId)} comes off at ${at(e)} but was not on the court`);
+      onCourt.delete(e.playerId);
+    } else {
+      if (onCourt.has(e.playerId)) problems.push(`${name(e.playerId)} goes on at ${at(e)} but was already on the court`);
+      onCourt.add(e.playerId);
+    }
+  }
+  return problems;
 }
 
 export function rebuildPlayByPlay(gameId: number): void {
@@ -688,6 +715,8 @@ export async function handleLocalRequest(
       shotX?: number | null;
       shotY?: number | null;
       qualifiers?: string[] | null;
+      /** A missed play added after the fact: placed by its game time, and the live clock, period and possession are left alone. */
+      retro?: boolean;
     };
 
     // Substitutions are an indivisible pair validated against the live
@@ -725,7 +754,9 @@ export async function handleLocalRequest(
     const { homeScore, awayScore } = applyScoreDelta(effect.scoreDelta, data.teamId ?? null, home.id, prevHome, prevAway);
 
     const hasXY = typeof data.shotX === "number" && typeof data.shotY === "number";
+    const retro = data.retro === true;
     const statEvent = store.statEvents.create({
+      ...(retro ? { orderKey: orderKeyForTime(gameId, data.period, data.clockSeconds) } : {}),
       gameId,
       teamId: data.teamId ?? null,
       playerId: data.playerId ?? null,
@@ -743,6 +774,13 @@ export async function handleLocalRequest(
       pairEventId: null,
       needsReview: false,
     });
+
+    if (retro) {
+      // Scores and possession for every play after it change too: replay the lot.
+      rebuildPlayByPlay(gameId);
+      const row = store.playByPlay.forGame(gameId).find(r => r.statEventId === statEvent.id) ?? null;
+      return ok({ statEvent, playByPlay: row, game: store.games.get(gameId)! }, 201);
+    }
 
     const team = data.teamId ? (teams.find(t => t.id === data.teamId) ?? null) : null;
     const player = data.playerId ? (store.players.get(data.playerId)) : null;
@@ -822,14 +860,34 @@ export async function handleLocalRequest(
     // Scorers correct a substitution by deleting it (removes both sides) and
     // re-recording it via POST /api/games/:gameId/substitutions.
     const effectiveEventTypeForGuard = data.eventType !== undefined ? data.eventType : target.eventType;
-    if (
-      !isReviewFlagOnlyPatch &&
-      (target.eventType === "sub_in" ||
-        target.eventType === "sub_out" ||
-        effectiveEventTypeForGuard === "sub_in" ||
-        effectiveEventTypeForGuard === "sub_out")
-    ) {
-      return badRequest("Substitution events cannot be edited directly — delete and re-record the substitution instead");
+    const touchesSub = target.eventType === "sub_in" || target.eventType === "sub_out"
+      || effectiveEventTypeForGuard === "sub_in" || effectiveEventTypeForGuard === "sub_out";
+    // The one correction a sub allows is its time: both halves of the swap move together.
+    const onlyTimeChange = target.eventType === "sub_in" || target.eventType === "sub_out"
+      ? effectiveEventTypeForGuard === target.eventType
+        && (data.teamId === undefined || data.teamId === target.teamId)
+        && (data.playerId === undefined || data.playerId === target.playerId)
+        && (data.period !== undefined || data.clockSeconds !== undefined)
+      : false;
+    if (!isReviewFlagOnlyPatch && touchesSub && !onlyTimeChange) {
+      return badRequest("A substitution's players can't be edited — delete it and add the right one with Add play. Its time can be changed.");
+    }
+    if (!isReviewFlagOnlyPatch && touchesSub && onlyTimeChange) {
+      if (target.voidedAt) return badRequest("This event was already removed or corrected");
+      const period = data.period ?? target.period;
+      const clockSeconds = data.clockSeconds ?? target.clockSeconds;
+      if (period === target.period && clockSeconds === target.clockSeconds) return ok(target);
+      const partner = target.pairEventId != null ? store.statEvents.get(target.pairEventId) : null;
+      const partnerLive = partner && !partner.voidedAt ? partner : null;
+      const key = orderKeyForTime(target.gameId, period, clockSeconds, [target.id, ...(partnerLive ? [partnerLive.id] : [])]);
+      const moved = store.statEvents.replace(target.id, { period, clockSeconds, orderKey: key });
+      const movedPartner = partnerLive ? store.statEvents.replace(partnerLive.id, { period, clockSeconds, orderKey: key }) : null;
+      if (moved && movedPartner) {
+        store.statEvents.update(moved.id, { pairEventId: movedPartner.id });
+        store.statEvents.update(movedPartner.id, { pairEventId: moved.id });
+      }
+      rebuildPlayByPlay(target.gameId);
+      return ok({ ...(moved ?? target), warnings: target.teamId != null ? lineupProblems(target.gameId, target.teamId) : [] });
     }
 
     const teams = store.teams.forGame(target.gameId);
@@ -890,6 +948,12 @@ export async function handleLocalRequest(
         changes.shotY = null;
       }
       if (data.needsReview !== undefined) changes.needsReview = data.needsReview;
+      // A new time puts the play in its place in the sequence, not in its old slot.
+      const movedTime = (changes.period !== undefined && changes.period !== target.period)
+        || (changes.clockSeconds !== undefined && changes.clockSeconds !== target.clockSeconds);
+      if (movedTime) {
+        changes.orderKey = orderKeyForTime(target.gameId, changes.period ?? target.period, changes.clockSeconds ?? target.clockSeconds, [target.id]);
+      }
       updated = store.statEvents.replace(statEventId, changes);
     }
     if (!updated) return notFound("Stat event not found");
@@ -930,6 +994,8 @@ export async function handleLocalRequest(
       inPlayerId?: number;
       period?: number;
       clockSeconds?: number;
+      /** A missed sub added after the fact: validated against who was on court then, placed by game time, live clock left alone. */
+      retro?: boolean;
     };
 
     const game = store.games.get(gameId);
@@ -962,21 +1028,29 @@ export async function handleLocalRequest(
       return badRequest("Both players must be active on the roster");
     }
 
-    // Derive the current on-court set server-side (replaying sub history
-    // over starters) so a stale client can't produce an invalid swap.
-    const onCourt = new Set(
-      store.players.forGame(gameId).filter(p => p.teamId === data.teamId && p.isStarter).map(p => p.id),
-    );
-    const subEvents = store.statEvents
-      .forGame(gameId)
-      .filter(e => e.teamId === data.teamId)
-      .sort(byOrder);
-    for (const e of subEvents) {
-      if (e.eventType === "sub_in" && e.playerId != null) onCourt.add(e.playerId);
-      else if (e.eventType === "sub_out" && e.playerId != null) onCourt.delete(e.playerId);
+    // Derive the on-court set server-side (replaying sub history over
+    // starters) so a stale client can't produce an invalid swap. A missed sub
+    // added later is checked against the court at its own time, not now.
+    const retro = data.retro === true;
+    let onCourt: Set<number>;
+    if (retro) {
+      onCourt = onCourtAtTime(gameId, data.teamId, data.period, data.clockSeconds);
+    } else {
+      onCourt = new Set(
+        store.players.forGame(gameId).filter(p => p.teamId === data.teamId && p.isStarter).map(p => p.id),
+      );
+      const subEvents = store.statEvents
+        .forGame(gameId)
+        .filter(e => e.teamId === data.teamId)
+        .sort(byOrder);
+      for (const e of subEvents) {
+        if (e.eventType === "sub_in" && e.playerId != null) onCourt.add(e.playerId);
+        else if (e.eventType === "sub_out" && e.playerId != null) onCourt.delete(e.playerId);
+      }
     }
-    if (!onCourt.has(data.outPlayerId)) return badRequest("outPlayerId is not currently on court");
-    if (onCourt.has(data.inPlayerId)) return badRequest("inPlayerId is already on court");
+    if (!onCourt.has(data.outPlayerId)) return badRequest(retro ? "outPlayerId was not on court at that time" : "outPlayerId is not currently on court");
+    if (onCourt.has(data.inPlayerId)) return badRequest(retro ? "inPlayerId was already on court at that time" : "inPlayerId is already on court");
+    const retroKey = retro ? orderKeyForTime(gameId, data.period, data.clockSeconds) : undefined;
 
     const pbpRows = store.playByPlay.forGame(gameId).sort((a, b) => a.id - b.id);
     const lastPbp = pbpRows[pbpRows.length - 1];
@@ -984,6 +1058,7 @@ export async function handleLocalRequest(
     const awayScore = lastPbp?.awayScore ?? 0;
 
     const outEvent = store.statEvents.create({
+      ...(retroKey !== undefined ? { orderKey: retroKey } : {}),
       gameId,
       teamId: data.teamId,
       playerId: data.outPlayerId,
@@ -998,6 +1073,7 @@ export async function handleLocalRequest(
       needsReview: false,
     });
     const inEvent = store.statEvents.create({
+      ...(retroKey !== undefined ? { orderKey: retroKey } : {}),
       gameId,
       teamId: data.teamId,
       playerId: data.inPlayerId,
@@ -1012,6 +1088,20 @@ export async function handleLocalRequest(
       needsReview: false,
     });
     const linkedOutEvent = store.statEvents.update(outEvent.id, { pairEventId: inEvent.id })!;
+
+    if (retro) {
+      rebuildPlayByPlay(gameId);
+      return ok(
+        {
+          outEvent: linkedOutEvent,
+          inEvent,
+          game: store.games.get(gameId)!,
+          // Later subs that were scored without this one may now contradict it.
+          warnings: lineupProblems(gameId, data.teamId),
+        },
+        201,
+      );
+    }
 
     const outPbp = store.playByPlay.create({
       gameId,

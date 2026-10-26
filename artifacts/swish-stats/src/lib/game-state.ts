@@ -41,7 +41,9 @@ export function gameRules(game: Partial<Rules> | null | undefined): Rules {
 }
 
 export function inGameOrder<T extends GameEvent>(events: T[]): T[] {
-  return [...events].sort((a, b) => (a.orderKey ?? a.id) - (b.orderKey ?? b.id) || a.id - b.id);
+  // Same order as the store's byOrder: entry order, except a play added later for an earlier time.
+  const time = (e: GameEvent) => e.period * 100000 - e.clockSeconds;
+  return [...events].sort((a, b) => (a.orderKey ?? a.id) - (b.orderKey ?? b.id) || time(a) - time(b) || a.id - b.id);
 }
 
 export function periodLabel(period: number, periodCount: number): string {
