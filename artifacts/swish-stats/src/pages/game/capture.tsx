@@ -1069,74 +1069,108 @@ export default function GameCapture() {
 
   const shootingTeam = selectedTeamId === homeTeam.id ? homeTeam : selectedTeamId === awayTeam.id ? awayTeam : null;
 
-  // The prompt strip: a free-throw trip, or the question that follows the
-  // last play. Answered by tapping a player or a button, or dismissed.
-  const bar = (tone: 'sky' | 'green', testId: string, kind: string, text: React.ReactNode, actions: React.ReactNode) => (
-    <div className={`h-full flex items-center justify-between gap-2 rounded-[10px] border px-3 ${tone === 'green' ? 'border-green-500/40 bg-green-500/10' : 'border-sky-500/40 bg-sky-500/10'}`} data-testid={testId} data-kind={kind}>
-      <span className={`text-sm font-semibold leading-tight min-w-0 ${tone === 'green' ? 'text-green-400' : 'text-sky-400'}`}>{text}</span>
-      <span className="flex items-center gap-1 shrink-0">{actions}</span>
-    </div>
-  );
-  const dim = (s: string) => <span className="font-normal opacity-80">{s}</span>;
+  // The prompt banner: the question that follows the last play (who assisted,
+  // who got the rebound, who committed the foul, how the free throw went...).
+  // It sits across the top of the play area so it can't be missed, says what to
+  // tap, and numbers the steps of a foul. Answered by tapping a player or a
+  // button, or dismissed.
+  const bar = (
+    tone: 'sky' | 'green' | 'amber', testId: string, kind: string,
+    title: React.ReactNode, hint: React.ReactNode, actions: React.ReactNode, step?: string,
+  ) => {
+    const look = tone === 'green' ? 'border-green-500/60 bg-green-500/10 text-green-300'
+      : tone === 'amber' ? 'border-amber-500/60 bg-amber-500/10 text-amber-300'
+      : 'border-sky-500/60 bg-sky-500/10 text-sky-300';
+    return (
+      <div className={`shrink-0 flex items-center justify-between gap-4 rounded-xl border-2 px-4 py-2.5 ${look}`} data-testid={testId} data-kind={kind} role="status" aria-live="polite">
+        <div className="min-w-0">
+          {step && <div className="text-[11px] font-bold uppercase tracking-wider opacity-80 mb-0.5">{step}</div>}
+          <div className="sa-display font-bold text-2xl leading-none text-foreground">{title}</div>
+          <div className="text-sm mt-1 font-medium">{hint}</div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">{actions}</div>
+      </div>
+    );
+  };
+  // "Tap the RHK player": the team's abbreviation in its own colour.
+  const tapTeam = (teamId: number, what = 'player') => {
+    const t = teamId === homeTeam.id ? homeTeam : awayTeam;
+    return <>Tap the <span className="font-black" style={{ color: teamTextColor(t.colorPrimary, appSurface()) }}>{t.abbreviation}</span> {what}</>;
+  };
   const skip = (label: string) => (
-    <Button variant="ghost" size="sm" className="px-2" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">{label}</Button>
+    <Button variant="ghost" size="sm" className="px-3" onClick={() => setFollowUp(null)} data-testid="follow-up-skip">{label}</Button>
   );
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   let followUpBar: React.ReactNode = null;
   if (pendingShot) followUpBar = null;
   else if (ftSeq) {
     followUpBar = ftSeq.total === 0
-      ? bar('green', 'ft-bar', 'count', <>Free throws for {playerName(ftSeq.playerId)} {dim('— how many?')}</>, <>
+      ? bar('green', 'ft-bar', 'count', `How many free throws?`, <>{playerName(ftSeq.playerId)} is going to the line. Choose 1, 2 or 3.</>, <>
           {[1, 2, 3].map(n => (
-            <Button key={n} size="sm" variant="outline" className="px-3 font-bold" onClick={() => setFtSeq({ ...ftSeq, total: n })} data-testid={`ft-count-${n}`}>{n}</Button>
+            <Button key={n} size="sm" variant="outline" className="px-4 font-bold" onClick={() => setFtSeq({ ...ftSeq, total: n })} data-testid={`ft-count-${n}`}>{n}</Button>
           ))}
           <Button variant="ghost" size="sm" className="px-2" onClick={() => setFtSeq(null)} title="Cancel"><X className="w-4 h-4" /></Button>
         </>)
-      : bar('green', 'ft-bar', 'shot', <>FT {ftSeq.index} of {ftSeq.total} {dim(`· ${playerName(ftSeq.playerId)}`)}</>, <>
-          <Button size="sm" className="px-3 font-bold bg-green-600 hover:bg-green-700 text-white" disabled={recordStat.isPending} onClick={() => handleFreeThrow(true)} data-testid="ft-made">MADE</Button>
-          <Button size="sm" className="px-3 font-bold bg-red-600 hover:bg-red-700 text-white" disabled={recordStat.isPending} onClick={() => handleFreeThrow(false)} data-testid="ft-missed">MISSED</Button>
+      : bar('green', 'ft-bar', 'shot', `Free throw ${ftSeq.index} of ${ftSeq.total}`, <>{playerName(ftSeq.playerId)} shoots. Was it made?</>, <>
+          <Button size="sm" className="px-4 font-bold bg-green-600 hover:bg-green-700 text-white" disabled={recordStat.isPending} onClick={() => handleFreeThrow(true)} data-testid="ft-made">MADE</Button>
+          <Button size="sm" className="px-4 font-bold bg-red-600 hover:bg-red-700 text-white" disabled={recordStat.isPending} onClick={() => handleFreeThrow(false)} data-testid="ft-missed">MISSED</Button>
           <Button variant="ghost" size="sm" className="px-2" onClick={() => setFtSeq(null)} title="Stop this trip to the line"><X className="w-4 h-4" /></Button>
         </>);
   } else if (followUp) {
     const f = followUp;
     const who = abbr(f.teamId);
-    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, <>Assist? {dim(`Tap the ${who} passer`)}</>, skip('No assist'));
-    else if (f.kind === 'rebound') followUpBar = bar('sky', 'follow-up', f.kind, <>Rebound? {dim('Tap who got it')}</>, <>
+    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, 'Who assisted?', <>{tapTeam(f.teamId, 'player who passed it')}</>, skip('No assist'));
+    else if (f.kind === 'rebound') followUpBar = bar('sky', 'follow-up', f.kind, 'Who got the rebound?', <>Tap the player who got it, or choose a team rebound.</>, <>
         {!f.blocked && (
-          <Button variant="outline" size="sm" className="px-2" data-testid="follow-up-blocked" title="The shot was blocked — say who by"
+          <Button variant="outline" size="sm" className="px-3" data-testid="follow-up-blocked" title="The shot was blocked — say who by"
             onClick={() => setFollowUp({ kind: 'block', teamId: otherTeamId(f.teamId), shotTeamId: f.teamId, shooterId: f.shooterId })}>
             Blocked
           </Button>
         )}
         {[awayTeam, homeTeam].map(t => (
-          <Button key={t.id} variant="outline" size="sm" className="px-2" onClick={() => handleTeamRebound(t.id)}
+          <Button key={t.id} variant="outline" size="sm" className="px-3" onClick={() => handleTeamRebound(t.id)}
             title={`Nobody secured it — credit ${t.name} with a team rebound`} data-testid={`team-rebound-${t.isHome ? 'home' : 'away'}`}>
             {t.abbreviation} team
           </Button>
         ))}
         {skip('None')}
       </>);
-    else if (f.kind === 'block') followUpBar = bar('sky', 'follow-up', f.kind, <>Blocked by? {dim(`Tap the ${who} player`)}</>,
-      <Button variant="ghost" size="sm" className="px-2" onClick={() => setFollowUp({ kind: 'rebound', teamId: f.shotTeamId, shooterId: f.shooterId, blocked: true })}>Back</Button>);
-    else if (f.kind === 'steal') followUpBar = bar('sky', 'follow-up', f.kind, <>Steal? {dim(`Tap the ${who} player who took it`)}</>, skip('No steal'));
-    else if (f.kind === 'turnover') followUpBar = bar('sky', 'follow-up', f.kind, <>Turnover by? {dim(`Tap the ${who} player who lost it`)}</>, <>
-        <Button variant="outline" size="sm" className="px-2" onClick={() => void handleStat('tov' as StatEventType, 0, { teamId: f.teamId, playerId: null }, { next: null })}>{who} team</Button>
+    else if (f.kind === 'block') followUpBar = bar('sky', 'follow-up', f.kind, 'Who blocked it?', <>{tapTeam(f.teamId)}</>,
+      <Button variant="ghost" size="sm" className="px-3" onClick={() => setFollowUp({ kind: 'rebound', teamId: f.shotTeamId, shooterId: f.shooterId, blocked: true })}>Back</Button>);
+    else if (f.kind === 'steal') followUpBar = bar('sky', 'follow-up', f.kind, 'Who stole it?', <>{tapTeam(f.teamId, 'player who took it')}</>, skip('No steal'));
+    else if (f.kind === 'turnover') followUpBar = bar('sky', 'follow-up', f.kind, 'Whose turnover?', <>{tapTeam(f.teamId, 'player who lost it')}</>, <>
+        <Button variant="outline" size="sm" className="px-3" onClick={() => void handleStat('tov' as StatEventType, 0, { teamId: f.teamId, playerId: null }, { next: null })}>{who} team</Button>
         {skip('Skip')}
       </>);
     else if (f.kind === 'fouler') followUpBar = bar('sky', 'follow-up', f.kind,
-      <>Who committed it? {dim(`Tap the ${who} player${f.fts > 0 ? ` — then ${f.fts} free throw${f.fts === 1 ? '' : 's'}` : f.choice === 'personal' ? ' — then inbound' : ''}`)}</>, <>
-        <Button variant="outline" size="sm" className="px-2" data-testid="fouler-team" title="Charge it to the team, not a player"
+      'Who committed the foul?',
+      <>{tapTeam(f.teamId)}.{' '}
+        <span className="opacity-90">
+          {f.fts > 0 ? <>Then {plural(f.fts, 'free throw')} for {playerName(f.victimPlayerId)}.</>
+            : f.choice === 'offensive' ? <>It is also their turnover.</> : <>Then {who === abbr(f.victimTeamId) ? '' : abbr(f.victimTeamId) + ' '}inbound.</>}
+        </span>
+      </>, <>
+        <Button variant="outline" size="sm" className="px-3" data-testid="fouler-team" title="Charge it to the team, not a player"
           onClick={() => void recordFouler(f, null)}>{who} team</Button>
-        <Button variant="ghost" size="sm" className="px-2" data-testid="fouler-skip" title="Don't record who fouled"
+        <Button variant="ghost" size="sm" className="px-3" data-testid="fouler-skip" title="Don't record who fouled"
           onClick={() => { setFollowUp(null); if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false }); }}>
           {f.fts > 0 ? 'Just the shots' : 'Skip'}
         </Button>
-      </>);
+      </>, `Foul · step 2 of ${f.fts > 0 ? 3 : 2}`);
     else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
-      f.fts > 0
-        ? <>{f.fts} free throw{f.fts === 1 ? '' : 's'} {dim(`— tap the ${who} shooter`)}</>
-        : <>Inbound — who was fouled? {dim(`Tap the ${who} player`)}</>,
-      skip(f.fts > 0 ? 'No shots' : 'Skip'));
+      'Who was fouled?',
+      <>{tapTeam(f.teamId)}.{' '}
+        <span className="opacity-90">{f.fts > 0 ? <>They shoot {plural(f.fts, 'free throw')}.</> : <>Then inbound.</>}</span></>,
+      skip(f.fts > 0 ? 'No shots' : 'Skip'), `Foul · step 2 of ${f.fts > 0 ? 3 : 2}`);
   }
+  // A shot's result is in and it only needs its shooter.
+  const shooterBanner = pendingShot && pendingShot.made != null && !isLite
+    ? bar('amber', 'shot-banner', 'shooter',
+        `${pendingShot.value}PT ${pendingShot.made ? 'made' : 'missed'} — who took the shot?`,
+        <>{pendingShot.teamId != null ? tapTeam(pendingShot.teamId, 'shooter') : <>Tap the shooter</>}</>,
+        <Button variant="ghost" size="sm" className="px-3" onClick={() => setPendingShot(null)}>Cancel</Button>)
+    : null;
+  const promptBanner = shooterBanner ?? followUpBar;
 
   // Which team's on-court players are being asked for right now.
   const awaiting = (teamId: number) => {
@@ -1144,8 +1178,10 @@ export default function GameCapture() {
     if (ftSeq || !followUp) return false;
     return followUp.kind === 'rebound' || followUp.teamId === teamId;
   };
+  const awaitingAny = awaiting(homeTeam.id) || awaiting(awayTeam.id);
   const panelProps = (team: typeof homeTeam) => ({
     awaitingShooter: awaiting(team.id),
+    dimmed: awaitingAny && !awaiting(team.id),
     onTimeout: () => handleTimeout(team.id),
     onBenchTech: () => openFoul(team.id, null),
     onTeamRebound: () => handleTeamRebound(team.id),
@@ -1271,6 +1307,9 @@ export default function GameCapture() {
             </div>
           )}
 
+          {/* The question to answer next (who assisted / who fouled / free throw ...) */}
+          {promptBanner}
+
           {/* Team Panels + Court */}
           <div className={`flex-1 grid grid-rows-1 gap-3 xl:gap-4 min-h-0 ${
             isLite ? 'grid-cols-2'
@@ -1372,15 +1411,15 @@ export default function GameCapture() {
                       </Button>
                     </div>
                   ) : (
-                    <div className="h-full flex items-center justify-between gap-2 rounded-[10px] border border-amber-500/40 bg-amber-500/10 px-3" data-testid="shot-needs-shooter">
-                      <span className="text-sm font-semibold text-amber-500">
-                        {pendingShot.value}PT {pendingShot.made ? 'made' : 'missed'} — now tap the{' '}
-                        {pendingShot.teamId != null ? `${pendingShot.teamId === homeTeam.id ? homeTeam.abbreviation : awayTeam.abbreviation} shooter` : 'shooter'}
-                      </span>
-                      <Button variant="ghost" size="sm" onClick={() => setPendingShot(null)}>Cancel</Button>
+                    <div className="h-full flex items-center justify-center text-xs text-muted-foreground text-center px-2" data-testid="shot-needs-shooter">
+                      Now pick the shooter, as asked above.
                     </div>
                   )
-                ) : followUpBar ? followUpBar : (
+                ) : followUpBar ? (
+                  <div className="h-full flex items-center justify-center text-xs text-muted-foreground text-center px-2">
+                    Answer the question above first.
+                  </div>
+                ) : (
                   <div className="h-full flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground text-center px-2">
                     <span>
                       {selectedPlayerId
@@ -1415,9 +1454,6 @@ export default function GameCapture() {
               />
             ))}
           </div>
-
-          {/* Lite has no court panel, so its prompt sits above the buttons */}
-          {isLite && followUpBar && <div className="h-12 shrink-0">{followUpBar}</div>}
 
           {/* Stat Buttons Matrix */}
           <div className={`${isLite ? 'h-72 xl:h-80' : fullCourt ? 'h-36 xl:h-40' : 'h-52 xl:h-56'} bg-card rounded-xl border border-border shadow-sm p-4 flex flex-col gap-4 shrink-0`}>
@@ -2124,6 +2160,7 @@ function TeamPanel({
   onSelectBenchPlayer,
   benchBeside = false,
   awaitingShooter = false,
+  dimmed = false,
 }: {
   team: { id: number; abbreviation: string; colorPrimary: string };
   onCourt: { id: number; jerseyNumber: string | number; lastName: string }[];
@@ -2148,10 +2185,12 @@ function TeamPanel({
   benchBeside?: boolean;
   // A shot's result is in and it only needs its shooter: on-court rows glow.
   awaitingShooter?: boolean;
+  // The other team is being asked a question: fade this one so the eye goes to the right side.
+  dimmed?: boolean;
 }) {
   const subActive = subModeBenchPlayerId != null;
   return (
-    <div className="flex flex-col min-h-0 bg-card rounded-xl border border-border shadow-sm relative overflow-y-auto overflow-x-hidden">
+    <div className={`flex flex-col min-h-0 bg-card rounded-xl border shadow-sm relative overflow-y-auto overflow-x-hidden transition-opacity ${awaitingShooter ? 'border-amber-400/70 ring-2 ring-amber-400/40' : 'border-border'} ${dimmed ? 'opacity-40' : ''}`}>
       <div className="sticky top-0 left-0 w-full h-1 z-10" style={{ backgroundColor: team.colorPrimary }} />
 
       <div className={benchBeside ? "flex-1 min-h-0 grid grid-cols-[3fr_2fr]" : "contents"}>
@@ -2169,7 +2208,7 @@ function TeamPanel({
                   : isSelected
                   ? 'border-primary bg-primary/10'
                   : awaitingShooter
-                  ? 'border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20'
+                  ? 'border-amber-400 bg-amber-500/20 hover:bg-amber-500/30'
                   : 'border-transparent bg-secondary/60 hover:bg-accent'
               }`}
             >
