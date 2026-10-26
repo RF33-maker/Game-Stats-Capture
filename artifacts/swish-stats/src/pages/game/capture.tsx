@@ -93,6 +93,8 @@ type FollowUp =
   | { kind: 'steal' | 'turnover'; teamId: number }
   // After a foul: who was fouled, and how many free throws they get.
   | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean }
+  // After the first player of a double foul: who the other one was (teamId = the team to tap).
+  | { kind: 'double'; teamId: number; firstPlayerId: number }
   // After "foul drawn": who committed it (teamId = the fouling team). The free
   // throws go to the player who was fouled.
   // `then` is what to ask once the free throws are done (the assist, for an and-one).
@@ -101,7 +103,7 @@ type FollowUp =
 // A trip to the line. total 0 = still asking how many shots.
 type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean; then?: FollowUp };
 
-type FoulChoice = 'personal' | 'penalty' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
+type FoulChoice = 'personal' | 'penalty' | 'double' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
 
 type ShotEvent = { id: number; eventType: string; teamId: number | null; period: number; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
@@ -474,6 +476,12 @@ export default function GameCapture() {
     if (!f || f.playerId == null) return;
     setFoulDialog(null);
     const foulerTeam = otherTeamId(f.teamId);
+    if (choice === 'double') {
+      // Both players are charged; this is the first one.
+      await handleStat('pf' as StatEventType, 0, { teamId: f.teamId, playerId: f.playerId, qualifiers: ['double'] },
+        { next: { kind: 'double', teamId: foulerTeam, firstPlayerId: f.playerId } });
+      return;
+    }
     const fts = choice === 'shooting2' ? 2 : choice === 'shooting3' ? 3 : choice === 'and1' ? 1
       : choice === 'penalty' ? 2 : 0; // inbound (personal) and charge: no shots
     await handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.playerId },
@@ -512,6 +520,13 @@ export default function GameCapture() {
       case 'penalty':
         // Non-shooting, but the team is in the penalty: two shots.
         await handleStat('pf' as StatEventType, 0, who, { next: fouled(2, true, false) });
+        break;
+      case 'double':
+        // Two opponents foul each other: both are charged, no shots. Record this one, then ask who the other was.
+        if (f.playerId != null) {
+          await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['double'] },
+            { next: { kind: 'double', teamId: victim, firstPlayerId: f.playerId } });
+        }
         break;
       case 'shooting2': case 'shooting3': case 'and1':
         await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['shooting'] },
@@ -728,6 +743,10 @@ export default function GameCapture() {
       }
       if (f.kind === 'fouler' && teamId === f.teamId) {
         void recordFouler(f, playerId);
+        return;
+      }
+      if (f.kind === 'double' && teamId === f.teamId) {
+        void handleStat('pf' as StatEventType, 0, { teamId, playerId, qualifiers: ['double'] }, { next: null });
         return;
       }
       if (f.kind === 'fouled' && teamId === f.teamId) {
@@ -1284,6 +1303,10 @@ export default function GameCapture() {
           {f.fts > 0 ? 'Just the shots' : 'Skip'}
         </Button>
       </>, `${f.choice === 'and1' ? 'And one' : 'Foul'} · step 2 of ${f.fts > 0 ? 3 : 2}`);
+    else if (f.kind === 'double') followUpBar = bar('sky', 'follow-up', f.kind,
+      'Who else was involved?',
+      <>{tapTeam(f.teamId)} in the double foul. Both players get a personal foul. No free throws.</>,
+      skip('Just one'), 'Double foul · step 2 of 2');
     else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
       'Who was fouled?',
       <>{tapTeam(f.teamId)}.{' '}
@@ -2305,11 +2328,12 @@ export default function GameCapture() {
                   <div className="space-y-3 mt-2">
                     <div>
                       {group('Non-shooting foul', 'team foul')}
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {option('personal', 'INBOUND', 'Off the ball or on the ball handler — no shots, sideline or endline inbound')}
                         {option('penalty', 'PENALTY · 2', foulerPenalty ? 'They are in the penalty — 2 shots' : 'Only if they are in the penalty — 2 shots',
                           foulerPenalty ? 'bg-red-700 hover:bg-red-800 ring-2 ring-red-300' : 'bg-slate-600 hover:bg-slate-700')}
                         {option('offensive', 'CHARGE', 'Offensive foul on the other team. Also their turnover. No shots', 'bg-slate-600 hover:bg-slate-700')}
+                        {option('double', 'DOUBLE FOUL', 'Both players charged a foul. No shots', 'bg-slate-600 hover:bg-slate-700')}
                       </div>
                     </div>
                     <div>
@@ -2341,11 +2365,12 @@ export default function GameCapture() {
                   <div className="space-y-3 mt-2">
                     <div>
                       {group('Non-shooting foul', 'team foul')}
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 gap-2">
                         {option('personal', 'INBOUND', 'Off the ball or on the ball handler — no shots, sideline or endline inbound')}
                         {option('penalty', 'PENALTY · 2', penalty ? 'In the penalty — 2 shots' : 'Only if in the penalty — 2 shots',
                           penalty ? 'bg-red-700 hover:bg-red-800 ring-2 ring-red-300' : 'bg-slate-600 hover:bg-slate-700')}
                         {option('offensive', 'OFFENSIVE', 'Also a turnover. No shots')}
+                        {option('double', 'DOUBLE FOUL', 'Both players charged a foul. No shots', 'bg-slate-600 hover:bg-slate-700')}
                       </div>
                     </div>
                     <div>
