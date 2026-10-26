@@ -1937,6 +1937,12 @@ export default function GameCapture() {
                 <div className="text-[11px] opacity-85 mt-1 leading-tight">{hint}</div>
               </button>
             );
+            const group = (title: string, note: string) => (
+              <div className="flex items-baseline justify-between mb-1.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-foreground/80">{title}</span>
+                <span className="text-[10px] text-muted-foreground">{note}</span>
+              </div>
+            );
             if (foulDialog.drawn && foulDialog.playerId != null) {
               // Prompt about the player who was fouled: what kind, then who did it.
               const foulerTeam = foulDialog.teamId === homeTeam.id ? awayTeam : homeTeam;
@@ -1946,19 +1952,25 @@ export default function GameCapture() {
                   <DialogHeader>
                     <DialogTitle className="text-2xl font-black uppercase tracking-tighter">{playerName(foulDialog.playerId)} was fouled</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
-                      Was it a shooting foul? {foulerTeam.abbreviation} team fouls this period: {teamFoulCount(foulerTeam.id)}
+                      Shooting or non-shooting? {foulerTeam.abbreviation} team fouls this period: {teamFoulCount(foulerTeam.id)}
                       {foulerPenalty && <span className="text-red-400 font-semibold"> — in the penalty, so any foul is two shots</span>}
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-2 mt-2">
-                    <div className="grid grid-cols-3 gap-2">
-                      {option('shooting2', 'SHOOTING · 2', 'Fouled taking a 2 — 2 shots', 'bg-purple-700 hover:bg-purple-800')}
-                      {option('shooting3', 'SHOOTING · 3', 'Fouled taking a 3 — 3 shots', 'bg-purple-700 hover:bg-purple-800')}
-                      {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                  <div className="space-y-3 mt-2">
+                    <div>
+                      {group('Non-shooting foul', 'team foul')}
+                      <div className="grid grid-cols-2 gap-2">
+                        {option('personal', 'NON-SHOOTING', foulerPenalty ? 'Team foul — 2 shots (penalty)' : 'Team foul — no free throws')}
+                        {option('offensive', 'CHARGE', 'Offensive foul on the other team. Also their turnover. No free throws', 'bg-slate-600 hover:bg-slate-700')}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {option('personal', 'NOT SHOOTING', foulerPenalty ? 'Normal foul — 2 shots (penalty)' : 'Normal foul — no free throws')}
-                      {option('offensive', 'CHARGE', 'Offensive foul on the other team. Also their turnover. No free throws', 'bg-slate-600 hover:bg-slate-700')}
+                    <div>
+                      {group('Shooting foul', 'team foul + free throws')}
+                      <div className="grid grid-cols-3 gap-2">
+                        {option('shooting2', '2 SHOTS', 'Fouled taking a 2-pointer', 'bg-purple-700 hover:bg-purple-800')}
+                        {option('shooting3', '3 SHOTS', 'Fouled taking a 3-pointer', 'bg-purple-700 hover:bg-purple-800')}
+                        {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                      </div>
                     </div>
                   </div>
                 </>
@@ -1977,20 +1989,29 @@ export default function GameCapture() {
                   </DialogDescription>
                 </DialogHeader>
                 {foulDialog.playerId != null ? (
-                  <div className="space-y-2 mt-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      {option('personal', 'PERSONAL', penalty ? 'Not shooting — 2 shots (penalty)' : 'Not shooting — no free throws')}
-                      {option('offensive', 'OFFENSIVE', 'Also a turnover. No free throws')}
+                  <div className="space-y-3 mt-2">
+                    <div>
+                      {group('Non-shooting foul', 'team foul')}
+                      <div className="grid grid-cols-2 gap-2">
+                        {option('personal', 'NON-SHOOTING', penalty ? 'Team foul — 2 shots (penalty)' : 'Team foul — no free throws')}
+                        {option('offensive', 'OFFENSIVE', 'Also a turnover. No free throws')}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {option('shooting2', 'SHOOTING · 2', 'Missed 2-point attempt', 'bg-purple-700 hover:bg-purple-800')}
-                      {option('shooting3', 'SHOOTING · 3', 'Missed 3-point attempt', 'bg-purple-700 hover:bg-purple-800')}
-                      {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                    <div>
+                      {group('Shooting foul', 'team foul + free throws')}
+                      <div className="grid grid-cols-3 gap-2">
+                        {option('shooting2', '2 SHOTS', 'On a 2-point attempt', 'bg-purple-700 hover:bg-purple-800')}
+                        {option('shooting3', '3 SHOTS', 'On a 3-point attempt', 'bg-purple-700 hover:bg-purple-800')}
+                        {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {option('technical', 'TECHNICAL', '1 shot, any shooter', 'bg-slate-600 hover:bg-slate-700')}
-                      {option('unsportsmanlike', 'UNSPORTS.', '2 shots + possession', 'bg-red-700 hover:bg-red-800')}
-                      {option('disqualifying', 'DISQUALIFY', 'Ejected. 2 shots + possession', 'bg-red-800 hover:bg-red-900')}
+                    <div>
+                      {group('Other', 'technical and unsportsmanlike')}
+                      <div className="grid grid-cols-3 gap-2">
+                        {option('technical', 'TECHNICAL', '1 shot, any shooter', 'bg-slate-600 hover:bg-slate-700')}
+                        {option('unsportsmanlike', 'UNSPORTS.', '2 shots + possession', 'bg-red-700 hover:bg-red-800')}
+                        {option('disqualifying', 'DISQUALIFY', 'Ejected. 2 shots + possession', 'bg-red-800 hover:bg-red-900')}
+                      </div>
                     </div>
                   </div>
                 ) : (

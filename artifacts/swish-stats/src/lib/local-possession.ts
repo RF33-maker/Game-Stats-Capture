@@ -153,7 +153,7 @@ export function describeEvent(args: {
     action = `team ${action}`;
   }
   if (eventType === "pf") {
-    action = q.includes("offensive") ? "offensive foul" : q.includes("shooting") ? "shooting foul" : "personal foul";
+    action = q.includes("offensive") ? "offensive foul" : q.includes("shooting") ? "shooting foul" : "non-shooting foul";
   } else if (eventType === "flagrant") {
     action = q.includes("disqualifying") ? "disqualifying foul" : "unsportsmanlike foul";
   } else if (eventType === "tf" && !player) {
