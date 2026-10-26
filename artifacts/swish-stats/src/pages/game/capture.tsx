@@ -83,7 +83,7 @@ type PendingShot = {
 // simply dismisses it.
 type FollowUp =
   // Assist after a make (the shooter's team); rebound after a miss (teamId = the shooting team).
-  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean }
+  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean; andOneTaken?: boolean }
   // Who blocked it (the defending team), then back to the rebound.
   | { kind: 'block'; teamId: number; shotTeamId: number; shooterId: number | null }
   // After a turnover: who stole it. After a steal: who lost it.
@@ -92,10 +92,11 @@ type FollowUp =
   | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean }
   // After "foul drawn": who committed it (teamId = the fouling team). The free
   // throws go to the player who was fouled.
-  | { kind: 'fouler'; teamId: number; choice: FoulChoice; victimTeamId: number; victimPlayerId: number; fts: number };
+  // `then` is what to ask once the free throws are done (the assist, for an and-one).
+  | { kind: 'fouler'; teamId: number; choice: FoulChoice; victimTeamId: number; victimPlayerId: number; fts: number; then?: FollowUp };
 
 // A trip to the line. total 0 = still asking how many shots.
-type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean };
+type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean; then?: FollowUp };
 
 type FoulChoice = 'personal' | 'penalty' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
 
@@ -473,7 +474,8 @@ export default function GameCapture() {
     } else {
       await handleStat('pf' as StatEventType, 0, who, { next: null });
     }
-    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false });
+    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false, then: f.then });
+    else if (f.then) setFollowUp(f.then);
   };
 
   const recordFoul = async (choice: FoulChoice) => {
@@ -522,7 +524,8 @@ export default function GameCapture() {
     // Only the last shot is live: a miss needs a rebound (not after a
     // technical or unsportsmanlike, where the shooting team keeps the ball).
     const next: FollowUp | null = last && !made && !s.noRebound && loadSettings().followUpPrompts
-      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId } : null;
+      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId }
+      : last && s.then ? s.then : null;
     setFtSeq(last ? null : { ...s, index: s.index + 1 });
     await handleStat((made ? 'ftm' : 'fta') as StatEventType, made ? 1 : 0,
       { teamId: s.teamId, playerId: s.playerId, ftSequenceIndex: s.index, ftSequenceTotal: s.total }, { next });
@@ -1119,7 +1122,17 @@ export default function GameCapture() {
   } else if (followUp) {
     const f = followUp;
     const who = abbr(f.teamId);
-    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, 'Who assisted?', <>{tapTeam(f.teamId, 'player who passed it')}</>, skip('No assist'));
+    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, 'Who assisted?', <>{tapTeam(f.teamId, 'player who passed it')}.{!f.andOneTaken && ' Fouled on the play? Choose And one.'}</>, <>
+        {f.shooterId != null && !f.andOneTaken && (
+          <Button variant="outline" size="sm" className="px-3 font-bold border-purple-400/70 text-purple-200 hover:bg-purple-500/20" data-testid="follow-up-and1"
+            title="The shooter was fouled on the shot and the basket counts: 1 free throw"
+            onClick={() => void handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.shooterId },
+              { next: { kind: 'fouler', teamId: otherTeamId(f.teamId), choice: 'and1', victimTeamId: f.teamId, victimPlayerId: f.shooterId!, fts: 1, then: { ...f, andOneTaken: true } } })}>
+            AND ONE
+          </Button>
+        )}
+        {skip('No assist')}
+      </>);
     else if (f.kind === 'rebound') followUpBar = bar('sky', 'follow-up', f.kind, 'Who got the rebound?', <>Tap the player who got it, or choose a team rebound.</>, <>
         {!f.blocked && (
           <Button variant="outline" size="sm" className="px-3" data-testid="follow-up-blocked" title="The shot was blocked — say who by"
@@ -1146,17 +1159,18 @@ export default function GameCapture() {
       'Who committed the foul?',
       <>{tapTeam(f.teamId)}.{' '}
         <span className="opacity-90">
-          {f.fts > 0 ? <>Then {plural(f.fts, 'free throw')} for {playerName(f.victimPlayerId)}.</>
+          {f.choice === 'and1' ? <>The basket counts. Then {playerName(f.victimPlayerId)} shoots 1 free throw.</>
+            : f.fts > 0 ? <>Then {plural(f.fts, 'free throw')} for {playerName(f.victimPlayerId)}.</>
             : f.choice === 'offensive' ? <>It is also their turnover.</> : <>Then {who === abbr(f.victimTeamId) ? '' : abbr(f.victimTeamId) + ' '}inbound.</>}
         </span>
       </>, <>
         <Button variant="outline" size="sm" className="px-3" data-testid="fouler-team" title="Charge it to the team, not a player"
           onClick={() => void recordFouler(f, null)}>{who} team</Button>
         <Button variant="ghost" size="sm" className="px-3" data-testid="fouler-skip" title="Don't record who fouled"
-          onClick={() => { setFollowUp(null); if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false }); }}>
+          onClick={() => { setFollowUp(f.fts === 0 ? (f.then ?? null) : null); if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false, then: f.then }); }}>
           {f.fts > 0 ? 'Just the shots' : 'Skip'}
         </Button>
-      </>, `Foul · step 2 of ${f.fts > 0 ? 3 : 2}`);
+      </>, `${f.choice === 'and1' ? 'And one' : 'Foul'} · step 2 of ${f.fts > 0 ? 3 : 2}`);
     else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
       'Who was fouled?',
       <>{tapTeam(f.teamId)}.{' '}
@@ -1986,6 +2000,9 @@ export default function GameCapture() {
               // Prompt about the player who was fouled: what kind, then who did it.
               const foulerTeam = foulDialog.teamId === homeTeam.id ? awayTeam : homeTeam;
               const foulerPenalty = inPenalty(foulerTeam.id);
+              // The newest play is a made basket by this player: it is probably an and-one.
+              const newest = evAsc[evAsc.length - 1];
+              const justScored = !!newest && (newest.eventType === '2ptm' || newest.eventType === '3ptm') && newest.playerId === foulDialog.playerId;
               return (
                 <>
                   <DialogHeader>
@@ -2010,7 +2027,8 @@ export default function GameCapture() {
                       <div className="grid grid-cols-3 gap-2">
                         {option('shooting2', '2 SHOTS', 'Fouled taking a 2-pointer', 'bg-purple-700 hover:bg-purple-800')}
                         {option('shooting3', '3 SHOTS', 'Fouled taking a 3-pointer', 'bg-purple-700 hover:bg-purple-800')}
-                        {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                        {option('and1', 'AND ONE', justScored ? 'He just scored — 1 shot' : 'Record the basket first. Then 1 shot',
+                          justScored ? 'bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-300' : 'bg-purple-700 hover:bg-purple-800')}
                       </div>
                     </div>
                   </div>
