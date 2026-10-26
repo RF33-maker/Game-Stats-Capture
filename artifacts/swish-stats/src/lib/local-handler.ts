@@ -261,9 +261,15 @@ function buildBoxScore(gameId: number): HandlerResult {
   const time = playingTime(inGameOrder(events), allPlayers, gameRules(game),
     { period: game.currentPeriod, clockSeconds: game.status === "setup" ? game.periodDurationMins * 60 : game.clockSeconds });
 
+  // The box score is the players in this game: the ones ticked as playing, plus
+  // anyone who has a recorded play (so taking someone off the roster later never
+  // hides stats they already have). Linked players who were never in it stay off.
+  const hasPlays = new Set(events.filter(e => e.playerId != null).map(e => e.playerId as number));
+
   const buildTeam = (team: typeof home, totalPoints: number) => {
     const lines = allPlayers
       .filter(p => p.teamId === team.id)
+      .filter(p => p.isActive || hasPlays.has(p.id))
       .filter(p => lineByPlayer.has(p.id))
       .map(p => ({
         ...lineByPlayer.get(p.id)!,

@@ -1,5 +1,6 @@
 import { clockAfter, parseClock } from "@/lib/game-clock";
-import { localApi } from "@/lib/directory";
+import { DIRECTORY_AVAILABLE, localApi, splitName } from "@/lib/directory";
+import { PlayerSearchDialog } from "@/components/directory-search";
 import { onCourtAtTime } from "@/lib/local-store";
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation, useSearch } from "wouter";
@@ -36,7 +37,7 @@ import { LocalModeBadge } from "@/components/local-mode-badge";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import { loadSettings } from "@/lib/app-settings";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShotCourt, FullCourt, type CourtShot, type FullCourtShot } from "@/components/shot-court";
@@ -125,6 +126,11 @@ export default function GameCapture() {
   // "Add a missed play": a play (or sub) added at a past game time. It never touches the live clock.
   const [addPlay, setAddPlay] = useState<{ type: string; teamId: number | null; playerId: number | null; inPlayerId: number | null; period: number; clock: string } | null>(null);
   const [addingPlay, setAddingPlay] = useState(false);
+  // "Add a player": someone missed off the roster, added to the bench while the game is on.
+  const [addRoster, setAddRoster] = useState<{ teamId: number } | null>(null);
+  const [rosterForm, setRosterForm] = useState<{ jersey: string; first: string; last: string; sitePlayerId: string | null; photo: string | null; position: string | null }>({ jersey: '', first: '', last: '', sitePlayerId: null, photo: null, position: null });
+  const [findOnSwish, setFindOnSwish] = useState(false);
+  const [savingRoster, setSavingRoster] = useState(false);
   const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean } | null>(null);
   const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
@@ -156,6 +162,13 @@ export default function GameCapture() {
   const homeHref = effectiveLeagueId
     ? `/leagues/${effectiveLeagueId}`
     : "/leagues";
+
+  // The Swish competition this game's league publishes to (for the player search).
+  const { data: leagueLink } = useQuery({
+    queryKey: ["league-site-link", effectiveLeagueId],
+    queryFn: () => localApi<{ siteLeagueId?: string | null }>(`/api/leagues/${effectiveLeagueId}`, "GET"),
+    enabled: !!effectiveLeagueId,
+  });
 
   // Mutations
   const recordStat = useRecordStatEvent();
@@ -952,6 +965,57 @@ export default function GameCapture() {
     }
   };
 
+  // ---- Add a player to the roster during the game.
+
+  const rosterTeam = addRoster ? (addRoster.teamId === homeTeam.id ? homeTeam : awayTeam) : null;
+  const refreshPlayers = () => queryClient.invalidateQueries({ queryKey: getListGamePlayersQueryKey(gameId) });
+  const numberHolder = (teamId: number, jersey: string, exceptId?: number) =>
+    (players ?? []).find(p => p.teamId === teamId && p.isActive && p.id !== exceptId && String(p.jerseyNumber).trim() === jersey.trim());
+  const closeAddRoster = () => {
+    setAddRoster(null);
+    setFindOnSwish(false);
+    setRosterForm({ jersey: '', first: '', last: '', sitePlayerId: null, photo: null, position: null });
+  };
+  // A linked player who was left unticked in setup: put them in the game.
+  const bringIntoGame = async (p: { id: number; firstName: string; lastName: string; jerseyNumber: string | number; teamId: number }) => {
+    const clash = numberHolder(p.teamId, String(p.jerseyNumber), p.id);
+    if (clash) { toast.error(`#${p.jerseyNumber} is already worn by ${clash.lastName}. Add them as a new player with their number for this game.`); return; }
+    try {
+      await localApi(`/api/players/${p.id}`, "PATCH", { isActive: true });
+      refreshPlayers();
+      toast.success(`${p.firstName} ${p.lastName} is on the bench`);
+      closeAddRoster();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Couldn't add the player"); }
+  };
+  const saveRosterPlayer = async () => {
+    if (!rosterTeam) return;
+    const f = rosterForm;
+    if (!f.jersey.trim()) { toast.error("Enter their shirt number"); return; }
+    if (!f.first.trim() && !f.last.trim()) { toast.error("Enter their name"); return; }
+    const clash = numberHolder(rosterTeam.id, f.jersey);
+    if (clash) { toast.error(`#${f.jersey.trim()} is already worn by ${clash.lastName}. Use a different number.`); return; }
+    const already = f.sitePlayerId ? (players ?? []).find(p => p.teamId === rosterTeam.id && (p as unknown as { sitePlayerId?: string | null }).sitePlayerId === f.sitePlayerId) : null;
+    if (already && already.isActive) { toast.error(`${already.firstName} ${already.lastName} is already in this game`); return; }
+    setSavingRoster(true);
+    try {
+      if (already) {
+        await localApi(`/api/players/${already.id}`, "PATCH", { isActive: true, jerseyNumber: f.jersey.trim() });
+      } else {
+        await localApi(`/api/teams/${rosterTeam.id}/players`, "POST", {
+          jerseyNumber: f.jersey.trim(), firstName: f.first.trim(), lastName: f.last.trim(),
+          position: f.position, headshotUrl: f.photo, isStarter: false, isActive: true, sitePlayerId: f.sitePlayerId,
+        });
+      }
+      refreshPlayers();
+      toast.success(`${f.first.trim()} ${f.last.trim()} is on the ${rosterTeam.abbreviation} bench`.replace('  ', ' '));
+      closeAddRoster();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add the player");
+    } finally {
+      setSavingRoster(false);
+    }
+  };
+
   // ---- Add a missed play: placed by its game time, the live game clock is left alone.
 
   const PLAY_TYPES: [string, string][] = [
@@ -1249,6 +1313,7 @@ export default function GameCapture() {
     onBenchTech: () => openFoul(team.id, null),
     onTeamRebound: () => handleTeamRebound(team.id),
     onTeamTurnover: () => handleTeamTurnover(team.id),
+    onAddPlayer: () => setAddRoster({ teamId: team.id }),
     fouls: foulsByPlayer,
     foulLimit: rules.foulLimit,
     timeouts: timeoutsLeft(evAsc, team.id, game.currentPeriod, rules).left,
@@ -2034,6 +2099,79 @@ export default function GameCapture() {
         </DialogContent>
       </Dialog>
 
+      {/* Add a player to the roster mid-game */}
+      <Dialog open={!!addRoster} onOpenChange={(open) => !open && !savingRoster && closeAddRoster()}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[520px] max-h-[90dvh] overflow-y-auto" data-testid="add-roster-dialog">
+          {rosterTeam && (() => {
+            const pool = (players ?? []).filter(p => p.teamId === rosterTeam.id && !p.isActive)
+              .sort((a, b) => Number(a.jerseyNumber) - Number(b.jerseyNumber));
+            const field = "h-10 rounded-md border border-[hsl(var(--border-strong))] bg-card px-3 text-sm";
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Add a player to {rosterTeam.abbreviation}</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    They join the bench and can be subbed in. Plays already recorded are not affected.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {pool.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">On the team's list, not in this game</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {pool.map(p => (
+                          <button key={p.id} type="button" onClick={() => void bringIntoGame(p)} data-testid="add-roster-pool"
+                            className="px-3 py-1.5 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-accent hover:text-foreground">
+                            <span className="font-mono">{p.jerseyNumber || '–'}</span> {p.lastName}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Someone else</div>
+                      {DIRECTORY_AVAILABLE && (
+                        <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setFindOnSwish(true)} data-testid="add-roster-find">
+                          Find on Swish
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={rosterForm.jersey} onChange={e => setRosterForm({ ...rosterForm, jersey: e.target.value })} placeholder="#" inputMode="numeric"
+                        aria-label="Shirt number" data-testid="add-roster-number" className={`${field} w-16 shrink-0`} />
+                      <input value={rosterForm.first} onChange={e => setRosterForm({ ...rosterForm, first: e.target.value })} placeholder="First name"
+                        aria-label="First name" data-testid="add-roster-first" className={`${field} flex-1 min-w-0`} />
+                      <input value={rosterForm.last} onChange={e => setRosterForm({ ...rosterForm, last: e.target.value })} placeholder="Last name"
+                        aria-label="Last name" data-testid="add-roster-last" className={`${field} flex-1 min-w-0`} />
+                    </div>
+                    {rosterForm.sitePlayerId && <p className="text-xs text-emerald-500 mt-1.5">Linked to their Swish profile. Check the number, then add them.</p>}
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={closeAddRoster} disabled={savingRoster}>Cancel</Button>
+                  <Button onClick={() => void saveRosterPlayer()} disabled={savingRoster} data-testid="add-roster-save">
+                    {savingRoster && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Add to bench
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+      <PlayerSearchDialog
+        open={findOnSwish}
+        onOpenChange={setFindOnSwish}
+        teamId={(rosterTeam as unknown as { siteTeamId?: string | null } | null)?.siteTeamId ?? null}
+        competitionId={leagueLink?.siteLeagueId ?? null}
+        title={`Add a player to ${rosterTeam?.name ?? ''}`}
+        onPick={(sp) => {
+          const { firstName, lastName } = splitName(sp);
+          setRosterForm({ jersey: sp.shirtNumber ?? '', first: firstName, last: lastName, sitePlayerId: sp.playerId, photo: sp.photoUrl, position: sp.position ?? null });
+          setFindOnSwish(false);
+        }}
+      />
+
       {/* Add a missed play (or sub) at a past time; the live clock is not touched */}
       <Dialog open={!!addPlay} onOpenChange={(open) => !open && !addingPlay && setAddPlay(null)}>
         <DialogContent className="bg-card text-foreground border-border sm:max-w-[600px] max-h-[90dvh] overflow-y-auto" data-testid="add-play-dialog">
@@ -2323,6 +2461,7 @@ function TeamPanel({
   onBenchTech,
   onTeamRebound,
   onTeamTurnover,
+  onAddPlayer,
   fouls,
   foulLimit,
   timeouts,
@@ -2341,6 +2480,8 @@ function TeamPanel({
   onBenchTech: () => void;
   onTeamRebound: () => void;
   onTeamTurnover: () => void;
+  // Add someone who was missed off the roster, mid-game.
+  onAddPlayer: () => void;
   fouls: Map<number, PlayerFouls>;
   foulLimit: number;
   // Timeouts this team has left in the current half / overtime.
@@ -2403,7 +2544,13 @@ function TeamPanel({
       <div className={`flex-1 min-h-[72px] flex flex-col border-border px-2 pt-2 ${benchBeside ? 'border-l min-h-0' : 'border-t'}`}>
         <div className="flex items-center justify-between px-1 shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bench</span>
-          <span className="text-[10px] font-mono text-muted-foreground/60">{bench.length}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-muted-foreground/60">{bench.length}</span>
+            <button type="button" onClick={onAddPlayer} data-testid="add-roster-player" title="Add a player who was missed off the roster"
+              className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent">
+              + Player
+            </button>
+          </span>
         </div>
         <div className="flex-1 min-h-[40px] overflow-y-auto space-y-1 py-1">
           {bench.length === 0 ? (
