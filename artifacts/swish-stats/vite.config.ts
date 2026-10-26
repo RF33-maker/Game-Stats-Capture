@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { VitePWA } from "vite-plugin-pwa";
+import { execSync } from "node:child_process";
 
 // The dev server needs a port; a production build doesn't.
 const port = Number(process.env.PORT ?? 5174);
@@ -76,8 +77,18 @@ function siteAddress(mode: string): Plugin {
   };
 }
 
+// Which build is this? Shown in Settings and on the sync badge so a scorer can
+// say what they are running (the app caches itself, so a browser can lag).
+function buildId(): string {
+  let hash = "dev";
+  try { hash = execSync("git rev-parse --short HEAD", { cwd: import.meta.dirname, stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { /* not a git checkout */ }
+  const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+  return `${hash} · ${stamp} UTC`;
+}
+
 export default defineConfig(async ({ mode }) => ({
   base: basePath,
+  define: { __BUILD_ID__: JSON.stringify(buildId()) },
   plugins: [
     siteAddress(mode),
     react(),

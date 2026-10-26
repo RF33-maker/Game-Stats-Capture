@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { RotateCcw, Save, Moon, Sun } from "lucide-react";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
+import { BUILD_ID } from "@/lib/site";
 import {
   type AppSettings,
   DEFAULT_SETTINGS,
@@ -50,6 +51,7 @@ export default function Settings() {
           <div>
             <p className="sa-eyebrow mb-2">Preferences</p>
             <h1 className="text-4xl md:text-5xl font-bold">Settings</h1>
+            <p className="text-xs text-muted-foreground/70 mt-1 font-mono" data-testid="build-id">Version {BUILD_ID}</p>
             <p className="text-muted-foreground mt-1">
               Default game format and capture preferences. These apply when you
               create new games.

@@ -29,6 +29,9 @@ export const SITE = {
   partnerHost: hostOf(partnerUrl),
 } as const;
 
+/** Which build is running: short commit and build time. */
+export const BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
+
 /**
  * Bump when the terms, the privacy policy or the sign-up tick box and key
  * points (components/signup-terms.tsx) change. It is stored with each sign-up
