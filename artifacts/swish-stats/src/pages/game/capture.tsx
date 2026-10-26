@@ -1,4 +1,7 @@
 import { clockAfter, parseClock } from "@/lib/game-clock";
+import { DIRECTORY_AVAILABLE, localApi, splitName } from "@/lib/directory";
+import { PlayerSearchDialog } from "@/components/directory-search";
+import { onCourtAtTime } from "@/lib/local-store";
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link, useLocation, useSearch } from "wouter";
 import { 
@@ -26,7 +29,7 @@ import {
   PlayByPlayEntry,
   StatEventType
 } from "@workspace/api-client-react";
-import { Loader2, Play, Pause, Undo2, ArrowLeft, ArrowRight, ArrowLeftRight, BarChart2, ListOrdered, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
+import { Loader2, Plus, Play, Pause, Undo2, ArrowLeft, ArrowRight, ArrowLeftRight, BarChart2, ListOrdered, Pencil, Trash2, Home, X, Flag, FlagOff, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { BrandMark } from "@/components/brand";
@@ -34,7 +37,7 @@ import { LocalModeBadge } from "@/components/local-mode-badge";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import { loadSettings } from "@/lib/app-settings";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShotCourt, FullCourt, type CourtShot, type FullCourtShot } from "@/components/shot-court";
@@ -83,7 +86,7 @@ type PendingShot = {
 // simply dismisses it.
 type FollowUp =
   // Assist after a make (the shooter's team); rebound after a miss (teamId = the shooting team).
-  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean }
+  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean; andOneTaken?: boolean }
   // Who blocked it (the defending team), then back to the rebound.
   | { kind: 'block'; teamId: number; shotTeamId: number; shooterId: number | null }
   // After a turnover: who stole it. After a steal: who lost it.
@@ -92,10 +95,11 @@ type FollowUp =
   | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean }
   // After "foul drawn": who committed it (teamId = the fouling team). The free
   // throws go to the player who was fouled.
-  | { kind: 'fouler'; teamId: number; choice: FoulChoice; victimTeamId: number; victimPlayerId: number; fts: number };
+  // `then` is what to ask once the free throws are done (the assist, for an and-one).
+  | { kind: 'fouler'; teamId: number; choice: FoulChoice; victimTeamId: number; victimPlayerId: number; fts: number; then?: FollowUp };
 
 // A trip to the line. total 0 = still asking how many shots.
-type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean };
+type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean; then?: FollowUp };
 
 type FoulChoice = 'personal' | 'penalty' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
 
@@ -119,6 +123,14 @@ export default function GameCapture() {
   const [localClock, setLocalClock] = useState(0);
   const [ftSeq, setFtSeq] = useState<FtSeq | null>(null);
   // drawn = the prompt is about the player who was FOULED (FOUL DRAWN); otherwise about the one who fouled.
+  // "Add a missed play": a play (or sub) added at a past game time. It never touches the live clock.
+  const [addPlay, setAddPlay] = useState<{ type: string; teamId: number | null; playerId: number | null; inPlayerId: number | null; period: number; clock: string } | null>(null);
+  const [addingPlay, setAddingPlay] = useState(false);
+  // "Add a player": someone missed off the roster, added to the bench while the game is on.
+  const [addRoster, setAddRoster] = useState<{ teamId: number } | null>(null);
+  const [rosterForm, setRosterForm] = useState<{ jersey: string; first: string; last: string; sitePlayerId: string | null; photo: string | null; position: string | null }>({ jersey: '', first: '', last: '', sitePlayerId: null, photo: null, position: null });
+  const [findOnSwish, setFindOnSwish] = useState(false);
+  const [savingRoster, setSavingRoster] = useState(false);
   const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean } | null>(null);
   const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
@@ -150,6 +162,13 @@ export default function GameCapture() {
   const homeHref = effectiveLeagueId
     ? `/leagues/${effectiveLeagueId}`
     : "/leagues";
+
+  // The Swish competition this game's league publishes to (for the player search).
+  const { data: leagueLink } = useQuery({
+    queryKey: ["league-site-link", effectiveLeagueId],
+    queryFn: () => localApi<{ siteLeagueId?: string | null }>(`/api/leagues/${effectiveLeagueId}`, "GET"),
+    enabled: !!effectiveLeagueId,
+  });
 
   // Mutations
   const recordStat = useRecordStatEvent();
@@ -312,10 +331,10 @@ export default function GameCapture() {
     let onCourtIds = new Set(teamPlayers.filter(p => p.isStarter).map(p => p.id));
     
     // Process sub events in order
-    const subs = statEvents?.filter(e => e.teamId === teamId && (e.eventType === 'sub_in' || e.eventType === 'sub_out'))
-      .sort((a, b) => a.id - b.id) || [];
-      
-    for (const sub of subs) {
+    const subs = statEvents?.filter(e => e.teamId === teamId && (e.eventType === 'sub_in' || e.eventType === 'sub_out')) ?? [];
+    const subsInOrder = inGameOrder((subs as unknown as GameEvent[])) as unknown as typeof subs;
+
+    for (const sub of subsInOrder) {
       if (sub.playerId) {
         if (sub.eventType === 'sub_in') onCourtIds.add(sub.playerId);
         if (sub.eventType === 'sub_out') onCourtIds.delete(sub.playerId);
@@ -473,7 +492,8 @@ export default function GameCapture() {
     } else {
       await handleStat('pf' as StatEventType, 0, who, { next: null });
     }
-    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false });
+    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false, then: f.then });
+    else if (f.then) setFollowUp(f.then);
   };
 
   const recordFoul = async (choice: FoulChoice) => {
@@ -522,7 +542,8 @@ export default function GameCapture() {
     // Only the last shot is live: a miss needs a rebound (not after a
     // technical or unsportsmanlike, where the shooting team keeps the ball).
     const next: FollowUp | null = last && !made && !s.noRebound && loadSettings().followUpPrompts
-      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId } : null;
+      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId }
+      : last && s.then ? s.then : null;
     setFtSeq(last ? null : { ...s, index: s.index + 1 });
     await handleStat((made ? 'ftm' : 'fta') as StatEventType, made ? 1 : 0,
       { teamId: s.teamId, playerId: s.playerId, ftSequenceIndex: s.index, ftSequenceTotal: s.total }, { next });
@@ -939,8 +960,103 @@ export default function GameCapture() {
       invalidateData();
       toast.success("Play updated");
       closeEditPbp();
-    } catch {
-      toast.error("Failed to update play");
+    } catch (e) {
+      toast.error(e instanceof Error && e.message ? e.message : "Failed to update play");
+    }
+  };
+
+  // ---- Add a player to the roster during the game.
+
+  const rosterTeam = addRoster ? (addRoster.teamId === homeTeam.id ? homeTeam : awayTeam) : null;
+  const refreshPlayers = () => queryClient.invalidateQueries({ queryKey: getListGamePlayersQueryKey(gameId) });
+  const numberHolder = (teamId: number, jersey: string, exceptId?: number) =>
+    (players ?? []).find(p => p.teamId === teamId && p.isActive && p.id !== exceptId && String(p.jerseyNumber).trim() === jersey.trim());
+  const closeAddRoster = () => {
+    setAddRoster(null);
+    setFindOnSwish(false);
+    setRosterForm({ jersey: '', first: '', last: '', sitePlayerId: null, photo: null, position: null });
+  };
+  // A linked player who was left unticked in setup: put them in the game.
+  const bringIntoGame = async (p: { id: number; firstName: string; lastName: string; jerseyNumber: string | number; teamId: number }) => {
+    const clash = numberHolder(p.teamId, String(p.jerseyNumber), p.id);
+    if (clash) { toast.error(`#${p.jerseyNumber} is already worn by ${clash.lastName}. Add them as a new player with their number for this game.`); return; }
+    try {
+      await localApi(`/api/players/${p.id}`, "PATCH", { isActive: true });
+      refreshPlayers();
+      toast.success(`${p.firstName} ${p.lastName} is on the bench`);
+      closeAddRoster();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Couldn't add the player"); }
+  };
+  const saveRosterPlayer = async () => {
+    if (!rosterTeam) return;
+    const f = rosterForm;
+    if (!f.jersey.trim()) { toast.error("Enter their shirt number"); return; }
+    if (!f.first.trim() && !f.last.trim()) { toast.error("Enter their name"); return; }
+    const clash = numberHolder(rosterTeam.id, f.jersey);
+    if (clash) { toast.error(`#${f.jersey.trim()} is already worn by ${clash.lastName}. Use a different number.`); return; }
+    const already = f.sitePlayerId ? (players ?? []).find(p => p.teamId === rosterTeam.id && (p as unknown as { sitePlayerId?: string | null }).sitePlayerId === f.sitePlayerId) : null;
+    if (already && already.isActive) { toast.error(`${already.firstName} ${already.lastName} is already in this game`); return; }
+    setSavingRoster(true);
+    try {
+      if (already) {
+        await localApi(`/api/players/${already.id}`, "PATCH", { isActive: true, jerseyNumber: f.jersey.trim() });
+      } else {
+        await localApi(`/api/teams/${rosterTeam.id}/players`, "POST", {
+          jerseyNumber: f.jersey.trim(), firstName: f.first.trim(), lastName: f.last.trim(),
+          position: f.position, headshotUrl: f.photo, isStarter: false, isActive: true, sitePlayerId: f.sitePlayerId,
+        });
+      }
+      refreshPlayers();
+      toast.success(`${f.first.trim()} ${f.last.trim()} is on the ${rosterTeam.abbreviation} bench`.replace('  ', ' '));
+      closeAddRoster();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add the player");
+    } finally {
+      setSavingRoster(false);
+    }
+  };
+
+  // ---- Add a missed play: placed by its game time, the live game clock is left alone.
+
+  const PLAY_TYPES: [string, string][] = [
+    ['sub', 'Substitution'], ['2ptm', '2PT made'], ['2pta', '2PT missed'], ['3ptm', '3PT made'], ['3pta', '3PT missed'],
+    ['ftm', 'FT made'], ['fta', 'FT missed'], ['oreb', 'Off. rebound'], ['dreb', 'Def. rebound'], ['ast', 'Assist'],
+    ['stl', 'Steal'], ['blk', 'Block'], ['tov', 'Turnover'], ['pf', 'Foul'], ['fd', 'Foul drawn'], ['timeout', 'Timeout'],
+  ];
+  const openAddPlay = () => {
+    setPlaysOpen(false);
+    setAddPlay({ type: 'sub', teamId: null, playerId: null, inPlayerId: null, period: game.currentPeriod, clock: formatClock(nowClock()) });
+  };
+  const submitAddPlay = async () => {
+    const a = addPlay;
+    if (!a) return;
+    const clockSeconds = parseClock(a.clock);
+    if (clockSeconds == null) { toast.error("Enter the clock as minutes:seconds, e.g. 7:42"); return; }
+    if (a.teamId == null) { toast.error("Pick the team"); return; }
+    setAddingPlay(true);
+    try {
+      let warnings: string[] = [];
+      if (a.type === 'sub') {
+        if (a.playerId == null || a.inPlayerId == null) { toast.error("Pick who comes off and who goes on"); return; }
+        const res = await localApi<{ warnings?: string[] }>(`/api/games/${gameId}/substitutions`, 'POST', {
+          teamId: a.teamId, outPlayerId: a.playerId, inPlayerId: a.inPlayerId, period: a.period, clockSeconds, retro: true,
+        });
+        warnings = res.warnings ?? [];
+      } else {
+        if (a.type !== 'timeout' && a.playerId == null) { toast.error("Pick the player"); return; }
+        await localApi(`/api/games/${gameId}/stats`, 'POST', {
+          teamId: a.teamId, playerId: a.type === 'timeout' ? null : a.playerId, period: a.period, clockSeconds, eventType: a.type,
+          value: a.type === '2ptm' ? 2 : a.type === '3ptm' ? 3 : a.type === 'ftm' ? 1 : 0, retro: true,
+        });
+      }
+      invalidateData();
+      toast.success(`Added at ${gamePeriodLabel(a.period, game.periodCount)} ${formatClock(clockSeconds)}`);
+      if (warnings.length) toast.warning(`Check the other subs: ${warnings.slice(0, 3).join('; ')}`, { duration: 12000 });
+      setAddPlay(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add the play");
+    } finally {
+      setAddingPlay(false);
     }
   };
 
@@ -1119,7 +1235,17 @@ export default function GameCapture() {
   } else if (followUp) {
     const f = followUp;
     const who = abbr(f.teamId);
-    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, 'Who assisted?', <>{tapTeam(f.teamId, 'player who passed it')}</>, skip('No assist'));
+    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, 'Who assisted?', <>{tapTeam(f.teamId, 'player who passed it')}.{!f.andOneTaken && ' Fouled on the play? Choose And one.'}</>, <>
+        {f.shooterId != null && !f.andOneTaken && (
+          <Button variant="outline" size="sm" className="px-3 font-bold border-purple-400/70 text-purple-200 hover:bg-purple-500/20" data-testid="follow-up-and1"
+            title="The shooter was fouled on the shot and the basket counts: 1 free throw"
+            onClick={() => void handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.shooterId },
+              { next: { kind: 'fouler', teamId: otherTeamId(f.teamId), choice: 'and1', victimTeamId: f.teamId, victimPlayerId: f.shooterId!, fts: 1, then: { ...f, andOneTaken: true } } })}>
+            AND ONE
+          </Button>
+        )}
+        {skip('No assist')}
+      </>);
     else if (f.kind === 'rebound') followUpBar = bar('sky', 'follow-up', f.kind, 'Who got the rebound?', <>Tap the player who got it, or choose a team rebound.</>, <>
         {!f.blocked && (
           <Button variant="outline" size="sm" className="px-3" data-testid="follow-up-blocked" title="The shot was blocked — say who by"
@@ -1146,17 +1272,18 @@ export default function GameCapture() {
       'Who committed the foul?',
       <>{tapTeam(f.teamId)}.{' '}
         <span className="opacity-90">
-          {f.fts > 0 ? <>Then {plural(f.fts, 'free throw')} for {playerName(f.victimPlayerId)}.</>
+          {f.choice === 'and1' ? <>The basket counts. Then {playerName(f.victimPlayerId)} shoots 1 free throw.</>
+            : f.fts > 0 ? <>Then {plural(f.fts, 'free throw')} for {playerName(f.victimPlayerId)}.</>
             : f.choice === 'offensive' ? <>It is also their turnover.</> : <>Then {who === abbr(f.victimTeamId) ? '' : abbr(f.victimTeamId) + ' '}inbound.</>}
         </span>
       </>, <>
         <Button variant="outline" size="sm" className="px-3" data-testid="fouler-team" title="Charge it to the team, not a player"
           onClick={() => void recordFouler(f, null)}>{who} team</Button>
         <Button variant="ghost" size="sm" className="px-3" data-testid="fouler-skip" title="Don't record who fouled"
-          onClick={() => { setFollowUp(null); if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false }); }}>
+          onClick={() => { setFollowUp(f.fts === 0 ? (f.then ?? null) : null); if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false, then: f.then }); }}>
           {f.fts > 0 ? 'Just the shots' : 'Skip'}
         </Button>
-      </>, `Foul · step 2 of ${f.fts > 0 ? 3 : 2}`);
+      </>, `${f.choice === 'and1' ? 'And one' : 'Foul'} · step 2 of ${f.fts > 0 ? 3 : 2}`);
     else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
       'Who was fouled?',
       <>{tapTeam(f.teamId)}.{' '}
@@ -1186,6 +1313,7 @@ export default function GameCapture() {
     onBenchTech: () => openFoul(team.id, null),
     onTeamRebound: () => handleTeamRebound(team.id),
     onTeamTurnover: () => handleTeamTurnover(team.id),
+    onAddPlayer: () => setAddRoster({ teamId: team.id }),
     fouls: foulsByPlayer,
     foulLimit: rules.foulLimit,
     timeouts: timeoutsLeft(evAsc, team.id, game.currentPeriod, rules).left,
@@ -1299,6 +1427,10 @@ export default function GameCapture() {
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleJumpBall}>JUMP BALL</Button>
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleEndPeriod}>END PERIOD</Button>
                 <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold" onClick={handleStartPeriod}>START PERIOD</Button>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px] font-bold gap-1" onClick={openAddPlay}
+                  title="Add a play or sub that was missed, at the time it happened" data-testid="add-missed-play-strip">
+                  <Plus className="w-3 h-3" /> ADD PLAY
+                </Button>
               </div>
               <Button size="sm" variant="outline" className="h-7 px-2.5 gap-1.5" onClick={() => setPlaysOpen(true)} data-testid="open-plays">
                 <ListOrdered className="w-4 h-4" /> Plays
@@ -1521,6 +1653,10 @@ export default function GameCapture() {
                   <X className="w-4 h-4" />
                 </Button>
               )}
+              <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={openAddPlay}
+                title="Add a play or sub that was missed, at the time it happened" data-testid="add-missed-play">
+                <Plus className="w-4 h-4 mr-1" /> Add play
+              </Button>
               <Button size="sm" variant="outline" className="h-8 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent" onClick={handleUndo}>
                 <Undo2 className="w-4 h-4 mr-2" /> Undo
               </Button>
@@ -1963,6 +2099,174 @@ export default function GameCapture() {
         </DialogContent>
       </Dialog>
 
+      {/* Add a player to the roster mid-game */}
+      <Dialog open={!!addRoster} onOpenChange={(open) => !open && !savingRoster && closeAddRoster()}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[520px] max-h-[90dvh] overflow-y-auto" data-testid="add-roster-dialog">
+          {rosterTeam && (() => {
+            const pool = (players ?? []).filter(p => p.teamId === rosterTeam.id && !p.isActive)
+              .sort((a, b) => Number(a.jerseyNumber) - Number(b.jerseyNumber));
+            const field = "h-10 rounded-md border border-[hsl(var(--border-strong))] bg-card px-3 text-sm";
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Add a player to {rosterTeam.abbreviation}</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    They join the bench and can be subbed in. Plays already recorded are not affected.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {pool.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">On the team's list, not in this game</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {pool.map(p => (
+                          <button key={p.id} type="button" onClick={() => void bringIntoGame(p)} data-testid="add-roster-pool"
+                            className="px-3 py-1.5 rounded-lg border border-border text-sm font-semibold text-muted-foreground hover:bg-accent hover:text-foreground">
+                            <span className="font-mono">{p.jerseyNumber || '–'}</span> {p.lastName}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Someone else</div>
+                      {DIRECTORY_AVAILABLE && (
+                        <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setFindOnSwish(true)} data-testid="add-roster-find">
+                          Find on Swish
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={rosterForm.jersey} onChange={e => setRosterForm({ ...rosterForm, jersey: e.target.value })} placeholder="#" inputMode="numeric"
+                        aria-label="Shirt number" data-testid="add-roster-number" className={`${field} w-16 shrink-0`} />
+                      <input value={rosterForm.first} onChange={e => setRosterForm({ ...rosterForm, first: e.target.value })} placeholder="First name"
+                        aria-label="First name" data-testid="add-roster-first" className={`${field} flex-1 min-w-0`} />
+                      <input value={rosterForm.last} onChange={e => setRosterForm({ ...rosterForm, last: e.target.value })} placeholder="Last name"
+                        aria-label="Last name" data-testid="add-roster-last" className={`${field} flex-1 min-w-0`} />
+                    </div>
+                    {rosterForm.sitePlayerId && <p className="text-xs text-emerald-500 mt-1.5">Linked to their Swish profile. Check the number, then add them.</p>}
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={closeAddRoster} disabled={savingRoster}>Cancel</Button>
+                  <Button onClick={() => void saveRosterPlayer()} disabled={savingRoster} data-testid="add-roster-save">
+                    {savingRoster && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Add to bench
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+      <PlayerSearchDialog
+        open={findOnSwish}
+        onOpenChange={setFindOnSwish}
+        teamId={(rosterTeam as unknown as { siteTeamId?: string | null } | null)?.siteTeamId ?? null}
+        competitionId={leagueLink?.siteLeagueId ?? null}
+        title={`Add a player to ${rosterTeam?.name ?? ''}`}
+        onPick={(sp) => {
+          const { firstName, lastName } = splitName(sp);
+          setRosterForm({ jersey: sp.shirtNumber ?? '', first: firstName, last: lastName, sitePlayerId: sp.playerId, photo: sp.photoUrl, position: sp.position ?? null });
+          setFindOnSwish(false);
+        }}
+      />
+
+      {/* Add a missed play (or sub) at a past time; the live clock is not touched */}
+      <Dialog open={!!addPlay} onOpenChange={(open) => !open && !addingPlay && setAddPlay(null)}>
+        <DialogContent className="bg-card text-foreground border-border sm:max-w-[600px] max-h-[90dvh] overflow-y-auto" data-testid="add-play-dialog">
+          {addPlay && (() => {
+            const clockSecs = parseClock(addPlay.clock);
+            const chip = (on: boolean) => `px-3 py-1.5 rounded-lg border text-sm font-semibold transition-colors ${on ? 'border-primary bg-primary/15 text-foreground' : 'border-border text-muted-foreground hover:bg-accent'}`;
+            const teamPlayers = addPlay.teamId != null ? (players ?? []).filter(p => p.teamId === addPlay.teamId && p.isActive) : [];
+            const onCourtThen = addPlay.teamId != null && clockSecs != null
+              ? onCourtAtTime(gameId, addPlay.teamId, addPlay.period, clockSecs) : new Set<number>();
+            const sorted = (list: typeof teamPlayers) => [...list].sort((a, b) => Number(a.jerseyNumber) - Number(b.jerseyNumber));
+            const playerChip = (p: typeof teamPlayers[number], picked: number | null, onPick: (id: number) => void, testId: string) => (
+              <button key={p.id} type="button" className={chip(picked === p.id)} onClick={() => onPick(p.id)} data-testid={testId}>
+                <span className="font-mono">{p.jerseyNumber}</span> {p.lastName}
+              </button>
+            );
+            const periods = Array.from({ length: Math.max(game.periodCount, game.currentPeriod) }, (_, i) => i + 1);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tighter">Add a missed play</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    It goes in at the time you choose, in game order, and updates the lineups, score and box score. The live clock is not changed.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">When it happened</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {periods.map(p => (
+                        <button key={p} type="button" className={chip(addPlay.period === p)} onClick={() => setAddPlay({ ...addPlay, period: p, playerId: null, inPlayerId: null })}>
+                          {gamePeriodLabel(p, game.periodCount)}
+                        </button>
+                      ))}
+                      <input value={addPlay.clock} onChange={e => setAddPlay({ ...addPlay, clock: e.target.value, playerId: null, inPlayerId: null })}
+                        inputMode="numeric" placeholder="7:42" aria-label="Clock when it happened" data-testid="add-play-clock"
+                        className={`w-24 h-9 rounded-md border bg-card px-3 font-mono text-sm ${clockSecs == null ? 'border-destructive' : 'border-[hsl(var(--border-strong))]'}`} />
+                      <span className="text-xs text-muted-foreground">on the game clock</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">What happened</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PLAY_TYPES.map(([key, label]) => (
+                        <button key={key} type="button" className={chip(addPlay.type === key)} data-testid={`add-play-type-${key}`}
+                          onClick={() => setAddPlay({ ...addPlay, type: key, playerId: null, inPlayerId: null })}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Team</div>
+                    <div className="flex gap-2">
+                      {[awayTeam, homeTeam].map(t => (
+                        <button key={t.id} type="button" className={chip(addPlay.teamId === t.id)} data-testid={`add-play-team-${t.isHome ? 'home' : 'away'}`}
+                          onClick={() => setAddPlay({ ...addPlay, teamId: t.id, playerId: null, inPlayerId: null })}>{t.abbreviation} · {t.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {addPlay.teamId != null && addPlay.type === 'sub' && (
+                    <>
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Comes off <span className="normal-case font-medium">(on the court then)</span></div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sorted(teamPlayers.filter(p => onCourtThen.has(p.id))).map(p => playerChip(p, addPlay.playerId, id => setAddPlay({ ...addPlay, playerId: id }), 'add-play-out'))}
+                          {clockSecs != null && !teamPlayers.some(p => onCourtThen.has(p.id)) && <span className="text-sm text-muted-foreground">Nobody on the court at that time. Check the clock and period.</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Goes on <span className="normal-case font-medium">(on the bench then)</span></div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {sorted(teamPlayers.filter(p => !onCourtThen.has(p.id))).map(p => playerChip(p, addPlay.inPlayerId, id => setAddPlay({ ...addPlay, inPlayerId: id }), 'add-play-in'))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {addPlay.teamId != null && addPlay.type !== 'sub' && addPlay.type !== 'timeout' && (
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Player</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sorted(teamPlayers).map(p => playerChip(p, addPlay.playerId, id => setAddPlay({ ...addPlay, playerId: id }), 'add-play-player'))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setAddPlay(null)} disabled={addingPlay}>Cancel</Button>
+                  <Button onClick={() => void submitAddPlay()} disabled={addingPlay} data-testid="add-play-save">
+                    {addingPlay && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}Add play
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
       {/* What kind of foul? One tap records it and sets up what follows. */}
       <Dialog open={!!foulDialog} onOpenChange={(open) => !open && setFoulDialog(null)}>
         <DialogContent className="bg-card text-foreground border-border sm:max-w-[520px]" data-testid="foul-dialog">
@@ -1986,6 +2290,9 @@ export default function GameCapture() {
               // Prompt about the player who was fouled: what kind, then who did it.
               const foulerTeam = foulDialog.teamId === homeTeam.id ? awayTeam : homeTeam;
               const foulerPenalty = inPenalty(foulerTeam.id);
+              // The newest play is a made basket by this player: it is probably an and-one.
+              const newest = evAsc[evAsc.length - 1];
+              const justScored = !!newest && (newest.eventType === '2ptm' || newest.eventType === '3ptm') && newest.playerId === foulDialog.playerId;
               return (
                 <>
                   <DialogHeader>
@@ -2010,7 +2317,8 @@ export default function GameCapture() {
                       <div className="grid grid-cols-3 gap-2">
                         {option('shooting2', '2 SHOTS', 'Fouled taking a 2-pointer', 'bg-purple-700 hover:bg-purple-800')}
                         {option('shooting3', '3 SHOTS', 'Fouled taking a 3-pointer', 'bg-purple-700 hover:bg-purple-800')}
-                        {option('and1', 'AND ONE', 'Basket counted — 1 shot', 'bg-purple-700 hover:bg-purple-800')}
+                        {option('and1', 'AND ONE', justScored ? 'He just scored — 1 shot' : 'Record the basket first. Then 1 shot',
+                          justScored ? 'bg-purple-600 hover:bg-purple-700 ring-2 ring-purple-300' : 'bg-purple-700 hover:bg-purple-800')}
                       </div>
                     </div>
                   </div>
@@ -2153,6 +2461,7 @@ function TeamPanel({
   onBenchTech,
   onTeamRebound,
   onTeamTurnover,
+  onAddPlayer,
   fouls,
   foulLimit,
   timeouts,
@@ -2171,6 +2480,8 @@ function TeamPanel({
   onBenchTech: () => void;
   onTeamRebound: () => void;
   onTeamTurnover: () => void;
+  // Add someone who was missed off the roster, mid-game.
+  onAddPlayer: () => void;
   fouls: Map<number, PlayerFouls>;
   foulLimit: number;
   // Timeouts this team has left in the current half / overtime.
@@ -2233,7 +2544,13 @@ function TeamPanel({
       <div className={`flex-1 min-h-[72px] flex flex-col border-border px-2 pt-2 ${benchBeside ? 'border-l min-h-0' : 'border-t'}`}>
         <div className="flex items-center justify-between px-1 shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bench</span>
-          <span className="text-[10px] font-mono text-muted-foreground/60">{bench.length}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-muted-foreground/60">{bench.length}</span>
+            <button type="button" onClick={onAddPlayer} data-testid="add-roster-player" title="Add a player who was missed off the roster"
+              className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent">
+              + Player
+            </button>
+          </span>
         </div>
         <div className="flex-1 min-h-[40px] overflow-y-auto space-y-1 py-1">
           {bench.length === 0 ? (

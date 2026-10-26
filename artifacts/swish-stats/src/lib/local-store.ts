@@ -297,9 +297,60 @@ function nextId(field: keyof Counters): number {
   return c[field];
 }
 
-/** Sort stat events into game order. */
+/**
+ * Plays carry an integer orderKey (sent to the server as device_seq). New plays
+ * get id * KEY_STEP so there is room between neighbours to slot a missed play in
+ * at its game time (see orderKeyForTime).
+ */
+export const KEY_STEP = 1024;
+
+/** Game time as a number: later in the game is larger (the clock counts down). */
+export function gameTime(e: { period: number; clockSeconds: number }): number {
+  return e.period * 100000 - e.clockSeconds;
+}
+
+/**
+ * Sort stat events into game order: the order they were scored in, except a
+ * play added later for an earlier time (a missed sub) sits where it belongs.
+ * Plays that share an orderKey (a missed play slotted in with no room between
+ * neighbours) fall back to game time, then to when they were entered.
+ */
 export function byOrder(a: LSStatEvent, b: LSStatEvent) {
-  return a.orderKey - b.orderKey || a.id - b.id;
+  return a.orderKey - b.orderKey || gameTime(a) - gameTime(b) || a.id - b.id;
+}
+
+/**
+ * The orderKey that puts a play at this game time: right after the last play
+ * that happened at or before it. `excludeIds` leaves out plays about to be
+ * replaced (a play being moved must not anchor itself).
+ */
+export function orderKeyForTime(gameId: number, period: number, clockSeconds: number, excludeIds: number[] = []): number {
+  const events = store.statEvents.forGame(gameId).filter(e => !excludeIds.includes(e.id)).sort(byOrder);
+  const t = gameTime({ period, clockSeconds });
+  let i = events.length - 1;
+  while (i >= 0 && gameTime(events[i]) > t) i--;
+  const anchor = events[i];
+  const next = events[i + 1];
+  if (!anchor) return next ? next.orderKey - 1 : KEY_STEP;
+  if (!next) return anchor.orderKey + KEY_STEP;
+  if (next.orderKey - anchor.orderKey >= 2) return Math.floor((anchor.orderKey + next.orderKey) / 2);
+  return anchor.orderKey; // no room: ties with the anchor and sorts after it by game time
+}
+
+/** Who is on the court for a team at a point in the game: the starters, then every sub before that point. */
+export function onCourtAtTime(gameId: number, teamId: number, period: number, clockSeconds: number, excludeIds: number[] = []): Set<number> {
+  const onCourt = new Set(store.players.forGame(gameId).filter(p => p.teamId === teamId && p.isStarter).map(p => p.id));
+  const probe = { orderKey: orderKeyForTime(gameId, period, clockSeconds, excludeIds), period, clockSeconds, id: Number.MAX_SAFE_INTEGER } as LSStatEvent;
+  const subs = store.statEvents.forGame(gameId)
+    .filter(e => e.teamId === teamId && !excludeIds.includes(e.id) && (e.eventType === "sub_in" || e.eventType === "sub_out"))
+    .sort(byOrder);
+  for (const e of subs) {
+    if (byOrder(e, probe) >= 0) break;
+    if (e.playerId == null) continue;
+    if (e.eventType === "sub_in") onCourt.add(e.playerId);
+    else onCourt.delete(e.playerId);
+  }
+  return onCourt;
 }
 
 // ------- Create inputs (uid optional: given when applying server rows) -------
@@ -603,7 +654,7 @@ export const store = {
         ...input,
         id,
         uid: input.uid ?? uuid(),
-        orderKey: input.orderKey ?? id,
+        orderKey: input.orderKey ?? id * KEY_STEP,
         createdAt: input.createdAt ?? now,
       };
       const events = this.list();
@@ -638,7 +689,7 @@ export const store = {
       return events[idx];
     },
     /** Void `id` and record a corrected copy in its place. */
-    replace(id: number, changes: Partial<Pick<LSStatEvent, "teamId" | "playerId" | "eventType" | "period" | "clockSeconds" | "value" | "shotZone" | "shotX" | "shotY" | "needsReview" | "qualifiers">>): LSStatEvent | null {
+    replace(id: number, changes: Partial<Pick<LSStatEvent, "teamId" | "playerId" | "eventType" | "period" | "clockSeconds" | "value" | "shotZone" | "shotX" | "shotY" | "needsReview" | "qualifiers" | "orderKey">>): LSStatEvent | null {
       const target = this.get(id);
       if (!target || target.voidedAt) return null;
       this.void(id, "corrected");
@@ -660,7 +711,7 @@ export const store = {
         needsReview: target.needsReview,
         qualifiers: target.qualifiers,
         ...changes,
-        orderKey: target.orderKey,
+        orderKey: changes.orderKey ?? target.orderKey,
         replacesId: target.id,
         createdAt: target.createdAt,
       });
