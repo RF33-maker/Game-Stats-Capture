@@ -77,7 +77,7 @@ type PendingShot = {
   label: string;
   metres: number | null;
   made: boolean | null;
-  // Optional detail: "layup", "dunk", "fastbreak"...
+  // Optional detail: "layup", "dunk", "floater", "fastbreak"...
   tags?: string[];
 };
 
@@ -651,9 +651,11 @@ export default function GameCapture() {
       location = { ...halfPointToStored(shot.tap.point, left), shotZone: classifyShot(shot.tap.point).zone };
     }
     const type = `${value}pt${made ? 'm' : 'a'}` as StatEventType;
+    // The court tap can change a 2 into a 3 after a shot type was chosen; a three isn't a layup.
+    const tags = (shot.tags ?? []).filter(t => value === 2 || t === 'fastbreak');
     void handleStat(type, made ? value : 0, {
       teamId: who.teamId, playerId: who.playerId, ...location,
-      ...(shot.tags?.length ? { qualifiers: shot.tags } : {}),
+      ...(tags.length ? { qualifiers: tags } : {}),
     });
   };
 
@@ -1503,15 +1505,18 @@ export default function GameCapture() {
                 ) : (
                   <span className="sa-eyebrow-muted whitespace-nowrap">Tap the court to record a shot</span>
                 )}
-                {detail && pendingShot && (
+                {pendingShot && (pendingShot.value === 2 || detail) && (
                   <div className="flex items-center gap-1 shrink-0" data-testid="shot-tags">
-                    {([['layup', 'Layup'], ['dunk', 'Dunk'], ['fastbreak', 'Fast break']] as const).map(([tag, label]) => {
+                    {([
+                      ...(pendingShot.value === 2 ? [['layup', 'Layup'], ['dunk', 'Dunk'], ['floater', 'Floater']] as const : []),
+                      ...(detail ? [['fastbreak', 'Fast break']] as const : []),
+                    ] as ReadonlyArray<readonly [string, string]>).map(([tag, label]) => {
                       const on = pendingShot.tags?.includes(tag) ?? false;
                       return (
-                        <button key={tag} type="button"
+                        <button key={tag} type="button" data-testid={`shot-tag-${tag}`}
                           className={`h-6 px-2 rounded-md border text-[11px] font-semibold ${on ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-accent'}`}
                           onClick={() => {
-                            // Layup and dunk are alternatives; fast break is on top of either.
+                            // Layup, dunk and floater are alternatives; fast break is on top of any.
                             const rest = (pendingShot.tags ?? []).filter(x => x !== tag && !(tag !== 'fastbreak' && x !== 'fastbreak'));
                             setPendingShot({ ...pendingShot, tags: on ? rest : [...rest, tag] });
                           }}>
@@ -1521,7 +1526,7 @@ export default function GameCapture() {
                     })}
                   </div>
                 )}
-                {fullCourt && !(detail && pendingShot) && (
+                {fullCourt && !(pendingShot && (pendingShot.value === 2 || detail)) && (
                   <Button variant="ghost" size="sm" className="h-6 px-2 gap-1 text-[11px] text-muted-foreground shrink-0" onClick={handleSwapEnds}
                     disabled={updateGame.isPending} title="The teams are shown attacking the wrong baskets" data-testid="swap-ends">
                     <ArrowLeftRight className="w-3.5 h-3.5" /> Swap ends

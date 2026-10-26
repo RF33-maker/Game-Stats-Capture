@@ -197,6 +197,7 @@ export const SHOT_TYPES = [
   ["jump", "Jump shot"],
   ["layup", "Layup"],
   ["dunk", "Dunk"],
+  ["floater", "Floater"],
   ["hook", "Hook"],
   ["tip", "Tip-in"],
 ] as const;
