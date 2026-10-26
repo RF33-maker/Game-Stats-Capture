@@ -355,7 +355,7 @@ export default function LeagueDetail() {
               {league.season && (
                 <p className="text-muted-foreground">{league.season}</p>
               )}
-              {DIRECTORY_AVAILABLE && (() => {
+              {DIRECTORY_AVAILABLE && (league as { kind?: string }).kind !== "personal" && (() => {
                 const site = league as typeof league & { siteLeagueId?: string | null; siteLeagueName?: string | null };
                 return (
                   <div className="flex items-center gap-2 text-sm" data-testid="league-site-link">
