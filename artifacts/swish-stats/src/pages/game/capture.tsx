@@ -97,7 +97,7 @@ type FollowUp =
 // A trip to the line. total 0 = still asking how many shots.
 type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean };
 
-type FoulChoice = 'personal' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
+type FoulChoice = 'personal' | 'penalty' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
 
 type ShotEvent = { id: number; eventType: string; teamId: number | null; period: number; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
@@ -455,9 +455,8 @@ export default function GameCapture() {
     if (!f || f.playerId == null) return;
     setFoulDialog(null);
     const foulerTeam = otherTeamId(f.teamId);
-    // In the penalty, even a non-shooting foul is two shots (judged before this foul counts, as for FOUL).
     const fts = choice === 'shooting2' ? 2 : choice === 'shooting3' ? 3 : choice === 'and1' ? 1
-      : choice === 'personal' ? (inPenalty(foulerTeam) ? 2 : 0) : 0;
+      : choice === 'penalty' ? 2 : 0; // inbound (personal) and charge: no shots
     await handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.playerId },
       { next: { kind: 'fouler', teamId: foulerTeam, choice, victimTeamId: f.teamId, victimPlayerId: f.playerId, fts } });
   };
@@ -487,8 +486,12 @@ export default function GameCapture() {
     const fouled = (fts: number, recordFd: boolean, noRebound: boolean): FollowUp => ({ kind: 'fouled', teamId: victim, fts, recordFd, noRebound });
     switch (choice) {
       case 'personal':
-        // In the penalty, even a non-shooting foul is two shots.
-        await handleStat('pf' as StatEventType, 0, who, { next: fouled(inPenalty(f.teamId) ? 2 : 0, true, false) });
+        // Non-shooting: the ball goes out (sideline or endline inbound). No shots.
+        await handleStat('pf' as StatEventType, 0, who, { next: fouled(0, true, false) });
+        break;
+      case 'penalty':
+        // Non-shooting, but the team is in the penalty: two shots.
+        await handleStat('pf' as StatEventType, 0, who, { next: fouled(2, true, false) });
         break;
       case 'shooting2': case 'shooting3': case 'and1':
         await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['shooting'] },
@@ -1120,7 +1123,7 @@ export default function GameCapture() {
         {skip('Skip')}
       </>);
     else if (f.kind === 'fouler') followUpBar = bar('sky', 'follow-up', f.kind,
-      <>Who committed it? {dim(`Tap the ${who} player${f.fts > 0 ? ` — then ${f.fts} free throw${f.fts === 1 ? '' : 's'}` : ''}`)}</>, <>
+      <>Who committed it? {dim(`Tap the ${who} player${f.fts > 0 ? ` — then ${f.fts} free throw${f.fts === 1 ? '' : 's'}` : f.choice === 'personal' ? ' — then inbound' : ''}`)}</>, <>
         <Button variant="outline" size="sm" className="px-2" data-testid="fouler-team" title="Charge it to the team, not a player"
           onClick={() => void recordFouler(f, null)}>{who} team</Button>
         <Button variant="ghost" size="sm" className="px-2" data-testid="fouler-skip" title="Don't record who fouled"
@@ -1131,7 +1134,7 @@ export default function GameCapture() {
     else if (f.kind === 'fouled') followUpBar = bar('sky', 'follow-up', f.kind,
       f.fts > 0
         ? <>{f.fts} free throw{f.fts === 1 ? '' : 's'} {dim(`— tap the ${who} shooter`)}</>
-        : <>Who was fouled? {dim(`Tap the ${who} player`)}</>,
+        : <>Inbound — who was fouled? {dim(`Tap the ${who} player`)}</>,
       skip(f.fts > 0 ? 'No shots' : 'Skip'));
   }
 
@@ -1953,15 +1956,17 @@ export default function GameCapture() {
                     <DialogTitle className="text-2xl font-black uppercase tracking-tighter">{playerName(foulDialog.playerId)} was fouled</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
                       Shooting or non-shooting? {foulerTeam.abbreviation} team fouls this period: {teamFoulCount(foulerTeam.id)}
-                      {foulerPenalty && <span className="text-red-400 font-semibold"> — in the penalty, so any foul is two shots</span>}
+                      {foulerPenalty && <span className="text-red-400 font-semibold"> — in the penalty: pick PENALTY · 2 for the shots</span>}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3 mt-2">
                     <div>
                       {group('Non-shooting foul', 'team foul')}
-                      <div className="grid grid-cols-2 gap-2">
-                        {option('personal', 'NON-SHOOTING', foulerPenalty ? 'Team foul — 2 shots (penalty)' : 'Team foul — no free throws')}
-                        {option('offensive', 'CHARGE', 'Offensive foul on the other team. Also their turnover. No free throws', 'bg-slate-600 hover:bg-slate-700')}
+                      <div className="grid grid-cols-3 gap-2">
+                        {option('personal', 'INBOUND', 'Off the ball or on the ball handler — no shots, sideline or endline inbound')}
+                        {option('penalty', 'PENALTY · 2', foulerPenalty ? 'They are in the penalty — 2 shots' : 'Only if they are in the penalty — 2 shots',
+                          foulerPenalty ? 'bg-red-700 hover:bg-red-800 ring-2 ring-red-300' : 'bg-slate-600 hover:bg-slate-700')}
+                        {option('offensive', 'CHARGE', 'Offensive foul on the other team. Also their turnover. No shots', 'bg-slate-600 hover:bg-slate-700')}
                       </div>
                     </div>
                     <div>
@@ -1984,7 +1989,7 @@ export default function GameCapture() {
                   </DialogTitle>
                   <DialogDescription className="text-muted-foreground">
                     {foulDialog.playerId != null
-                      ? <>{team.abbreviation} team fouls this period: {teamFoulCount(team.id)}{penalty && <span className="text-red-400 font-semibold"> — in the penalty, so any foul is two shots</span>}</>
+                      ? <>{team.abbreviation} team fouls this period: {teamFoulCount(team.id)}{penalty && <span className="text-red-400 font-semibold"> — in the penalty: pick PENALTY · 2 for the shots</span>}</>
                       : 'Charged to the bench, not to a player. The other team shoots one free throw.'}
                   </DialogDescription>
                 </DialogHeader>
@@ -1992,9 +1997,11 @@ export default function GameCapture() {
                   <div className="space-y-3 mt-2">
                     <div>
                       {group('Non-shooting foul', 'team foul')}
-                      <div className="grid grid-cols-2 gap-2">
-                        {option('personal', 'NON-SHOOTING', penalty ? 'Team foul — 2 shots (penalty)' : 'Team foul — no free throws')}
-                        {option('offensive', 'OFFENSIVE', 'Also a turnover. No free throws')}
+                      <div className="grid grid-cols-3 gap-2">
+                        {option('personal', 'INBOUND', 'Off the ball or on the ball handler — no shots, sideline or endline inbound')}
+                        {option('penalty', 'PENALTY · 2', penalty ? 'In the penalty — 2 shots' : 'Only if in the penalty — 2 shots',
+                          penalty ? 'bg-red-700 hover:bg-red-800 ring-2 ring-red-300' : 'bg-slate-600 hover:bg-slate-700')}
+                        {option('offensive', 'OFFENSIVE', 'Also a turnover. No shots')}
                       </div>
                     </div>
                     <div>
