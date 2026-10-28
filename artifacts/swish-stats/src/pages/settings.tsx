@@ -200,11 +200,11 @@ export default function Settings() {
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="detailPrompts" className="text-sm font-medium">
-                    Record turnover and shot types
+                    Record turnover and shot types in Lite
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Ask what kind of turnover it was (travel, bad pass…) and offer layup, dunk and
-                    fast break on shots. Richer stats for one extra tap — leave off if you're scoring alone.
+                    Pro games always ask what kind of turnover it was (travel, bad pass…) and offer shot
+                    types and fast break, like FIBA LiveStats. Turn this on to ask the same in Lite games.
                   </p>
                 </div>
                 <Switch

@@ -48,7 +48,7 @@ import {
 } from "@/lib/shot-geometry";
 import { teamTextColor, appSurface } from "@/lib/team-colors";
 import {
-  TURNOVER_TYPES, arrowTeam, gameRules, inGameOrder, periodLabel as gamePeriodLabel, playerFouls, teamFouls, timeoutsLeft,
+  SHOT_TAGS_2PT, SHOT_TAGS_2PT_COMMON, SHOT_TAGS_3PT, TURNOVER_TYPES, arrowTeam, gameRules, inGameOrder, periodLabel as gamePeriodLabel, playerFouls, teamFouls, timeoutsLeft,
   type GameEvent, type PlayerFouls,
 } from "@/lib/game-state";
 
@@ -134,7 +134,7 @@ export default function GameCapture() {
   const [findOnSwish, setFindOnSwish] = useState(false);
   const [savingRoster, setSavingRoster] = useState(false);
   const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean } | null>(null);
-  const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null } | null>(null);
+  const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null; afterSteal?: boolean } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
   const [endsOpen, setEndsOpen] = useState(false);
   const [attendance, setAttendance] = useState("");
@@ -375,7 +375,9 @@ export default function GameCapture() {
   // At the limit, every further foul sends the other team to the line.
   const inPenalty = (teamId: number) => teamFoulCount(teamId) >= rules.bonusAfterTeamFouls;
   const arrowId = arrowTeam(evAsc, homeTeam.id, awayTeam.id);
-  const detail = loadSettings().detailPrompts;
+  // Pro always records LiveStats-level detail (turnover type, every shot's
+  // type, fast breaks); Lite only when the Settings switch is on.
+  const detail = game.captureMode !== 'simple' || loadSettings().detailPrompts;
 
   const invalidateData = () => {
     queryClient.invalidateQueries({ queryKey: getListStatEventsQueryKey(gameId) });
@@ -570,8 +572,9 @@ export default function GameCapture() {
     toast.warning(`${abbr(teamId)} have no timeouts left`, { action: { label: 'Record anyway', onClick: go } });
   };
 
-  const recordTurnover = (teamId: number, playerId: number | null, type?: string) => {
-    void handleStat('tov' as StatEventType, 0, { teamId, playerId, ...(type ? { qualifiers: [type] } : {}) });
+  // afterSteal: the steal is already in, so don't ask for one again.
+  const recordTurnover = (teamId: number, playerId: number | null, type?: string, afterSteal = false) => {
+    void handleStat('tov' as StatEventType, 0, { teamId, playerId, ...(type ? { qualifiers: [type] } : {}) }, afterSteal ? { next: null } : undefined);
   };
   const handleTeamTurnover = (teamId: number) => {
     if (detail) setTovDialog({ teamId, playerId: null });
@@ -740,7 +743,8 @@ export default function GameCapture() {
         return;
       }
       if (f.kind === 'turnover' && teamId === f.teamId) {
-        void handleStat('tov' as StatEventType, 0, { teamId, playerId }, { next: null });
+        if (detail) { setFollowUp(null); setTovDialog({ teamId, playerId, afterSteal: true }); }
+        else void handleStat('tov' as StatEventType, 0, { teamId, playerId }, { next: null });
         return;
       }
       if (f.kind === 'fouler' && teamId === f.teamId) {
@@ -831,8 +835,11 @@ export default function GameCapture() {
     // useEffect's pause-sync branch skips its competing write.
     transitioningRef.current = true;
     setIsRunning(false);
+    // The last period stays current until the game is finalised, so END can be
+    // tapped again; record its end once (the Liverpool game had Q4 ended 3 times).
+    const alreadyEnded = evAsc.some(e => e.eventType === 'period_end' && e.period === game.currentPeriod);
     try {
-      await recordStat.mutateAsync({
+      if (!alreadyEnded) await recordStat.mutateAsync({
         gameId,
         data: {
           teamId: null,
@@ -1286,7 +1293,7 @@ export default function GameCapture() {
       <Button variant="ghost" size="sm" className="px-3" onClick={() => setFollowUp({ kind: 'rebound', teamId: f.shotTeamId, shooterId: f.shooterId, blocked: true })}>Back</Button>);
     else if (f.kind === 'steal') followUpBar = bar('sky', 'follow-up', f.kind, 'Who stole it?', <>{tapTeam(f.teamId, 'player who took it')}</>, skip('No steal'));
     else if (f.kind === 'turnover') followUpBar = bar('sky', 'follow-up', f.kind, 'Whose turnover?', <>{tapTeam(f.teamId, 'player who lost it')}</>, <>
-        <Button variant="outline" size="sm" className="px-3" onClick={() => void handleStat('tov' as StatEventType, 0, { teamId: f.teamId, playerId: null }, { next: null })}>{who} team</Button>
+        <Button variant="outline" size="sm" className="px-3" onClick={() => { if (detail) { setFollowUp(null); setTovDialog({ teamId: f.teamId, playerId: null, afterSteal: true }); } else void handleStat('tov' as StatEventType, 0, { teamId: f.teamId, playerId: null }, { next: null }); }}>{who} team</Button>
         {skip('Skip')}
       </>);
     else if (f.kind === 'fouler') followUpBar = bar('sky', 'follow-up', f.kind,
@@ -1505,34 +1512,55 @@ export default function GameCapture() {
                 ) : (
                   <span className="sa-eyebrow-muted whitespace-nowrap">Tap the court to record a shot</span>
                 )}
-                {pendingShot && (pendingShot.value === 2 || detail) && (
-                  <div className="flex items-center gap-1 shrink-0" data-testid="shot-tags">
-                    {([
-                      ...(pendingShot.value === 2 ? [['layup', 'Layup'], ['dunk', 'Dunk'], ['floater', 'Floater']] as const : []),
-                      ...(detail ? [['fastbreak', 'Fast break']] as const : []),
-                    ] as ReadonlyArray<readonly [string, string]>).map(([tag, label]) => {
-                      const on = pendingShot.tags?.includes(tag) ?? false;
-                      return (
-                        <button key={tag} type="button" data-testid={`shot-tag-${tag}`}
-                          className={`h-6 px-2 rounded-md border text-[11px] font-semibold ${on ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-accent'}`}
-                          onClick={() => {
-                            // Layup, dunk and floater are alternatives; fast break is on top of any.
-                            const rest = (pendingShot.tags ?? []).filter(x => x !== tag && !(tag !== 'fastbreak' && x !== 'fastbreak'));
-                            setPendingShot({ ...pendingShot, tags: on ? rest : [...rest, tag] });
-                          }}>
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {fullCourt && !(pendingShot && (pendingShot.value === 2 || detail)) && (
+                {pendingShot && detail && (() => {
+                  const on = pendingShot.tags?.includes('fastbreak') ?? false;
+                  return (
+                    <button type="button" data-testid="shot-tag-fastbreak"
+                      className={`h-7 px-2.5 rounded-md border text-xs font-bold shrink-0 ${on ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-accent'}`}
+                      onClick={() => {
+                        const rest = (pendingShot.tags ?? []).filter(x => x !== 'fastbreak');
+                        setPendingShot({ ...pendingShot, tags: on ? rest : [...rest, 'fastbreak'] });
+                      }}>
+                      Fast break
+                    </button>
+                  );
+                })()}
+                {fullCourt && !pendingShot && (
                   <Button variant="ghost" size="sm" className="h-6 px-2 gap-1 text-[11px] text-muted-foreground shrink-0" onClick={handleSwapEnds}
                     disabled={updateGame.isPending} title="The teams are shown attacking the wrong baskets" data-testid="swap-ends">
                     <ArrowLeftRight className="w-3.5 h-3.5" /> Swap ends
                   </Button>
                 )}
               </div>
+
+              {/* Shot type: most common first and biggest; no pick = jump shot. One
+                  type per shot; fast break (above) sits on top of any. */}
+              {pendingShot && (pendingShot.value === 2 || detail) && (() => {
+                const options = pendingShot.value === 2 ? SHOT_TAGS_2PT : SHOT_TAGS_3PT;
+                const common = pendingShot.value === 2 ? SHOT_TAGS_2PT_COMMON : options.length;
+                const pick = (tag: string) => {
+                  const keep = (pendingShot.tags ?? []).filter(x => x === 'fastbreak');
+                  const on = pendingShot.tags?.includes(tag) ?? false;
+                  setPendingShot({ ...pendingShot, tags: on ? keep : [...keep, tag] });
+                };
+                const btn = (tag: string, label: string, big: boolean) => {
+                  const on = pendingShot.tags?.includes(tag) ?? false;
+                  return (
+                    <button key={tag} type="button" data-testid={`shot-tag-${tag}`} onClick={() => pick(tag)}
+                      className={`rounded-md border font-semibold ${big ? 'h-8 px-3 text-sm' : 'h-6 px-2 text-[11px]'} ${on ? 'border-primary bg-primary/15 text-primary' : big ? 'border-[hsl(var(--border-strong))] text-foreground hover:bg-accent' : 'border-border text-muted-foreground hover:bg-accent'}`}>
+                      {label}
+                    </button>
+                  );
+                };
+                return (
+                  <div className="flex flex-col gap-1 mb-2 shrink-0" data-testid="shot-tags">
+                    <div className="flex flex-wrap gap-1">{options.slice(0, common).map(([k, l]) => btn(k, l, true))}</div>
+                    {options.length > common && (
+                      <div className="flex flex-wrap gap-1">{options.slice(common).map(([k, l]) => btn(k, l, false))}</div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {fullCourt ? (
                 <FullCourt
@@ -2407,7 +2435,7 @@ export default function GameCapture() {
         </DialogContent>
       </Dialog>
 
-      {/* Turnover type (only when "Record turnover and shot types" is on) */}
+      {/* Turnover type (always in Pro; in Lite when "Record turnover and shot types" is on) */}
       <Dialog open={!!tovDialog} onOpenChange={(open) => !open && setTovDialog(null)}>
         <DialogContent className="bg-card text-foreground border-border sm:max-w-[480px]" data-testid="tov-dialog">
           <DialogHeader>
@@ -2420,7 +2448,7 @@ export default function GameCapture() {
             {TURNOVER_TYPES.filter(([key]) => key !== 'offensive_foul').map(([key, label]) => (
               <Button key={key} variant="outline" className="h-12 bg-card border-[hsl(var(--border-strong))] text-foreground hover:bg-accent font-semibold"
                 data-testid={`tov-${key}`}
-                onClick={() => { const d = tovDialog!; setTovDialog(null); recordTurnover(d.teamId, d.playerId, key); }}>
+                onClick={() => { const d = tovDialog!; setTovDialog(null); recordTurnover(d.teamId, d.playerId, key, d.afterSteal); }}>
                 {label}
               </Button>
             ))}
