@@ -22,6 +22,12 @@
 --    Likewise second-chance points need rebounds recorded, and off-turnover
 --    points need turnovers recorded.
 --
+-- Also: a game that fills a site fixture now goes out under the fixture's team
+-- names (team_stats.name, player_stats.team_name). They came from the capture
+-- team, which can differ: Liverpool v Tees Valley went out as "Tees Valley
+-- Mohawks Senior Men" against the fixture's "...Senior Men I", and the site,
+-- which matches scores by team name, lost the score from the page title.
+--
 -- Checked by running the same rules on the 64 LiveStats games of NBL Division
 -- One 2026-27 and comparing with LiveStats' figures (128 team rows): bench points
 -- 128 exact; second-chance and off-turnover points within 3% in total (107 and 94
@@ -194,12 +200,40 @@ end;
 $$;
 revoke all on function capture._publish_game_flow(uuid, text) from public, anon, authenticated;
 
--- The publisher fills them in last, once the box score and team rows are written.
+-- For a game filling a site fixture, the team names the fixture uses, on the rows
+-- published under p_key. Only where the side's team is the fixture's team; with
+-- no fixture (or no name on it) the capture team's name stays.
+create function capture._publish_fixture_names(p_game uuid, p_key text)
+returns void
+language plpgsql set search_path = ''
+as $$
+declare
+  v_fixture text := (select site_game_key from capture.games where uid = p_game);
+begin
+  if v_fixture is null then return; end if;
+  update public.team_stats ts
+     set name = case ts.side when '1' then s.hometeam else s.awayteam end
+    from public.game_schedule s
+   where s.game_key = v_fixture and ts.game_key = p_key
+     and ts.team_id = case ts.side when '1' then s.home_team_id when '2' then s.away_team_id end
+     and nullif(btrim(case ts.side when '1' then s.hometeam else s.awayteam end), '') is not null;
+  update public.player_stats ps
+     set team_name = case ps.side when '1' then s.hometeam else s.awayteam end
+    from public.game_schedule s
+   where s.game_key = v_fixture and ps.game_key = p_key
+     and ps.team_id = case ps.side when '1' then s.home_team_id when '2' then s.away_team_id end
+     and nullif(btrim(case ps.side when '1' then s.hometeam else s.awayteam end), '') is not null;
+end;
+$$;
+revoke all on function capture._publish_fixture_names(uuid, text) from public, anon, authenticated;
+
+-- The publisher does both last, once the box score and team rows are written.
 do $fix$
 declare
   d text := pg_get_functiondef('capture._publish_game_core(uuid, boolean)'::regprocedure);
   old text := $q$  update public.game_schedule set home_score = hs,$q$;
   new text := $q$  perform capture._publish_game_flow(p_game, v_key);
+  perform capture._publish_fixture_names(p_game, v_key);
 
   update public.game_schedule set home_score = hs,$q$;
 begin
