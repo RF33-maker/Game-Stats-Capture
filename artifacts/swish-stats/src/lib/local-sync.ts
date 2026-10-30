@@ -113,7 +113,9 @@ function payload(item: OutboxItem): Record<string, unknown> | null {
     case "leagues": {
       const l = store.leagues.getByUid(item.uid);
       return l && {
-        uid: l.uid, name: l.name, season: l.season, logo_url: l.logoUrl, site_league_id: l.siteLeagueId ?? null,
+        uid: l.uid, name: l.name, season: l.season, logo_url: l.logoUrl,
+        // Single games never publish; the server refuses a link, so never send one.
+        site_league_id: l.kind === "personal" ? null : l.siteLeagueId ?? null,
         ...defined({
           default_capture_mode: l.defaultCaptureMode,
           period_count: l.periodCount,

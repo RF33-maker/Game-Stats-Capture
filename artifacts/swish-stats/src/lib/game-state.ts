@@ -193,13 +193,32 @@ export const TURNOVER_TYPES = [
   ["other", "Other"],
 ] as const;
 
+// LiveStats' shot types, most common first (NBL D1 2026-27 2PT frequency:
+// layup ~36 a game, driving layup 8, tip-in 7, floater 2, dunk 2, then the
+// rarer jumpers). No tag = jump shot. The publisher maps each key to the
+// LiveStats sub_type.
 export const SHOT_TYPES = [
   ["jump", "Jump shot"],
   ["layup", "Layup"],
-  ["dunk", "Dunk"],
-  ["hook", "Hook"],
+  ["driving_layup", "Driving layup"],
   ["tip", "Tip-in"],
+  ["floater", "Floater"],
+  ["dunk", "Dunk"],
+  ["pullup", "Pull-up"],
+  ["turnaround", "Turnaround"],
+  ["reverse_layup", "Reverse layup"],
+  ["hook", "Hook"],
+  ["fadeaway", "Fadeaway"],
+  ["stepback", "Step-back"],
+  ["alley_oop", "Alley-oop"],
+  ["eurostep", "Eurostep"],
 ] as const;
+
+// What the Pro shot panel offers, in that order: the first few as big
+// buttons, the rest smaller. A 3 only has the jumper variants.
+export const SHOT_TAGS_2PT = SHOT_TYPES.filter(([k]) => k !== "jump");
+export const SHOT_TAGS_2PT_COMMON = 5;
+export const SHOT_TAGS_3PT = SHOT_TYPES.filter(([k]) => k === "pullup" || k === "stepback");
 
 export function qualifierLabel(q: string): string {
   return TURNOVER_TYPES.find(t => t[0] === q)?.[1].toLowerCase()
