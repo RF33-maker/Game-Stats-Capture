@@ -83,21 +83,27 @@ export function teamFouls(events: GameEvent[], teamId: number, period: number, r
   return events.filter(e => e.teamId === teamId && countsAsTeamFoul(e) && foulPeriod(e.period, rules) === bucket).length;
 }
 
-export type PlayerFouls = { total: number; technical: number; unsportsmanlike: number; out: "fouls" | "ejected" | null };
+// technical / flagrant: only the ones that count toward ejection.
+export type PlayerFouls = { total: number; technical: number; flagrant: number; out: "fouls" | "ejected" | null };
 
+// FIBA 2026 (from 1 Oct 2026): a player is ejected for 2 category-1
+// technicals, 2 flagrant fouls, or one of each. Category-2 technicals (delay,
+// hanging on the ring) and disruptive fouls count as fouls but not toward
+// ejection. Games scored before the change have technicals with no category
+// and "unsportsmanlike" fouls: both counted toward ejection then, and still do.
 export function playerFouls(events: GameEvent[], playerId: number, rules: Rules): PlayerFouls {
-  let total = 0, technical = 0, unsportsmanlike = 0, disqualified = false;
+  let total = 0, technical = 0, flagrant = 0, disqualified = false;
   for (const e of events) {
     if (e.playerId !== playerId || !FOUL_TYPES.has(e.eventType)) continue;
     total++;
-    if (e.eventType === "tf") technical++;
+    if (e.eventType === "tf" && !has(e, "category2")) technical++;
     if (e.eventType === "flagrant") {
-      if (has(e, "disqualifying")) disqualified = true; else unsportsmanlike++;
+      if (has(e, "disqualifying")) disqualified = true;
+      else if (!has(e, "disruptive")) flagrant++;
     }
   }
-  // Two technicals, two unsportsmanlikes, or one of each: ejected.
-  const ejected = disqualified || technical >= 2 || unsportsmanlike >= 2 || (technical >= 1 && unsportsmanlike >= 1);
-  return { total, technical, unsportsmanlike, out: ejected ? "ejected" : total >= rules.foulLimit ? "fouls" : null };
+  const ejected = disqualified || technical >= 2 || flagrant >= 2 || (technical >= 1 && flagrant >= 1);
+  return { total, technical, flagrant, out: ejected ? "ejected" : total >= rules.foulLimit ? "fouls" : null };
 }
 
 // ---------- Timeouts ----------

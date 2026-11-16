@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlayerSearchDialog } from "@/components/directory-search";
+import { ShirtNumberInput } from "@/components/shirt-number-input";
 import { DIRECTORY_AVAILABLE, dedupeRoster, localApi, searchPlayers, splitName, type SitePlayer } from "@/lib/directory";
 
 type LinkedTeam = Team & { siteTeamId?: string | null };
@@ -259,9 +260,7 @@ function TeamRoster({ team, players, gameId, competitionId }: { team: LinkedTeam
                 />
                 Start
               </label>
-              <div className="w-8 h-8 rounded-md bg-background border flex items-center justify-center font-mono font-bold text-sm shrink-0">
-                {p.jerseyNumber}
-              </div>
+              <ShirtNumberInput player={p} taken={players.filter(o => o.id !== p.id).map(o => o.jerseyNumber)} onSaved={refresh} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm truncate">{p.lastName}, {p.firstName}</p>
                 <p className="text-xs text-muted-foreground truncate">{p.position || "N/A"}</p>
@@ -360,13 +359,14 @@ export default function SetupPlayers() {
       toast.error(`Tick Play for at least 5 players on ${awayTeam.name}`);
       return;
     }
-    if (homePlayers.filter(p => p.isStarter).length !== 5) {
-      toast.error(`Please select exactly 5 starters for ${homeTeam.name}`);
-      return;
-    }
-    if (awayPlayers.filter(p => p.isStarter).length !== 5) {
-      toast.error(`Please select exactly 5 starters for ${awayTeam.name}`);
-      return;
+    // Starters are optional here: the capture screen asks for the starting
+    // five before the first play, when the players walk out.
+    for (const [team, list] of [[homeTeam, homePlayers], [awayTeam, awayPlayers]] as const) {
+      const starters = list.filter(p => p.isStarter).length;
+      if (starters !== 0 && starters !== 5) {
+        toast.error(`${team.name} has ${starters} starters. Pick 5, or none and choose them at tip-off`);
+        return;
+      }
     }
 
     setLocation(`/setup/${gameId}/extras${qs}`);
@@ -380,7 +380,8 @@ export default function SetupPlayers() {
           {awayTeam && <TeamRoster team={awayTeam} players={players?.filter(p => p.teamId === awayTeam.id) || []} gameId={gameId} competitionId={competitionId} />}
         </div>
         
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-4">
+          <p className="text-sm text-muted-foreground">Starters can wait: you'll be asked for the starting five before the first play.</p>
           <Button size="lg" onClick={handleContinue}>
             Save & Continue
           </Button>

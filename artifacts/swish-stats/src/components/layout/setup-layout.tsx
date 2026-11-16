@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { BrandMark } from "@/components/brand";
+import { VisibilityPill } from "@/components/visibility-pill";
 
 interface SetupLayoutProps {
   children: ReactNode;
@@ -49,6 +50,7 @@ export function SetupLayout({
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <VisibilityPill leagueId={leagueId} />
             {/* Segmented stepper, like the site's filter toggles */}
             <nav aria-label="Setup steps" className="hidden sm:inline-flex p-[3px] gap-0.5 rounded-[10px] bg-secondary border border-border">
               {steps.map((s) => (
