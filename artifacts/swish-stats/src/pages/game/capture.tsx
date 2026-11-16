@@ -34,6 +34,9 @@ import { Button } from "@/components/ui/button";
 import { AppMenu } from "@/components/app-menu";
 import { BrandMark } from "@/components/brand";
 import { LocalModeBadge } from "@/components/local-mode-badge";
+import { VisibilityPill } from "@/components/visibility-pill";
+import { StartingFiveDialog } from "@/components/starting-five-dialog";
+import { SubDialog } from "@/components/sub-dialog";
 import { LOCAL_MODE_ENABLED } from "@/lib/local-mode";
 import { loadSettings } from "@/lib/app-settings";
 import { toast } from "sonner";
@@ -86,13 +89,21 @@ type PendingShot = {
 // simply dismisses it.
 type FollowUp =
   // Assist after a make (the shooter's team); rebound after a miss (teamId = the shooting team).
-  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean; andOneTaken?: boolean }
+  | { kind: 'assist' | 'rebound'; teamId: number; shooterId: number | null; blocked?: boolean; andOneTaken?: boolean;
+      // assist: AND ONE was chosen first — after the passer, ask who fouled, then the free throw.
+      andOnePending?: boolean;
+      // assist: on free throws after a shooting foul (FIBA credits a pass that leads to a made free throw).
+      ft?: boolean;
+      // assist: what to ask afterwards (the rebound, after a missed last free throw).
+      then?: FollowUp | null }
+  // The assist is in: was the shooter also fouled? (assist first, then and-one)
+  | { kind: 'andone'; teamId: number; shooterId: number }
   // Who blocked it (the defending team), then back to the rebound.
   | { kind: 'block'; teamId: number; shotTeamId: number; shooterId: number | null }
   // After a turnover: who stole it. After a steal: who lost it.
   | { kind: 'steal' | 'turnover'; teamId: number }
   // After a foul: who was fouled, and how many free throws they get.
-  | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean }
+  | { kind: 'fouled'; teamId: number; fts: number; recordFd: boolean; noRebound: boolean; shooting?: boolean }
   // After the first player of a double foul: who the other one was (teamId = the team to tap).
   | { kind: 'double'; teamId: number; firstPlayerId: number }
   // After "foul drawn": who committed it (teamId = the fouling team). The free
@@ -101,9 +112,16 @@ type FollowUp =
   | { kind: 'fouler'; teamId: number; choice: FoulChoice; victimTeamId: number; victimPlayerId: number; fts: number; then?: FollowUp };
 
 // A trip to the line. total 0 = still asking how many shots.
-type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean; then?: FollowUp };
+// shooting: the trip came from a shooting foul (a make can earn the passer an assist); made: makes so far.
+type FtSeq = { teamId: number; playerId: number; total: number; index: number; noRebound: boolean; then?: FollowUp; shooting?: boolean; made?: number };
 
-type FoulChoice = 'personal' | 'penalty' | 'double' | 'shooting2' | 'shooting3' | 'and1' | 'offensive' | 'technical' | 'unsportsmanlike' | 'disqualifying' | 'coach' | 'bench';
+// FIBA 2026 foul types: technicals are category 1 (counts toward ejection) or
+// 2 (delay, hanging on the ring); the unsportsmanlike foul is now disruptive
+// (doesn't count toward ejection) or flagrant (does).
+type FoulChoice = 'personal' | 'penalty' | 'double' | 'shooting2' | 'shooting3' | 'and1' | 'offensive'
+  | 'technical1' | 'technical2' | 'disruptive' | 'flagrant' | 'disqualifying' | 'coach' | 'bench';
+// Disruptive, flagrant and disqualifying fouls: how many shots (and whether the player was shooting).
+type HeavyShots = { fts: number; shooting: boolean };
 
 type ShotEvent = { id: number; eventType: string; teamId: number | null; period: number; shotX?: number | null; shotY?: number | null; shotZone?: string | null };
 
@@ -133,7 +151,8 @@ export default function GameCapture() {
   const [rosterForm, setRosterForm] = useState<{ jersey: string; first: string; last: string; sitePlayerId: string | null; photo: string | null; position: string | null }>({ jersey: '', first: '', last: '', sitePlayerId: null, photo: null, position: null });
   const [findOnSwish, setFindOnSwish] = useState(false);
   const [savingRoster, setSavingRoster] = useState(false);
-  const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean } | null>(null);
+  // heavy: a disruptive / flagrant / disqualifying foul was picked; next, how many shots.
+  const [foulDialog, setFoulDialog] = useState<{ teamId: number; playerId: number | null; drawn?: boolean; heavy?: FoulChoice } | null>(null);
   const [tovDialog, setTovDialog] = useState<{ teamId: number; playerId: number | null; afterSteal?: boolean } | null>(null);
   const [tipDialog, setTipDialog] = useState(false);
   const [endsOpen, setEndsOpen] = useState(false);
@@ -142,6 +161,14 @@ export default function GameCapture() {
   // Substitution flow: tapping a bench player arms it, then tapping an
   // on-court player on the same team completes the swap.
   const [subMode, setSubMode] = useState<{ teamId: number; benchPlayerId: number } | null>(null);
+  // The SUB button's dialog. presetOut/reason: it opened itself because a player fouled out.
+  const [subDialog, setSubDialog] = useState<{ teamId: number; presetOut?: number[]; reason?: string } | null>(null);
+  // The starting five, checked before the first play (see StartingFiveDialog).
+  const startersKey = `swish-stats:starters:${gameId}`;
+  const [startersOpen, setStartersOpen] = useState(false);
+  const [startersConfirmed, setStartersConfirmed] = useState(() => {
+    try { return !!window.localStorage.getItem(`swish-stats:starters:${gameId}`); } catch { return false; }
+  });
   const [editForm, setEditForm] = useState<{ eventType: StatEventType; teamId: number | null; playerId: number | null; shotZone: string | null; shotX: number | null; shotY: number | null; period: number; clock: string }>({ eventType: '2ptm' as StatEventType, teamId: null, playerId: null, shotZone: null, shotX: null, shotY: null, period: 1, clock: '' });
   const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false);
   // Non-blocking prompt shown after a period ends or a timeout is called,
@@ -276,9 +303,20 @@ export default function GameCapture() {
   const endsKey = `swish-stats:ends:${gameId}`;
   useEffect(() => {
     if (!game || !statEvents || game.status === 'final') return;
+    if (startersOpen || (!startersConfirmed && statEvents.length === 0)) return; // the starting five comes first
     if (game.captureMode === 'simple' || loadSettings().courtView !== 'full') return;
     if (statEvents.length === 0 && !window.localStorage.getItem(endsKey)) setEndsOpen(true);
-  }, [game?.id, game?.status, game?.captureMode, statEvents?.length, endsKey]);
+  }, [game?.id, game?.status, game?.captureMode, statEvents?.length, endsKey, startersOpen, startersConfirmed]);
+
+  // The starting five: asked for when the game opens with no plays yet (the
+  // players have walked out), and whenever a team that hasn't subbed is
+  // missing its five (starters are optional at setup).
+  useEffect(() => {
+    if (!game || !statEvents || !players || !teams || game.status === 'final') return;
+    const subbed = new Set(statEvents.filter(e => e.eventType === 'sub_in' || e.eventType === 'sub_out').map(e => e.teamId));
+    const missing = teams.some(t => !subbed.has(t.id) && players.filter(p => p.teamId === t.id && p.isStarter).length !== 5);
+    if (missing || (statEvents.length === 0 && !startersConfirmed)) setStartersOpen(true);
+  }, [game?.id, game?.status, statEvents?.length, players, teams, startersConfirmed]);
 
   // Keyboard: space starts/stops the clock, Ctrl/Cmd+Z undoes the last play.
   const undoRef = useRef<() => void>(() => {});
@@ -379,6 +417,7 @@ export default function GameCapture() {
   // type, fast breaks); Lite only when the Settings switch is on.
   const detail = game.captureMode !== 'simple' || loadSettings().detailPrompts;
 
+  const invalidatePlayers = () => queryClient.invalidateQueries({ queryKey: getListGamePlayersQueryKey(gameId) });
   const invalidateData = () => {
     queryClient.invalidateQueries({ queryKey: getListStatEventsQueryKey(gameId) });
     queryClient.invalidateQueries({ queryKey: getListPlayByPlayQueryKey(gameId) });
@@ -428,8 +467,15 @@ export default function GameCapture() {
         const after = playerFouls(
           [...evAsc, { id: -1, teamId: eventTeamId, playerId: eventPlayerId, period: game.currentPeriod, clockSeconds: nowClock(), eventType, qualifiers: ftData?.qualifiers }],
           eventPlayerId, rules);
-        if (after.out === 'ejected') toast.error(`${playerName(eventPlayerId)} is ejected — substitute them now`, { duration: 8000 });
-        else if (after.out === 'fouls') toast.error(`${playerName(eventPlayerId)} has fouled out (${after.total}) — substitute them now`, { duration: 8000 });
+        const before = foulsByPlayer.get(eventPlayerId);
+        if (after.out && !before?.out && eventTeamId != null) {
+          // Out of the game: open the sub with them already picked to go off.
+          const reason = after.out === 'ejected' ? `${playerName(eventPlayerId)} is ejected` : `${playerName(eventPlayerId)} has fouled out (${after.total} fouls)`;
+          toast.error(`${reason}. Pick who replaces them`, { duration: 8000 });
+          if (getOnCourtPlayers(eventTeamId).some(p => p.id === eventPlayerId)) {
+            setSubDialog({ teamId: eventTeamId, presetOut: [eventPlayerId], reason });
+          }
+        }
         else if (after.total === rules.foulLimit - 1) toast.warning(`${playerName(eventPlayerId)} is on ${after.total} fouls`);
       }
 
@@ -456,6 +502,20 @@ export default function GameCapture() {
       return false;
     }
   };
+
+  // ---- Made baskets: the assist and the and-one, in either order.
+
+  // What comes after the assist question (answered or skipped).
+  const afterAssist = (f: { teamId: number; shooterId: number | null; andOneTaken?: boolean; andOnePending?: boolean; ft?: boolean; then?: FollowUp | null }, skipped = false): FollowUp | null => {
+    if (f.andOnePending && f.shooterId != null) return andOneFouler(f.teamId, f.shooterId);
+    if (f.ft) return f.then ?? null;
+    // Assist first: the shooter may still have been fouled.
+    if (!skipped && !f.andOneTaken && f.shooterId != null && loadSettings().followUpPrompts) return { kind: 'andone', teamId: f.teamId, shooterId: f.shooterId };
+    return null;
+  };
+  // And-one: who fouled the shooter, then 1 free throw.
+  const andOneFouler = (teamId: number, shooterId: number): FollowUp =>
+    ({ kind: 'fouler', teamId: otherTeamId(teamId), choice: 'and1', victimTeamId: teamId, victimPlayerId: shooterId, fts: 1 });
 
   // ---- Fouls: what kind, who was fouled, then the free throws.
 
@@ -502,18 +562,23 @@ export default function GameCapture() {
     } else {
       await handleStat('pf' as StatEventType, 0, who, { next: null });
     }
-    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false, then: f.then });
+    const shooting = f.choice === 'shooting2' || f.choice === 'shooting3';
+    if (f.fts > 0) setFtSeq({ teamId: f.victimTeamId, playerId: f.victimPlayerId, total: f.fts, index: 1, noRebound: false, then: f.then, shooting });
     else if (f.then) setFollowUp(f.then);
   };
 
-  const recordFoul = async (choice: FoulChoice) => {
+  const recordFoul = async (choice: FoulChoice, heavy?: HeavyShots) => {
     const f = foulDialog;
     if (!f) return;
     if (f.drawn) { await recordFoulDrawn(choice); return; }
+    if ((choice === 'disruptive' || choice === 'flagrant' || choice === 'disqualifying') && !heavy) {
+      setFoulDialog({ ...f, heavy: choice }); // ask how many shots first
+      return;
+    }
     setFoulDialog(null);
     const who = { teamId: f.teamId, playerId: f.playerId };
     const victim = otherTeamId(f.teamId);
-    const fouled = (fts: number, recordFd: boolean, noRebound: boolean): FollowUp => ({ kind: 'fouled', teamId: victim, fts, recordFd, noRebound });
+    const fouled = (fts: number, recordFd: boolean, noRebound: boolean, shooting = false): FollowUp => ({ kind: 'fouled', teamId: victim, fts, recordFd, noRebound, shooting });
     switch (choice) {
       case 'personal':
         // Non-shooting: the ball goes out (sideline or endline inbound). No shots.
@@ -532,7 +597,7 @@ export default function GameCapture() {
         break;
       case 'shooting2': case 'shooting3': case 'and1':
         await handleStat('pf' as StatEventType, 0, { ...who, qualifiers: ['shooting'] },
-          { next: fouled(choice === 'shooting3' ? 3 : choice === 'and1' ? 1 : 2, true, false) });
+          { next: fouled(choice === 'shooting3' ? 3 : choice === 'and1' ? 1 : 2, true, false, choice !== 'and1') });
         break;
       case 'offensive':
         // No free throws; the ball goes the other way.
@@ -540,14 +605,19 @@ export default function GameCapture() {
           await handleStat('tov' as StatEventType, 0, { ...who, qualifiers: ['offensive_foul'] }, { next: null });
         }
         break;
-      case 'technical':
-        await handleStat('tf' as StatEventType, 0, who, { next: fouled(1, false, true) });
+      case 'technical1': case 'technical2':
+        // 1 shot by anyone; the team that had the ball keeps it.
+        await handleStat('tf' as StatEventType, 0, { ...who, qualifiers: [choice === 'technical1' ? 'category1' : 'category2'] }, { next: fouled(1, false, true) });
         break;
-      case 'unsportsmanlike': case 'disqualifying':
-        await handleStat('flagrant' as StatEventType, 0, { ...who, qualifiers: [choice] }, { next: fouled(2, true, true) });
+      case 'disruptive': case 'flagrant': case 'disqualifying': {
+        // Shots to the fouled player, then the ball from the frontcourt throw-in line.
+        const { fts, shooting } = heavy!;
+        await handleStat('flagrant' as StatEventType, 0, { ...who, qualifiers: [choice, ...(shooting ? ['shooting'] : [])] },
+          { next: fouled(fts, true, true, shooting && fts >= 2) });
         break;
+      }
       case 'coach': case 'bench':
-        await handleStat('tf' as StatEventType, 0, { teamId: f.teamId, playerId: null, qualifiers: [choice] }, { next: fouled(1, false, true) });
+        await handleStat('tf' as StatEventType, 0, { teamId: f.teamId, playerId: null, qualifiers: [choice, 'category1'] }, { next: fouled(1, false, true) });
         break;
     }
   };
@@ -556,12 +626,19 @@ export default function GameCapture() {
     const s = ftSeq;
     if (!s || !s.total) return;
     const last = s.index >= s.total;
+    const madeSoFar = (s.made ?? 0) + (made ? 1 : 0);
+    const prompts = loadSettings().followUpPrompts;
     // Only the last shot is live: a miss needs a rebound (not after a
-    // technical or unsportsmanlike, where the shooting team keeps the ball).
-    const next: FollowUp | null = last && !made && !s.noRebound && loadSettings().followUpPrompts
-      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId }
-      : last && s.then ? s.then : null;
-    setFtSeq(last ? null : { ...s, index: s.index + 1 });
+    // technical or a flagrant/disruptive foul, where the shooting team keeps the ball).
+    const rebound: FollowUp | null = last && !made && !s.noRebound && prompts
+      ? { kind: 'rebound', teamId: s.teamId, shooterId: s.playerId } : null;
+    let next: FollowUp | null = rebound ?? (last && s.then ? s.then : null);
+    // Fouled shooting and made at least one: FIBA credits the pass that set it
+    // up as an assist. Ask that first, then the rebound.
+    if (last && prompts && s.shooting && s.total >= 2 && madeSoFar > 0) {
+      next = { kind: 'assist', teamId: s.teamId, shooterId: s.playerId, ft: true, andOneTaken: true, then: next };
+    }
+    setFtSeq(last ? null : { ...s, index: s.index + 1, made: madeSoFar });
     await handleStat((made ? 'ftm' : 'fta') as StatEventType, made ? 1 : 0,
       { teamId: s.teamId, playerId: s.playerId, ftSequenceIndex: s.index, ftSequenceTotal: s.total }, { next });
   };
@@ -730,7 +807,7 @@ export default function GameCapture() {
         return;
       }
       if (f.kind === 'assist' && teamId === f.teamId && playerId !== f.shooterId) {
-        void handleStat('ast' as StatEventType, 0, { teamId, playerId }, { next: null });
+        void handleStat('ast' as StatEventType, 0, { teamId, playerId }, { next: afterAssist(f) });
         return;
       }
       if (f.kind === 'block' && teamId === f.teamId) {
@@ -759,7 +836,7 @@ export default function GameCapture() {
         void (async () => {
           if (f.recordFd) await handleStat('fd' as StatEventType, 0, { teamId, playerId }, { next: null });
           else setFollowUp(null);
-          if (f.fts > 0) setFtSeq({ teamId, playerId, total: f.fts, index: 1, noRebound: f.noRebound });
+          if (f.fts > 0) setFtSeq({ teamId, playerId, total: f.fts, index: 1, noRebound: f.noRebound, shooting: f.shooting });
         })();
         return;
       }
@@ -775,6 +852,11 @@ export default function GameCapture() {
     // Ignore taps while a substitution is in flight so a rapid double-tap
     // can't arm a second player before the first swap's request settles.
     if (substitutePlayers.isPending) return;
+    const out = foulsByPlayer.get(benchPlayerId)?.out;
+    if (out) {
+      toast.error(`${playerName(benchPlayerId)} ${out === 'ejected' ? 'is ejected' : 'has fouled out'} and can't come back on`);
+      return;
+    }
     if (subMode && subMode.teamId === teamId && subMode.benchPlayerId === benchPlayerId) {
       setSubMode(null);
       return;
@@ -811,6 +893,26 @@ export default function GameCapture() {
       // player is still correctly armed and the scorer can retry or cancel.
       const message = err instanceof Error ? err.message : "Failed to substitute";
       toast.error(message);
+    }
+  };
+
+  // Subs from the SUB dialog, one swap at a time (each is its own play).
+  const performSubs = async (teamId: number, pairs: { outId: number; inId: number }[]): Promise<boolean> => {
+    const clockSeconds = nowClock();
+    let done = 0;
+    try {
+      for (const { outId, inId } of pairs) {
+        await substitutePlayers.mutateAsync({ gameId, data: { teamId, outPlayerId: outId, inPlayerId: inId, period: game.currentPeriod, clockSeconds } });
+        done++;
+      }
+      setSubMode(null);
+      toast.success(pairs.map(({ outId, inId }) => `${players.find(p => p.id === inId)?.lastName ?? 'Player'} on for ${players.find(p => p.id === outId)?.lastName ?? 'player'}`).join(' · '));
+      return true;
+    } catch (err) {
+      toast.error(`${done ? `${done} sub${done === 1 ? '' : 's'} made, then: ` : ''}${err instanceof Error ? err.message : 'Failed to substitute'}`);
+      return false;
+    } finally {
+      invalidateData();
     }
   };
 
@@ -1157,7 +1259,6 @@ export default function GameCapture() {
     { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
     { type: 'pf', label: 'P FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
     { type: 'tf', label: 'T FOUL', color: 'bg-purple-700 hover:bg-purple-800' },
-    { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
   // The grid. Free throws and fouls open their own short flows.
@@ -1170,7 +1271,6 @@ export default function GameCapture() {
     { type: 'stl', label: 'STEAL', color: 'bg-cyan-600 hover:bg-cyan-700' },
     { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
     { type: 'pf', label: 'FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
-    { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ];
 
   const simpleStats = [
@@ -1185,7 +1285,6 @@ export default function GameCapture() {
     { type: 'stl', label: 'STEAL', color: 'bg-cyan-600 hover:bg-cyan-700' },
     { type: 'blk', label: 'BLOCK', color: 'bg-teal-600 hover:bg-teal-700' },
     { type: 'pf', label: 'FOUL', color: 'bg-purple-600 hover:bg-purple-700' },
-    { type: 'fd', label: 'FOUL DRAWN', color: 'bg-amber-600 hover:bg-amber-700' },
   ] as { type: string; label: string; color: string; val?: number }[];
 
   const isLite = activeMode === 'simple';
@@ -1263,16 +1362,29 @@ export default function GameCapture() {
   } else if (followUp) {
     const f = followUp;
     const who = abbr(f.teamId);
-    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind, 'Who assisted?', <>{tapTeam(f.teamId, 'player who passed it')}.{!f.andOneTaken && ' Fouled on the play? Choose And one.'}</>, <>
+    if (f.kind === 'assist') followUpBar = bar('sky', 'follow-up', f.kind,
+      f.ft ? 'Assist on the free throws?' : 'Who assisted?',
+      f.ft ? <>{playerName(f.shooterId)} was fouled shooting and made at least one. {tapTeam(f.teamId, 'player whose pass set up the shot')}.</>
+        : f.andOnePending ? <>And one noted. {tapTeam(f.teamId, 'player who passed it')}, then who fouled.</>
+        : <>{tapTeam(f.teamId, 'player who passed it')}.{!f.andOneTaken && ' Fouled on the play? Choose And one.'}</>, <>
         {f.shooterId != null && !f.andOneTaken && (
           <Button variant="outline" size="sm" className="px-3 font-bold border-purple-400/70 text-purple-200 hover:bg-purple-500/20" data-testid="follow-up-and1"
-            title="The shooter was fouled on the shot and the basket counts: 1 free throw"
+            title="The shooter was fouled on the shot and the basket counts: 1 free throw. You'll still be asked for the assist"
             onClick={() => void handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.shooterId },
-              { next: { kind: 'fouler', teamId: otherTeamId(f.teamId), choice: 'and1', victimTeamId: f.teamId, victimPlayerId: f.shooterId!, fts: 1, then: { ...f, andOneTaken: true } } })}>
+              { next: { ...f, andOneTaken: true, andOnePending: true } })}>
             AND ONE
           </Button>
         )}
-        {skip('No assist')}
+        <Button variant="ghost" size="sm" className="px-3" onClick={() => setFollowUp(afterAssist(f, true))} data-testid="follow-up-skip">No assist</Button>
+      </>, f.andOnePending ? 'And one · step 1 of 3' : undefined);
+    else if (f.kind === 'andone') followUpBar = bar('sky', 'follow-up', f.kind, 'Fouled on the play?',
+      <>Assist recorded. Choose And one if {playerName(f.shooterId)} was fouled and the basket counts.</>, <>
+        <Button variant="outline" size="sm" className="px-3 font-bold border-purple-400/70 text-purple-200 hover:bg-purple-500/20" data-testid="follow-up-and1"
+          title="The shooter was fouled on the shot and the basket counts: 1 free throw"
+          onClick={() => void handleStat('fd' as StatEventType, 0, { teamId: f.teamId, playerId: f.shooterId }, { next: andOneFouler(f.teamId, f.shooterId) })}>
+          AND ONE
+        </Button>
+        {skip('No')}
       </>);
     else if (f.kind === 'rebound') followUpBar = bar('sky', 'follow-up', f.kind, 'Who got the rebound?', <>Tap the player who got it, or choose a team rebound.</>, <>
         {!f.blocked && (
@@ -1334,10 +1446,11 @@ export default function GameCapture() {
   // Which team's on-court players are being asked for right now.
   const awaiting = (teamId: number) => {
     if (pendingShot) return !isLite && pendingShot.made != null && (pendingShot.teamId == null || pendingShot.teamId === teamId);
-    if (ftSeq || !followUp) return false;
+    if (ftSeq || !followUp || followUp.kind === 'andone') return false;
     return followUp.kind === 'rebound' || followUp.teamId === teamId;
   };
   const awaitingAny = awaiting(homeTeam.id) || awaiting(awayTeam.id);
+  const subbedTeams = new Set((statEvents ?? []).filter(e => e.eventType === 'sub_in' || e.eventType === 'sub_out').map(e => e.teamId as number));
   const panelProps = (team: typeof homeTeam) => ({
     awaitingShooter: awaiting(team.id),
     dimmed: awaitingAny && !awaiting(team.id),
@@ -1346,6 +1459,9 @@ export default function GameCapture() {
     onTeamRebound: () => handleTeamRebound(team.id),
     onTeamTurnover: () => handleTeamTurnover(team.id),
     onAddPlayer: () => setAddRoster({ teamId: team.id }),
+    onSub: () => { setSubMode(null); setSubDialog({ teamId: team.id }); },
+    // Starters can change until the team's first sub.
+    onEditStarters: subbedTeams.has(team.id) ? undefined : () => setStartersOpen(true),
     fouls: foulsByPlayer,
     foulLimit: rules.foulLimit,
     timeouts: timeoutsLeft(evAsc, team.id, game.currentPeriod, rules).left,
@@ -1417,7 +1533,10 @@ export default function GameCapture() {
               {isRunning ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
             </Button>
           </div>
-          <LocalModeBadge inline />
+          <div className="flex flex-col items-start gap-1">
+            <LocalModeBadge inline />
+            <VisibilityPill leagueId={effectiveLeagueId} />
+          </div>
         </div>
 
         <div className="flex items-center justify-end w-1/3 gap-4">
@@ -2323,6 +2442,40 @@ export default function GameCapture() {
         </DialogContent>
       </Dialog>
 
+      <StartingFiveDialog
+        open={startersOpen}
+        onOpenChange={(o) => {
+          setStartersOpen(o);
+          if (!o) { try { window.localStorage.setItem(startersKey, '1'); } catch { /* private window */ } setStartersConfirmed(true); }
+        }}
+        teams={[awayTeam, homeTeam]}
+        players={players}
+        lockedTeamIds={subbedTeams}
+        hasPlays={(statEvents?.length ?? 0) > 0}
+        required={[awayTeam, homeTeam].some(t => !subbedTeams.has(t.id) && players.filter(p => p.teamId === t.id && p.isStarter).length !== 5)}
+        backHref={homeHref}
+        onSaved={invalidatePlayers}
+        onConfirmed={() => toast.success('Starting five saved')}
+      />
+
+      {subDialog && (() => {
+        const team = subDialog.teamId === homeTeam.id ? homeTeam : awayTeam;
+        const onCourt = team.id === homeTeam.id ? homeOnCourt : awayOnCourt;
+        return (
+          <SubDialog
+            open
+            onOpenChange={(o) => { if (!o) setSubDialog(null); }}
+            team={team}
+            onCourt={onCourt}
+            bench={getBenchPlayers(team.id, onCourt)}
+            fouls={foulsByPlayer}
+            presetOut={subDialog.presetOut}
+            reason={subDialog.reason}
+            onSubmit={(pairs) => performSubs(team.id, pairs)}
+          />
+        );
+      })()}
+
       {/* What kind of foul? One tap records it and sets up what follows. */}
       <Dialog open={!!foulDialog} onOpenChange={(open) => !open && setFoulDialog(null)}>
         <DialogContent className="bg-card text-foreground border-border sm:max-w-[520px]" data-testid="foul-dialog">
@@ -2342,6 +2495,35 @@ export default function GameCapture() {
                 <span className="text-[10px] text-muted-foreground">{note}</span>
               </div>
             );
+            if (foulDialog.heavy) {
+              // Disruptive / flagrant / disqualifying: the shots depend on what the fouled player was doing.
+              const heavy = foulDialog.heavy;
+              const name = heavy === 'disruptive' ? 'Disruptive' : heavy === 'flagrant' ? 'Flagrant' : 'Disqualifying';
+              const shots = (fts: number, shooting: boolean, label: string, hint: string) => (
+                <button key={label} type="button" onClick={() => void recordFoul(heavy, { fts, shooting })} data-testid={`foul-shots-${fts}${shooting ? '-shooting' : ''}`}
+                  className="rounded-[10px] bg-red-700 hover:bg-red-800 text-white px-3 py-3 text-left shadow-md active:scale-95 transition-all">
+                  <div className="sa-display font-bold text-xl leading-none">{label}</div>
+                  <div className="text-[11px] opacity-85 mt-1 leading-tight">{hint}</div>
+                </button>
+              );
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-black uppercase tracking-tighter">{name} foul{foulDialog.playerId != null ? ` · ${playerName(foulDialog.playerId)}` : ''}</DialogTitle>
+                    <DialogDescription className="text-muted-foreground">What was the fouled player doing? Then the ball goes to their team at the frontcourt throw-in line.</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {shots(2, false, '2 SHOTS', 'Not shooting')}
+                    {shots(1, true, 'AND ONE', 'Fouled shooting, basket counted. Record the basket first')}
+                    {shots(2, true, '2 SHOTS', 'Fouled on a missed 2-point attempt')}
+                    {shots(3, true, '3 SHOTS', 'Fouled on a missed 3-point attempt')}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="ghost" onClick={() => setFoulDialog({ ...foulDialog, heavy: undefined })}>Back</Button>
+                  </DialogFooter>
+                </>
+              );
+            }
             if (foulDialog.drawn && foulDialog.playerId != null) {
               // Prompt about the player who was fouled: what kind, then who did it.
               const foulerTeam = foulDialog.teamId === homeTeam.id ? awayTeam : homeTeam;
@@ -2415,18 +2597,25 @@ export default function GameCapture() {
                       </div>
                     </div>
                     <div>
-                      {group('Other', 'technical and unsportsmanlike')}
+                      {group('Technical', '1 shot, any shooter')}
+                      <div className="grid grid-cols-2 gap-2">
+                        {option('technical1', 'TECH · CAT 1', 'Behaviour: dissent, taunting, flopping, elbows. Counts toward ejection', 'bg-slate-600 hover:bg-slate-700')}
+                        {option('technical2', 'TECH · CAT 2', 'Delay of game, hanging on the ring. Does not count toward ejection', 'bg-slate-600 hover:bg-slate-700')}
+                      </div>
+                    </div>
+                    <div>
+                      {group('Disruptive, flagrant, disqualifying', 'shots + the ball')}
                       <div className="grid grid-cols-3 gap-2">
-                        {option('technical', 'TECHNICAL', '1 shot, any shooter', 'bg-slate-600 hover:bg-slate-700')}
-                        {option('unsportsmanlike', 'UNSPORTS.', '2 shots + possession', 'bg-red-700 hover:bg-red-800')}
-                        {option('disqualifying', 'DISQUALIFY', 'Ejected. 2 shots + possession', 'bg-red-800 hover:bg-red-900')}
+                        {option('disruptive', 'DISRUPTIVE', 'Stopping a break or the clock. Not toward ejection', 'bg-red-700 hover:bg-red-800')}
+                        {option('flagrant', 'FLAGRANT', 'Not a basketball play, or reckless. Counts toward ejection', 'bg-red-700 hover:bg-red-800')}
+                        {option('disqualifying', 'DISQUALIFY', 'Ejected straight away', 'bg-red-800 hover:bg-red-900')}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2 mt-2">
-                    {option('coach', 'COACH', 'Technical on the head coach', 'bg-slate-600 hover:bg-slate-700')}
-                    {option('bench', 'BENCH', 'Technical on the bench', 'bg-slate-600 hover:bg-slate-700')}
+                    {option('coach', 'COACH', 'Category 1 technical on the head coach (C)', 'bg-slate-600 hover:bg-slate-700')}
+                    {option('bench', 'BENCH', 'Category 1 technical on the bench, charged to the coach (B)', 'bg-slate-600 hover:bg-slate-700')}
                   </div>
                 )}
               </>
@@ -2520,6 +2709,8 @@ function TeamPanel({
   onTeamRebound,
   onTeamTurnover,
   onAddPlayer,
+  onSub,
+  onEditStarters,
   fouls,
   foulLimit,
   timeouts,
@@ -2540,6 +2731,10 @@ function TeamPanel({
   onTeamTurnover: () => void;
   // Add someone who was missed off the roster, mid-game.
   onAddPlayer: () => void;
+  // Opens the substitution dialog.
+  onSub: () => void;
+  // Change the starting five (only until the team's first sub).
+  onEditStarters?: () => void;
   fouls: Map<number, PlayerFouls>;
   foulLimit: number;
   // Timeouts this team has left in the current half / overtime.
@@ -2563,7 +2758,13 @@ function TeamPanel({
       <div className="sticky top-0 left-0 w-full h-1 z-10" style={{ backgroundColor: team.colorPrimary }} />
 
       <div className={benchBeside ? "flex-1 min-h-0 grid grid-cols-[3fr_2fr]" : "contents"}>
-      <div className="p-2 grid grid-rows-5 gap-2 shrink-0">
+      <div className="p-2 grid grid-rows-5 gap-2 shrink-0 relative">
+        {onEditStarters && (
+          <button type="button" onClick={onEditStarters} data-testid="edit-starters" title="Change the starting five (until the first sub)"
+            className="absolute -top-0.5 right-2 z-10 text-[9px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground">
+            Starters ✎
+          </button>
+        )}
         {onCourt.map(p => {
           const isSelected = selectedPlayerId === p.id;
           return (
@@ -2601,11 +2802,16 @@ function TeamPanel({
           the panel as a whole scrolls (see overflow-y-auto above) if space is tight. */}
       <div className={`flex-1 min-h-[72px] flex flex-col border-border px-2 pt-2 ${benchBeside ? 'border-l min-h-0' : 'border-t'}`}>
         <div className="flex items-center justify-between px-1 shrink-0">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bench</span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[10px] font-mono text-muted-foreground/60">{bench.length}</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Bench</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <button type="button" onClick={onSub} data-testid="team-sub" title="Substitution: pick who goes off and who comes on"
+              className="whitespace-nowrap flex items-center gap-1 text-[11px] font-black uppercase tracking-wide px-2 py-1 rounded-md border border-amber-500/60 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20">
+              <ArrowLeftRight className="w-3 h-3" /> Sub
+            </button>
             <button type="button" onClick={onAddPlayer} data-testid="add-roster-player" title="Add a player who was missed off the roster"
-              className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent">
+              className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide px-1.5 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent">
               + Player
             </button>
           </span>

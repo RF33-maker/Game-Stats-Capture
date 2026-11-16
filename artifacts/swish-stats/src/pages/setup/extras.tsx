@@ -111,7 +111,7 @@ export default function SetupExtras() {
                 </li>
                 <li className="flex items-center gap-2 text-muted-foreground">
                   <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  {homePlayers.filter(p => p.isStarter).length} Starters Configured
+                  {homePlayers.filter(p => p.isStarter).length === 5 ? "Starting five picked" : "Starting five: pick at tip-off"}
                 </li>
               </ul>
             </div>
@@ -127,7 +127,7 @@ export default function SetupExtras() {
                 </li>
                 <li className="flex items-center gap-2 text-muted-foreground">
                   <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  {awayPlayers.filter(p => p.isStarter).length} Starters Configured
+                  {awayPlayers.filter(p => p.isStarter).length === 5 ? "Starting five picked" : "Starting five: pick at tip-off"}
                 </li>
               </ul>
             </div>

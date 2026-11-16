@@ -155,9 +155,13 @@ export function describeEvent(args: {
   if (eventType === "pf") {
     action = q.includes("double") ? "double foul" : q.includes("offensive") ? "offensive foul" : q.includes("shooting") ? "shooting foul" : "non-shooting foul";
   } else if (eventType === "flagrant") {
-    action = q.includes("disqualifying") ? "disqualifying foul" : "unsportsmanlike foul";
+    action = q.includes("disqualifying") ? "disqualifying foul" : q.includes("disruptive") ? "disruptive foul"
+      : q.includes("flagrant") ? "flagrant foul" : "unsportsmanlike foul";
+    if (q.includes("shooting") && !q.includes("disqualifying")) action += " (shooting)";
   } else if (eventType === "tf" && !player) {
     action = q.includes("coach") ? "coach technical foul" : "bench technical foul";
+  } else if (eventType === "tf") {
+    action = q.includes("category2") ? "technical foul (category 2)" : q.includes("category1") ? "technical foul (category 1)" : "technical foul";
   } else if (eventType === "tov") {
     const kind = q.find(x => TURNOVER_TYPES.some(t => t[0] === x));
     if (kind && kind !== "other") action += ` (${qualifierLabel(kind)})`;
